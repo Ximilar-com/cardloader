@@ -1,0 +1,5 @@
+# LF everywhere, also in Windows checkouts: Prettier and the tests expect it.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
