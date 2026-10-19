@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["src-tauri", "crates/cardloader-twain"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90"
+license = "Apache-2.0"
+repository = "https://github.com/ximilar-com/cardloader"
+authors = ["Ximilar"]
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

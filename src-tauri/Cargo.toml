@@ -1,0 +1,63 @@
+[package]
+name = "cardloader"
+description = "Scan and analyse collectible cards with Ximilar"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+default-run = "cardloader"
+
+[lib]
+name = "cardloader_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+default = ["local-model"]
+# On-device identification with a vision language model through llama.cpp (needs cmake and a C++ compiler).
+local-model = ["dep:llama-cpp-2"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
+tokio-util = "0.7"
+futures = "0.3"
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls", "http2", "charset", "stream"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "tiff", "bmp"] }
+base64 = "0.23"
+sha2 = "0.10"
+# Pinned: the multimodal (mtmd) API of the bindings still changes between releases.
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["mtmd", "common"], optional = true }
+csv = "1"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+notify = "8"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["metal"], optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["openmp"], optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service", "crypto-rust", "vendored"] }
+llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["openmp"], optional = true }
+
+[dev-dependencies]
+wiremock = "0.6"
+tempfile = "3"
