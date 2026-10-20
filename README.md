@@ -63,8 +63,9 @@ Download the installer for your platform from the repository's **Releases** page
 | Windows 10/11 | `Cardloader_x.y.z_x64-setup.exe` or `.msi` |
 | Linux | `.AppImage`, `.deb` or `.rpm` |
 
-> Early builds may be unsigned. On macOS, right-click the app → **Open** the first time. On Windows, choose
-> **More info → Run anyway** in SmartScreen.
+> Early builds may be unsigned. On macOS, the first launch says Apple could not verify Cardloader: click **Done**,
+> then **System Settings → Privacy & Security → Open Anyway**. On Windows, choose **More info → Run anyway** in
+> SmartScreen.
 
 To build and install from source instead, see [Development](#development) and run `just install`.
 
