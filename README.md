@@ -55,13 +55,22 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 
 ## Install
 
-Download the installer for your platform from the repository's **Releases** page:
+Download the installer for your platform:
 
-| Platform | File |
+| Platform | Download |
 | --- | --- |
-| macOS 11+ (Apple silicon + Intel) | `Cardloader_x.y.z_universal.dmg` |
-| Windows 10/11 | `Cardloader_x.y.z_x64-setup.exe` or `.msi` |
-| Linux | `.AppImage`, `.deb` or `.rpm` |
+| macOS 11+ (Apple silicon + Intel) | [Cardloader .dmg][dl-dmg] |
+| Windows 10/11 | [Installer (.exe)][dl-exe] or [.msi][dl-msi] |
+| Linux | [.AppImage][dl-appimage], [.deb][dl-deb] or [.rpm][dl-rpm] |
+
+[dl-dmg]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_universal.dmg
+[dl-exe]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_x64-setup.exe
+[dl-msi]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_x64_en-US.msi
+[dl-appimage]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_amd64.AppImage
+[dl-deb]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_amd64.deb
+[dl-rpm]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader-0.1.0-1.x86_64.rpm
+
+Release notes and earlier versions are on the [Releases](https://github.com/Ximilar-com/cardloader/releases) page.
 
 > Early builds may be unsigned. On macOS, the first launch says Apple could not verify Cardloader: click **Done**,
 > then **System Settings → Privacy & Security → Open Anyway**. On Windows, choose **More info → Run anyway** in

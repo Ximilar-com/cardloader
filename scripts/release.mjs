@@ -124,6 +124,14 @@ replaceIn(
 replaceIn("Cargo.toml", /(\[workspace\.package\]\nversion = ")[^"]+(")/, `$1${v(version)}$2`, 1);
 replaceIn("Cargo.lock", /(name = "cardloader(?:-twain)?"\nversion = ")[^"]+(")/g, `$1${v(version)}$2`, 2);
 // tauri.conf.json reads its version from package.json.
+// The README's download links (the tag and the file name). They point at the draft until it is published.
+const was = current.replace(/\./g, "\\.");
+replaceIn(
+  "README.md",
+  new RegExp(`(releases/download/v)${was}(/Cardloader[-_])${was}([-_])`),
+  `$1${v(version)}$2${v(version)}$3`,
+  6,
+);
 
 if (dryRun) {
   console.log(`Would commit "Release ${tag}", tag ${tag} and push ${BRANCH} and ${tag} to origin.`);
@@ -133,7 +141,7 @@ if (dryRun) {
 // The lockfiles must still match their manifests after the edit.
 run("cargo", ["metadata", "--format-version", "1", "--locked"], { quiet: true });
 
-run("git", ["add", "package.json", "package-lock.json", "Cargo.toml", "Cargo.lock"]);
+run("git", ["add", "package.json", "package-lock.json", "Cargo.toml", "Cargo.lock", "README.md"]);
 run("git", ["commit", "--quiet", "-m", `Release ${tag}`]);
 run("git", ["tag", "-a", tag, "-m", `Cardloader ${tag}`]);
 console.log(`Committed and tagged ${tag}.`);
