@@ -59,7 +59,7 @@ Download the installer for your platform from the repository's **Releases** page
 
 | Platform | File |
 | --- | --- |
-| macOS (Apple silicon + Intel) | `Cardloader_x.y.z_universal.dmg` |
+| macOS 11+ (Apple silicon + Intel) | `Cardloader_x.y.z_universal.dmg` |
 | Windows 10/11 | `Cardloader_x.y.z_x64-setup.exe` or `.msi` |
 | Linux | `.AppImage`, `.deb` or `.rpm` |
 
