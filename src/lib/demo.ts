@@ -3,7 +3,17 @@
 
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
-import type { ItemDetail, ItemSummary, Json, ModelStatus, Session, SettingsView } from "./api";
+import type {
+  EbayListing,
+  EbayPreview,
+  EbayProgress,
+  ItemDetail,
+  ItemSummary,
+  Json,
+  ModelStatus,
+  Session,
+  SettingsView,
+} from "./api";
 import { matchOf, representativePrice, tier } from "./cardview";
 
 const CARDS = [
@@ -55,8 +65,37 @@ const settings: SettingsView = {
   syncByDefault: true,
   engine: "ximilar",
   localModel: "lfm2.5-vl-450m",
+  ebay: {
+    sandbox: true,
+    appId: "Demo-Cardload-SBX-0a1b2c3d4-5e6f7a8b",
+    ruName: "Demo-Demo-Cardload-abcdef",
+    marketplace: "EBAY_US",
+    fulfillmentPolicyId: "ship-1",
+    paymentPolicyId: "pay-1",
+    returnPolicyId: "return-1",
+    locationKey: "home",
+    username: "demo-seller",
+  },
   tokenSet: true,
   tokenStorage: "keychain",
+  ebayCertSet: true,
+  ebayConnected: true,
+  imgbbKeySet: true,
+};
+
+const ebaySetup = {
+  username: "demo-seller",
+  optedIn: true,
+  fulfillmentPolicies: [
+    { id: "ship-1", name: "Cards — tracked letter" },
+    { id: "ship-2", name: "Cards — free shipping over $50" },
+  ],
+  paymentPolicies: [{ id: "pay-1", name: "Managed payments" }],
+  returnPolicies: [
+    { id: "return-1", name: "30 days, buyer pays" },
+    { id: "return-2", name: "No returns" },
+  ],
+  locations: [{ id: "home", name: "Cardloader (Portland 97201 US)" }],
 };
 
 const sessions: Session[] = [];
@@ -74,6 +113,9 @@ function counts(id: string) {
     grading: n("grading"),
     synced: list.filter((i) => i.synced).length,
     totalPrice: list.reduce((a, i) => a + (i.price ?? 0), 0),
+    ebayDrafts: list.filter((i) => i.ebay?.status === "draft").length,
+    ebayListed: list.filter((i) => i.ebay?.status === "listed").length,
+    ebaySold: list.filter((i) => i.ebay?.status === "sold").length,
   };
 }
 
@@ -128,6 +170,10 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     updatedAt: now(),
     eventId: `demo${seq}`,
     remoteId: null,
+    ebay: null,
+    ebaySku: null,
+    ebayOfferId: null,
+    ebayImages: [],
     recognition: {
       endpoint: subcategory === "Baseball" ? "collectibles/v2/sport_id" : "collectibles/v2/tcg_id",
       id_type: subcategory === "Baseball" ? "sport" : "tcg",
@@ -288,6 +334,9 @@ const DETAIL_ONLY = [
   "calls",
   "analyzedAt",
   "remoteId",
+  "ebaySku",
+  "ebayOfferId",
+  "ebayImages",
 ];
 
 function summary(i: ItemDetail): ItemSummary {
@@ -295,7 +344,15 @@ function summary(i: ItemDetail): ItemSummary {
 }
 
 function seed() {
-  const base = { error: null, finishedAt: null, remoteSessionId: null, syncError: null, counts: counts("") };
+  const base = {
+    error: null,
+    finishedAt: null,
+    remoteSessionId: null,
+    syncError: null,
+    ebayError: null,
+    ebayCheckedAt: null,
+    counts: counts(""),
+  };
   const options = {
     priceStats: true,
     slab: false,
@@ -360,6 +417,18 @@ function seed() {
     "demo-1",
     Array.from({ length: 18 }, (_, i) => makeItem("demo-1", i + 1)),
   );
+  // A few of the binder's cards are on eBay already.
+  const binder = items.get("demo-1")!;
+  const listing = (status: EbayListing["status"], price: number | null, error: string | null = null) => ({
+    status,
+    price,
+    listingId: status === "listed" || status === "sold" ? `1105530${binder.length}${Math.round(price ?? 0)}` : null,
+    error,
+  });
+  binder[0].ebay = listing("listed", 27.5);
+  binder[1].ebay = listing("draft", 18500);
+  binder[3].ebay = listing("sold", 12);
+  binder[4].ebay = listing(null, null, "Invalid category. (25005)");
   items.set("demo-2", []);
   items.set(
     "demo-3",
@@ -534,6 +603,83 @@ async function compareDemo(sessionId: string, runId: string, modelId: string) {
   };
 }
 
+function ebayTitle(i: ItemDetail): string {
+  const grade = i.slab ? ` ${i.slab.company} ${i.slab.grade}` : "";
+  return `${i.year} ${i.setName} ${i.name} #${i.cardNumber}${grade}`.slice(0, 80);
+}
+
+function ebayPreview(i: ItemDetail): EbayPreview {
+  // Pikachu has no Ximilar price here, so the dialog asks for one.
+  const price = i.ebay?.price ?? (i.name === "Pikachu" ? null : i.price);
+  return {
+    itemId: i.id,
+    seq: i.seq,
+    thumbPath: i.thumbPath,
+    title: ebayTitle(i),
+    category: i.idType === "sport" ? "Sports Trading Card Singles" : "CCG Individual Cards",
+    condition: i.slab ? `Graded · ${i.slab.company} ${i.slab.grade}` : "Ungraded",
+    price,
+    ebay: i.ebay,
+    problem: null,
+  };
+}
+
+/** An eBay job: one card every 300 ms, announced as the real one is. */
+function ebayDemo(
+  sessionId: string,
+  action: EbayProgress["action"],
+  cards: ItemDetail[],
+  apply: (i: ItemDetail) => void,
+) {
+  const progress: EbayProgress = { sessionId, action, done: 0, total: cards.length, running: true };
+  ebayJobs.set(sessionId, progress);
+  void emit("ebay-progress", { ...progress });
+  const timer = setInterval(() => {
+    const card = cards[progress.done];
+    if (card) {
+      apply(card);
+      card.updatedAt = now();
+      void emit("item-updated", summary(card));
+      progress.done += 1;
+    }
+    const finished = progress.done >= cards.length;
+    if (finished) {
+      clearInterval(timer);
+      progress.running = false;
+      ebayJobs.delete(sessionId);
+    }
+    void emit("ebay-progress", { ...progress });
+    void emit("session-updated", session(sessionId));
+  }, 300);
+}
+
+const ebayJobs = new Map<string, EbayProgress>();
+
+/** What the Rust previews say for each format, roughly. */
+function exportPreview(i: ItemDetail, format: string): EbayPreview {
+  const p = ebayPreview(i);
+  const sport = i.idType === "sport";
+  if (format === "tcgplayer") {
+    return {
+      ...p,
+      ebay: null,
+      title: `${i.name} #${i.cardNumber}`,
+      category: `${i.subcategory} · ${i.setName}`,
+      condition: i.condition ? `${i.condition} (from grading)` : "Ungraded",
+      problem: sport
+        ? "TCGplayer doesn't sell sports cards"
+        : i.slab
+          ? "graded cards are sold as Listings with Photos on TCGplayer, one by one"
+          : null,
+    };
+  }
+  if (format === "shopify") {
+    return { ...p, ebay: null, category: sport ? "Sports Trading Cards" : "Gaming Cards" };
+  }
+  const sub = sport ? `Sports Cards › ${i.subcategory} Singles` : `Trading Card Games › ${i.subcategory} Cards`;
+  return { ...p, ebay: null, category: sub, price: p.price == null ? null : Math.ceil(p.price) };
+}
+
 export function installDemo() {
   seed();
   mockConvertFileSrc("macos");
@@ -542,9 +688,157 @@ export function installDemo() {
       const a = (args ?? {}) as Record<string, never>;
       switch (cmd) {
         case "get_settings":
-        case "save_settings":
         case "set_token":
-          return settings;
+          return structuredClone(settings);
+        case "save_settings": {
+          const username = settings.ebay.username;
+          Object.assign(settings, a.settings, { ebay: { ...(a.settings as unknown as SettingsView).ebay, username } });
+          return structuredClone(settings);
+        }
+        case "set_ebay_cert":
+          settings.ebayCertSet = !!String(a.certId ?? "").trim();
+          return structuredClone(settings);
+        case "ebay_connect":
+        case "ebay_connect_with":
+          return new Promise((resolve) =>
+            setTimeout(() => {
+              Object.assign(settings, { ebayConnected: true, ebay: { ...settings.ebay, username: "demo-seller" } });
+              resolve(structuredClone(settings));
+            }, 1500),
+          );
+        case "ebay_disconnect":
+          Object.assign(settings, { ebayConnected: false, ebay: { ...settings.ebay, username: null } });
+          return structuredClone(settings);
+        case "ebay_setup":
+        case "ebay_opt_in":
+          return structuredClone(ebaySetup);
+        case "ebay_create_location": {
+          const key = `cardloader-${ebaySetup.locations.length + 1}`;
+          ebaySetup.locations.push({ id: key, name: `Cardloader (${a.postalCode} ${a.country})` });
+          settings.ebay.locationKey = key;
+          return structuredClone(ebaySetup);
+        }
+        case "ebay_preview":
+          return (items.get(a.sessionId) ?? []).filter((i) => i.status === "done").map(ebayPreview);
+        case "ebay_create_drafts": {
+          const prices = new Map(
+            (a.items as unknown as { itemId: number; price: number }[]).map((d) => [d.itemId, d.price]),
+          );
+          const cards = (items.get(a.sessionId) ?? []).filter((i) => prices.has(i.id));
+          ebayDemo(a.sessionId, "drafts", cards, (i) => {
+            const live = i.ebay?.status === "listed";
+            i.ebay = {
+              status: live ? "listed" : "draft",
+              price: prices.get(i.id)!,
+              listingId: i.ebay?.listingId ?? null,
+              error: null,
+            };
+            i.ebayOfferId = `offer-${i.id}`;
+          });
+          return null;
+        }
+        case "ebay_publish": {
+          const ids = a.itemIds as unknown as number[] | null;
+          const cards = (items.get(a.sessionId) ?? []).filter(
+            (i) => i.ebay?.status === "draft" && (!ids || ids.includes(i.id)),
+          );
+          ebayDemo(a.sessionId, "publish", cards, (i) => {
+            i.ebay = { ...i.ebay!, status: "listed", listingId: `1105${i.id}`, error: null };
+          });
+          return null;
+        }
+        case "ebay_refresh": {
+          const s = sessions.find((x) => x.id === a.sessionId);
+          if (s) s.ebayCheckedAt = now();
+          const listed = (items.get(a.sessionId) ?? []).filter((i) => i.ebay?.status === "listed");
+          // A forced check finds the first listing sold.
+          ebayDemo(a.sessionId, "refresh", listed, (i) => {
+            if (a.force && i === listed[0]) i.ebay = { ...i.ebay!, status: "sold" };
+          });
+          return null;
+        }
+        case "ebay_remove": {
+          const ids = a.itemIds as unknown as number[];
+          const cards = (items.get(a.sessionId) ?? []).filter((i) => ids.includes(i.id));
+          ebayDemo(a.sessionId, "remove", cards, (i) => {
+            if (i.ebay?.status === "sold") i.ebay = { ...i.ebay, error: "a sold card stays on eBay" };
+            else Object.assign(i, { ebay: null, ebayOfferId: null, ebayImages: [] });
+          });
+          return null;
+        }
+        case "ebay_cancel":
+        case "cancel_export":
+          return null;
+        case "plugin:dialog|save":
+          return "/Users/demo/Cards/export.csv";
+        case "set_imgbb_key":
+          settings.imgbbKeySet = !!String(a.key ?? "").trim();
+          return structuredClone(settings);
+        case "export_preview":
+          return (items.get(a.sessionId) ?? [])
+            .filter((i) => i.status === "done")
+            .map((i) => exportPreview(i, String(a.format)));
+        case "export_tcgplayer": {
+          const chosen = a.items as unknown as { itemId: number }[];
+          const list = (items.get(a.sessionId) ?? []).filter((i) => chosen.some((c) => c.itemId === i.id));
+          const out = list.filter((i) => i.idType !== "sport" && !i.slab);
+          return {
+            rows: out.length,
+            skipped: list.filter((i) => !out.includes(i)).map((i) => ({ seq: i.seq, reason: "graded or sports" })),
+          };
+        }
+        case "export_shopify": {
+          const chosen = a.items as unknown as { itemId: number }[];
+          const o = a.options as unknown as { uploadImages: boolean; file: string; grouping: string };
+          return new Promise((resolve) => {
+            let done = 0;
+            const timer = setInterval(
+              () => {
+                done += 1;
+                void emit("export-progress", { sessionId: a.sessionId, done, total: chosen.length });
+                if (done >= chosen.length) {
+                  clearInterval(timer);
+                  const products = o.grouping === "by_card" ? Math.ceil(chosen.length / 2) : chosen.length;
+                  resolve({
+                    products,
+                    variants: chosen.length - (o.grouping === "by_card" ? 2 : 0),
+                    skipped: [],
+                    withoutImages: o.uploadImages || o.file === "inventory" ? 0 : products,
+                    imageError: null,
+                  });
+                }
+              },
+              o.uploadImages && o.file === "products" ? 150 : 10,
+            );
+          });
+        }
+        case "export_whatnot": {
+          const chosen = a.items as unknown as { itemId: number }[];
+          const upload = (a.options as unknown as { uploadImages: boolean }).uploadImages;
+          return new Promise((resolve) => {
+            let done = 0;
+            const timer = setInterval(
+              () => {
+                done += 1;
+                void emit("export-progress", { sessionId: a.sessionId, done, total: chosen.length });
+                if (done >= chosen.length) {
+                  clearInterval(timer);
+                  resolve({
+                    rows: chosen.length,
+                    skipped: [],
+                    withoutImages: upload ? 0 : chosen.length,
+                    imageError: null,
+                  });
+                }
+              },
+              upload ? 150 : 10,
+            );
+          });
+        }
+        case "ebay_job":
+          return ebayJobs.get(a.sessionId) ?? null;
+        case "ebay_listing_url":
+          return `https://sandbox.ebay.com/itm/${a.listingId}`;
         case "test_connection":
           return { ok: true, account: "demo@example.com", error: null, cardsCloud: true, cardsCloudError: null };
         case "list_sessions":
@@ -563,6 +857,8 @@ export function installDemo() {
             finishedAt: null,
             remoteSessionId: a.remoteSession ? String(a.remoteSession) : null,
             syncError: null,
+            ebayError: null,
+            ebayCheckedAt: null,
             counts: counts(""),
           };
           sessions.unshift(s);
@@ -608,6 +904,8 @@ export function installDemo() {
             finishedAt: now(),
             remoteSessionId: null,
             syncError: null,
+            ebayError: null,
+            ebayCheckedAt: null,
             counts: counts(""),
           };
           sessions.unshift(s);

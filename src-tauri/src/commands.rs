@@ -8,13 +8,17 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use crate::db::Db;
+use crate::ebay::listing::{self as ebay_listing, CardCondition};
+use crate::ebay::sync::{DraftItem, EbayProgress, Job};
+use crate::ebay::{self, EbaySetup};
 use crate::error::{Error, Result};
 use crate::export;
 use crate::local::compare::{self, CompareReport, CompareRow};
 use crate::local::{self, ModelStatus};
+use crate::market::{self, shopify, tcgplayer, whatnot, Format, PricedItem};
 use crate::model::*;
 use crate::runner::Runner;
-use crate::settings::{Settings, SettingsStore, SettingsView};
+use crate::settings::{Secret, Settings, SettingsStore, SettingsView};
 use crate::source::csv_file::{self, CsvPreview};
 use crate::source::{self, scanner};
 use crate::ximilar::cards_cloud::{CardsCloudApi, MAX_SESSION_NAME};
@@ -499,6 +503,344 @@ pub fn scanner_support(app: AppHandle) -> scanner::ScannerSupport {
 #[tauri::command]
 pub async fn list_scanners(app: AppHandle) -> Result<Vec<scanner::DeviceInfo>> {
     scanner::list_devices(&app).await
+}
+
+// ---- eBay ----------------------------------------------------------------------------------------
+
+/// Stores the Cert ID (client secret) of the user's eBay keyset; empty clears it.
+#[tauri::command]
+pub fn set_ebay_cert(state: S, cert_id: String) -> Result<SettingsView> {
+    state.settings.set_secret(Secret::EbayCert, &cert_id)?;
+    Ok(state.settings.view())
+}
+
+/// Signs the seller in on eBay's consent page (in a window of its own) and keeps the login.
+#[tauri::command]
+pub async fn ebay_connect(app: AppHandle, state: S<'_>) -> Result<SettingsView> {
+    let cfg = state.settings.get().ebay;
+    if let Some(missing) = ebay::keyset_missing(&cfg, &state.settings) {
+        return Err(Error::msg(missing));
+    }
+    let nonce = uuid::Uuid::new_v4().simple().to_string();
+    let url = ebay::authorize_url(&cfg, &nonce)?;
+    let code = ebay::consent_in_window(&app, url, nonce).await?;
+    finish_connect(&state, &code).await
+}
+
+/// Connects with what the user pasted from eBay's "authorization successful" page (the address or the code),
+/// when the consent window can't finish on its own.
+#[tauri::command]
+pub async fn ebay_connect_with(state: S<'_>, text: String) -> Result<SettingsView> {
+    let cfg = state.settings.get().ebay;
+    if let Some(missing) = ebay::keyset_missing(&cfg, &state.settings) {
+        return Err(Error::msg(missing));
+    }
+    let code = ebay::code_from_text(&text)
+        .ok_or_else(|| Error::msg("paste the address eBay showed after you agreed"))?;
+    finish_connect(&state, &code).await
+}
+
+async fn finish_connect(state: &S<'_>, code: &str) -> Result<SettingsView> {
+    let cfg = state.settings.get().ebay;
+    let cert = state
+        .settings
+        .secret(Secret::EbayCert)
+        .ok_or_else(|| Error::msg("enter the Cert ID first"))?;
+    let tokens = ebay::exchange_code(&cfg, &cert, code)
+        .await
+        .map_err(|e| Error::msg(format!("eBay didn't accept the sign-in: {e}")))?;
+    let refresh = tokens
+        .refresh
+        .clone()
+        .ok_or_else(|| Error::msg("eBay sent no refresh token"))?;
+    state.settings.set_secret(Secret::EbayRefresh, &refresh)?;
+    state.runner.ebay.remember(&refresh, &tokens).await;
+    let client = state.runner.ebay.client(&state.settings).await?;
+    let username = ebay::username(&client).await;
+    state.settings.update_ebay(|e| e.username = username)?;
+    Ok(state.settings.view())
+}
+
+#[tauri::command]
+pub async fn ebay_disconnect(state: S<'_>) -> Result<SettingsView> {
+    state.settings.set_secret(Secret::EbayRefresh, "")?;
+    state.runner.ebay.forget().await;
+    state.settings.update_ebay(|e| e.username = None)?;
+    Ok(state.settings.view())
+}
+
+/// The connected seller's business policies and locations, to choose from.
+#[tauri::command]
+pub async fn ebay_setup(state: S<'_>) -> Result<EbaySetup> {
+    let client = state.runner.ebay.client(&state.settings).await?;
+    let username = state.settings.get().ebay.username;
+    Ok(ebay::setup(&client, username).await?)
+}
+
+/// Turns on business policies for the seller (listings need them).
+#[tauri::command]
+pub async fn ebay_opt_in(state: S<'_>) -> Result<EbaySetup> {
+    let client = state.runner.ebay.client(&state.settings).await?;
+    ebay::opt_in(&client).await?;
+    let username = state.settings.get().ebay.username;
+    Ok(ebay::setup(&client, username).await?)
+}
+
+/// Adds the place cards ship from and uses it for listings.
+#[tauri::command]
+pub async fn ebay_create_location(
+    state: S<'_>,
+    postal_code: String,
+    country: String,
+) -> Result<EbaySetup> {
+    let postal_code = postal_code.trim();
+    let country = country.trim().to_ascii_uppercase();
+    if postal_code.is_empty()
+        || country.len() != 2
+        || !country.chars().all(|c| c.is_ascii_alphabetic())
+    {
+        return Err(Error::msg(
+            "enter a postal code and a two-letter country code such as US",
+        ));
+    }
+    let client = state.runner.ebay.client(&state.settings).await?;
+    let key = ebay::create_location(&client, postal_code, &country).await?;
+    state.settings.update_ebay(|e| e.location_key = key)?;
+    let username = state.settings.get().ebay.username;
+    Ok(ebay::setup(&client, username).await?)
+}
+
+/// How each identified card of a session would be listed.
+#[tauri::command]
+pub fn ebay_preview(state: S, session_id: String) -> Result<Vec<ebay_listing::Preview>> {
+    Ok(state
+        .db
+        .items(&session_id)?
+        .iter()
+        .filter(|i| i.status == ItemStatus::Done)
+        .map(ebay_listing::preview)
+        .collect())
+}
+
+fn ebay_ready(state: &S) -> Result<()> {
+    let view = state.settings.view();
+    if !view.ebay_connected {
+        return Err(Error::msg("connect your eBay account in Settings first"));
+    }
+    match ebay_listing::setup_missing(&view.settings.ebay) {
+        Some(missing) => Err(Error::msg(missing)),
+        None => Ok(()),
+    }
+}
+
+/// Creates (or updates) unpublished offers for the cards at the given prices.
+#[tauri::command]
+pub fn ebay_create_drafts(
+    state: S,
+    session_id: String,
+    items: Vec<DraftItem>,
+    condition: CardCondition,
+) -> Result<()> {
+    ebay_ready(&state)?;
+    if items.is_empty() {
+        return Err(Error::msg("choose the cards to list"));
+    }
+    if let Some(bad) = items
+        .iter()
+        .find(|i| !(i.price.is_finite() && i.price > 0.0))
+    {
+        let seq = state
+            .db
+            .item_summary(bad.item_id)
+            .map(|i| i.seq)
+            .unwrap_or(0);
+        return Err(Error::msg(format!("card #{seq} needs a price")));
+    }
+    state
+        .runner
+        .ebay_start(&session_id, Job::Drafts { items, condition })?;
+    Ok(())
+}
+
+/// Publishes the session's drafts (or the given cards'): they go live on eBay.
+#[tauri::command]
+pub fn ebay_publish(state: S, session_id: String, item_ids: Option<Vec<i64>>) -> Result<()> {
+    ebay_ready(&state)?;
+    state
+        .runner
+        .ebay_start(&session_id, Job::Publish(item_ids))?;
+    Ok(())
+}
+
+/// Reads the session's listings back from eBay (at most every few minutes unless `force`).
+#[tauri::command]
+pub fn ebay_refresh(state: S, session_id: String, force: bool) -> Result<()> {
+    if !state.settings.view().ebay_connected {
+        return Err(Error::msg("connect your eBay account in Settings first"));
+    }
+    state
+        .runner
+        .ebay_start(&session_id, Job::Refresh { force })?;
+    Ok(())
+}
+
+/// Takes the cards off eBay: drafts are deleted, live listings end.
+#[tauri::command]
+pub fn ebay_remove(state: S, session_id: String, item_ids: Vec<i64>) -> Result<()> {
+    state
+        .runner
+        .ebay_start(&session_id, Job::Remove(item_ids))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn ebay_cancel(state: S, session_id: String) {
+    state.runner.ebay_cancel(&session_id);
+}
+
+/// The session's running eBay job, if any.
+#[tauri::command]
+pub fn ebay_job(state: S, session_id: String) -> Option<EbayProgress> {
+    state.runner.ebay_job(&session_id)
+}
+
+#[tauri::command]
+pub fn ebay_listing_url(state: S, listing_id: String) -> String {
+    ebay::listing_url(&state.settings.get().ebay, &listing_id)
+}
+
+// ---- other marketplaces (files) -----------------------------------------------------------------
+
+/// Stores the ImgBB API key that uploads pictures for the Whatnot export; empty clears it.
+#[tauri::command]
+pub fn set_imgbb_key(state: S, key: String) -> Result<SettingsView> {
+    state.settings.set_secret(Secret::ImgbbKey, &key)?;
+    Ok(state.settings.view())
+}
+
+/// How each identified card of a session would be exported for a marketplace.
+#[tauri::command]
+pub fn export_preview(
+    state: S,
+    session_id: String,
+    format: Format,
+) -> Result<Vec<ebay_listing::Preview>> {
+    Ok(state
+        .db
+        .items(&session_id)?
+        .iter()
+        .filter(|i| i.status == ItemStatus::Done)
+        .map(|i| match format {
+            Format::Tcgplayer => tcgplayer::preview(i),
+            Format::Whatnot => whatnot::preview(i),
+            Format::Shopify => shopify::preview(i),
+        })
+        .collect())
+}
+
+/// The session's cards among `items`, in session order.
+fn session_cards(state: &S, session_id: &str, items: &[PricedItem]) -> Result<Vec<PricedItem>> {
+    if items.is_empty() {
+        return Err(Error::msg("choose the cards to export"));
+    }
+    Ok(state
+        .db
+        .items(session_id)?
+        .iter()
+        .filter_map(|i| items.iter().find(|p| p.item_id == i.id).copied())
+        .collect())
+}
+
+/// Writes the TCGplayer list of the chosen ungraded cards.
+#[tauri::command]
+pub fn export_tcgplayer(
+    state: S,
+    session_id: String,
+    items: Vec<PricedItem>,
+    condition: CardCondition,
+    path: String,
+) -> Result<tcgplayer::Export> {
+    let cards = session_cards(&state, &session_id, &items)?
+        .into_iter()
+        .map(|p| Ok((state.db.item(p.item_id)?, p)))
+        .collect::<Result<Vec<_>>>()?;
+    let (text, export) = tcgplayer::csv(&cards, condition);
+    market::write(std::path::Path::new(&path), &text, true)?;
+    Ok(export)
+}
+
+/// Writes Whatnot's bulk listing CSV, uploading the pictures first; `export-progress` events tell how far.
+#[tauri::command]
+pub async fn export_whatnot(
+    app: AppHandle,
+    state: S<'_>,
+    session_id: String,
+    items: Vec<PricedItem>,
+    options: whatnot::Options,
+    path: String,
+) -> Result<whatnot::Export> {
+    use tauri::Emitter;
+    let cards = session_cards(&state, &session_id, &items)?;
+    let cancel = CancellationToken::new();
+    state
+        .runner
+        .exports
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), cancel.clone());
+    let result = whatnot::export(&state.runner, &cards, &options, &cancel, |done, total| {
+        let _ = app.emit(
+            "export-progress",
+            serde_json::json!({"sessionId": session_id, "done": done, "total": total}),
+        );
+    })
+    .await;
+    state.runner.exports.lock().unwrap().remove(&session_id);
+    let (text, export) = result?;
+    // No byte-order mark: Whatnot would read it as part of the first header.
+    market::write(std::path::Path::new(&path), &text, false)?;
+    Ok(export)
+}
+
+/// Writes Shopify's product CSV (uploading the pictures first) or its inventory CSV; `export-progress` events tell
+/// how far.
+#[tauri::command]
+pub async fn export_shopify(
+    app: AppHandle,
+    state: S<'_>,
+    session_id: String,
+    items: Vec<PricedItem>,
+    options: shopify::Options,
+    path: String,
+) -> Result<shopify::Export> {
+    use tauri::Emitter;
+    let cards = session_cards(&state, &session_id, &items)?;
+    let cancel = CancellationToken::new();
+    state
+        .runner
+        .exports
+        .lock()
+        .unwrap()
+        .insert(session_id.clone(), cancel.clone());
+    let result = shopify::export(&state.runner, &cards, &options, &cancel, |done, total| {
+        let _ = app.emit(
+            "export-progress",
+            serde_json::json!({"sessionId": session_id, "done": done, "total": total}),
+        );
+    })
+    .await;
+    state.runner.exports.lock().unwrap().remove(&session_id);
+    let (text, export) = result?;
+    // UTF-8 without a byte-order mark, as Shopify's importer expects.
+    market::write(std::path::Path::new(&path), &text, false)?;
+    Ok(export)
+}
+
+#[tauri::command]
+pub fn cancel_export(state: S, session_id: String) {
+    if let Some(cancel) = state.runner.exports.lock().unwrap().get(&session_id) {
+        cancel.cancel();
+    }
 }
 
 // ---- remote (Cards Cloud) ----------------------------------------------------------------------

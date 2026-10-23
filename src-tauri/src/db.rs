@@ -15,6 +15,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_init.sql"),
     include_str!("../migrations/002_picks.sql"),
     include_str!("../migrations/003_slab.sql"),
+    include_str!("../migrations/004_ebay.sql"),
+    include_str!("../migrations/005_hosted_images.sql"),
 ];
 
 #[derive(Clone)]
@@ -24,7 +26,8 @@ const ITEM_SUMMARY_COLUMNS: &str =
     "id, session_id, seq, status, front_path, back_path, thumb_path, id_type, \
      name, full_name, set_name, set_code, card_number, series, year, subcategory, \
      confidence, distance, price, grade, condition, error, synced_rev, rev, updated_at, \
-     picks, picks_synced, slab_company, slab_grade, slab_certificate";
+     picks, picks_synced, slab_company, slab_grade, slab_certificate, \
+     ebay_status, ebay_price, ebay_listing_id, ebay_error";
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
@@ -95,6 +98,7 @@ impl Db {
         let sql = format!(
             "SELECT s.id, s.name, s.source_kind, s.source_ref, s.id_mode, s.options, s.status, s.error,
                     s.created_at, s.started_at, s.finished_at, s.remote_session_id, s.sync_error,
+                    s.ebay_error, s.ebay_checked_at,
                     COUNT(i.id),
                     COALESCE(SUM(i.status = 'done'), 0),
                     COALESCE(SUM(i.status = 'error'), 0),
@@ -102,7 +106,10 @@ impl Db {
                     COALESCE(SUM(i.status = 'recognizing'), 0),
                     COALESCE(SUM(i.status = 'grading'), 0),
                     COALESCE(SUM(i.synced_rev > 0 AND i.synced_rev = i.rev), 0),
-                    COALESCE(SUM(i.price), 0)
+                    COALESCE(SUM(i.price), 0),
+                    COALESCE(SUM(i.ebay_status = 'draft'), 0),
+                    COALESCE(SUM(i.ebay_status = 'listed'), 0),
+                    COALESCE(SUM(i.ebay_status = 'sold'), 0)
              FROM sessions s LEFT JOIN items i ON i.session_id = s.id
              {filter} GROUP BY s.id {order}"
         );
@@ -123,15 +130,20 @@ impl Db {
                     finished_at: r.get(10)?,
                     remote_session_id: r.get(11)?,
                     sync_error: r.get(12)?,
+                    ebay_error: r.get(13)?,
+                    ebay_checked_at: r.get(14)?,
                     counts: SessionCounts {
-                        total: r.get(13)?,
-                        done: r.get(14)?,
-                        errors: r.get(15)?,
-                        queued: r.get(16)?,
-                        in_progress: r.get(17)?,
-                        grading: r.get(18)?,
-                        synced: r.get(19)?,
-                        total_price: r.get(20)?,
+                        total: r.get(15)?,
+                        done: r.get(16)?,
+                        errors: r.get(17)?,
+                        queued: r.get(18)?,
+                        in_progress: r.get(19)?,
+                        grading: r.get(20)?,
+                        synced: r.get(21)?,
+                        total_price: r.get(22)?,
+                        ebay_drafts: r.get(23)?,
+                        ebay_listed: r.get(24)?,
+                        ebay_sold: r.get(25)?,
                     },
                 })
             })?;
@@ -595,7 +607,7 @@ impl Db {
         self.with(|c| {
             c.query_row(
                 "SELECT event_id, preview_path, back_preview_path, recognition, grading, grading_images, calls, analyzed_at,
-                    remote_id
+                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images
                  FROM items WHERE id = ?1",
                 params![id],
                 |r| {
@@ -612,6 +624,14 @@ impl Db {
                         calls: r.get(6)?,
                         analyzed_at: r.get(7)?,
                         remote_id: r.get(8)?,
+                        ebay_sku: r.get(9)?,
+                        ebay_offer_id: r.get(10)?,
+                        ebay_images: json_col(r.get(11)?)
+                            .and_then(|v| serde_json::from_value(v).ok())
+                            .unwrap_or_default(),
+                        hosted_images: json_col(r.get(12)?)
+                            .and_then(|v| serde_json::from_value(v).ok())
+                            .unwrap_or_default(),
                     })
                 },
             )
@@ -659,6 +679,111 @@ impl Db {
         self.with(|c| {
             c.execute(
                 "UPDATE items SET image_synced = 1 WHERE id = ?1",
+                params![id],
+            )
+        })?;
+        Ok(())
+    }
+
+    // ---- eBay --------------------------------------------------------------------------------
+
+    pub fn set_ebay_error(&self, session_id: &str, error: Option<&str>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE sessions SET ebay_error = ?2 WHERE id = ?1",
+                params![session_id, error],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_ebay_checked(&self, session_id: &str) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE sessions SET ebay_checked_at = ?2 WHERE id = ?1",
+                params![session_id, now()],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_ebay_sku(&self, id: i64, sku: &str) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET ebay_sku = ?2 WHERE id = ?1",
+                params![id, sku],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_ebay_images(&self, id: i64, urls: &[String]) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET ebay_images = ?2 WHERE id = ?1",
+                params![id, serde_json::to_string(urls).unwrap_or_default()],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_hosted_images(&self, id: i64, urls: &[String]) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET hosted_images = ?2 WHERE id = ?1",
+                params![id, serde_json::to_string(urls).unwrap_or_default()],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// The card's offer exists at `price`: a draft, unless it is already live.
+    pub fn set_ebay_offer(&self, id: i64, offer_id: &str, price: f64) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET ebay_offer_id = ?2, ebay_price = ?3, ebay_error = NULL,
+                    ebay_status = CASE WHEN ebay_status = 'listed' THEN 'listed' ELSE 'draft' END
+                 WHERE id = ?1",
+                params![id, offer_id, price],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_ebay_status(
+        &self,
+        id: i64,
+        status: EbayStatus,
+        listing_id: Option<&str>,
+    ) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET ebay_status = ?2, ebay_listing_id = COALESCE(?3, ebay_listing_id),
+                    ebay_error = NULL
+                 WHERE id = ?1",
+                params![id, status.as_str(), listing_id],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_ebay_item_error(&self, id: i64, error: Option<&str>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET ebay_error = ?2 WHERE id = ?1",
+                params![id, error],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// The card is no longer on eBay (its pictures there expire with it; the SKU stays the card's).
+    pub fn clear_ebay(&self, id: i64) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET ebay_offer_id = NULL, ebay_listing_id = NULL, ebay_status = NULL,
+                    ebay_price = NULL, ebay_images = NULL, ebay_error = NULL
+                 WHERE id = ?1",
                 params![id],
             )
         })?;
@@ -734,7 +859,20 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         synced: synced_rev > 0 && synced_rev == rev && picks == picks_synced,
         updated_at: r.get(24)?,
         picked: picks > 0,
+        ebay: ebay_listing(r)?,
     })
+}
+
+/// The eBay columns (30–33): a listing when any of them is set.
+fn ebay_listing(r: &Row) -> rusqlite::Result<Option<EbayListing>> {
+    let status: Option<String> = r.get(30)?;
+    let listing = EbayListing {
+        status: status.as_deref().map(EbayStatus::parse),
+        price: r.get(31)?,
+        listing_id: r.get(32)?,
+        error: r.get(33)?,
+    };
+    Ok((listing != EbayListing::default()).then_some(listing))
 }
 
 /// The slab columns (27–29): a label when any of them is set.
@@ -902,6 +1040,53 @@ mod tests {
         assert!(item.summary.synced);
         assert_eq!(item.summary.card.name, "Charizard");
         assert_eq!(db.session(&s.id).unwrap().counts.total_price, 12.5);
+    }
+
+    #[test]
+    fn ebay_listing_is_tracked() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let id = db
+            .insert_item(&s.id, "/a.jpg", None, &ItemImages::default(), None)
+            .unwrap();
+        assert_eq!(db.item_summary(id).unwrap().ebay, None);
+        db.set_ebay_item_error(id, Some("no price")).unwrap();
+        assert_eq!(db.item_summary(id).unwrap().ebay.unwrap().status, None);
+
+        db.set_ebay_sku(id, "cl-1").unwrap();
+        db.set_ebay_images(id, &["https://i.example.com/1.jpg".into()])
+            .unwrap();
+        db.set_ebay_offer(id, "offer-1", 9.5).unwrap();
+        let item = db.item(id).unwrap();
+        assert_eq!(
+            item.summary.ebay,
+            Some(EbayListing {
+                status: Some(EbayStatus::Draft),
+                price: Some(9.5),
+                listing_id: None,
+                error: None,
+            })
+        );
+        assert_eq!(item.ebay_images.len(), 1);
+        assert_eq!(db.session(&s.id).unwrap().counts.ebay_drafts, 1);
+
+        db.set_ebay_status(id, EbayStatus::Listed, Some("1100"))
+            .unwrap();
+        db.set_ebay_offer(id, "offer-1", 11.0).unwrap();
+        let listing = db.item_summary(id).unwrap().ebay.unwrap();
+        assert_eq!(
+            listing.status,
+            Some(EbayStatus::Listed),
+            "a new price keeps it live"
+        );
+        assert_eq!(listing.listing_id.as_deref(), Some("1100"));
+        assert_eq!(db.session(&s.id).unwrap().counts.ebay_listed, 1);
+
+        db.clear_ebay(id).unwrap();
+        let item = db.item(id).unwrap();
+        assert_eq!(item.summary.ebay, None);
+        assert_eq!(item.ebay_sku.as_deref(), Some("cl-1"), "the SKU stays");
+        assert!(item.ebay_images.is_empty());
     }
 
     #[test]

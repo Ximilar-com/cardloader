@@ -1,5 +1,7 @@
 //! The one HTTP client every Ximilar call goes through: auth, user agent, error classification, retries.
+//! The error classes and retries also serve the eBay client (`crate::ebay::client`).
 
+use std::future::Future;
 use std::time::Duration;
 
 use reqwest::{Method, StatusCode};
@@ -21,6 +23,8 @@ pub enum ApiError {
     Cancelled,
     #[error("no Ximilar API token — set it in Settings")]
     NoToken,
+    #[error("eBay is not connected — connect it in Settings")]
+    NotConnected,
 }
 
 /// What a failure means for the caller.
@@ -43,7 +47,7 @@ impl ApiError {
                 401..=403 => Failure::Auth,
                 _ => Failure::Reject,
             },
-            ApiError::NoToken => Failure::Auth,
+            ApiError::NoToken | ApiError::NotConnected => Failure::Auth,
             ApiError::Decode(_) | ApiError::Cancelled => Failure::Reject,
         }
     }
@@ -143,26 +147,10 @@ impl XimilarClient {
         body: Option<&Value>,
         cancel: &CancellationToken,
     ) -> Result<Value, ApiError> {
-        let mut delay = Duration::from_secs(1);
-        let mut attempt = 1;
-        loop {
-            let result = tokio::select! {
-                r = self.request(method.clone(), path, query, body) => r,
-                _ = cancel.cancelled() => return Err(ApiError::Cancelled),
-            };
-            match result {
-                Err(e) if e.failure() == Failure::Retry && attempt < MAX_ATTEMPTS => {
-                    tracing::warn!("{path}: {e} — retry {attempt}/{MAX_ATTEMPTS} in {delay:?}");
-                    tokio::select! {
-                        _ = tokio::time::sleep(delay) => {},
-                        _ = cancel.cancelled() => return Err(ApiError::Cancelled),
-                    }
-                    delay = (delay * 2).min(Duration::from_secs(30));
-                    attempt += 1;
-                }
-                other => return other,
-            }
-        }
+        retry(path, cancel, || {
+            self.request(method.clone(), path, query, body)
+        })
+        .await
     }
 
     /// Downloads a (public, temporary) result file, e.g. a grading overlay.
@@ -188,10 +176,65 @@ impl XimilarClient {
     }
 }
 
+/// `call`, retried with exponential backoff while the failure is transient. Stops early on cancel.
+pub async fn retry<T, F, Fut>(
+    label: &str,
+    cancel: &CancellationToken,
+    mut call: F,
+) -> Result<T, ApiError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, ApiError>>,
+{
+    let mut delay = Duration::from_secs(1);
+    let mut attempt = 1;
+    loop {
+        let result = tokio::select! {
+            r = call() => r,
+            _ = cancel.cancelled() => return Err(ApiError::Cancelled),
+        };
+        match result {
+            Err(e) if e.failure() == Failure::Retry && attempt < MAX_ATTEMPTS => {
+                tracing::warn!("{label}: {e} — retry {attempt}/{MAX_ATTEMPTS} in {delay:?}");
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {},
+                    _ = cancel.cancelled() => return Err(ApiError::Cancelled),
+                }
+                delay = (delay * 2).min(Duration::from_secs(30));
+                attempt += 1;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// The messages of an `errors` list as eBay sends it (`[{errorId, message, longMessage}]`), if any.
+pub fn errors_text(errors: &Value) -> Option<String> {
+    let messages: Vec<String> = errors
+        .as_array()?
+        .iter()
+        .filter_map(|e| {
+            let text = e["longMessage"].as_str().or(e["message"].as_str())?;
+            Some(match e["errorId"].as_i64() {
+                Some(id) => format!("{text} ({id})"),
+                None => text.to_string(),
+            })
+        })
+        .collect();
+    (!messages.is_empty()).then(|| messages.join("; "))
+}
+
 /// The API's own explanation when it gave one, else the start of the body.
-fn detail(status: StatusCode, text: &str) -> String {
+pub(crate) fn detail(status: StatusCode, text: &str) -> String {
     if let Ok(Value::Object(body)) = serde_json::from_str::<Value>(text) {
         if let Some(Value::String(d)) = body.get("detail") {
+            return d.clone();
+        }
+        if let Some(errors) = body.get("errors").and_then(errors_text) {
+            return errors;
+        }
+        // OAuth errors (eBay's token endpoint).
+        if let Some(Value::String(d)) = body.get("error_description") {
             return d.clone();
         }
         if let Some(Value::Object(s)) = body.get("status") {
@@ -208,7 +251,7 @@ fn detail(status: StatusCode, text: &str) -> String {
     }
 }
 
-fn truncate(text: &str, n: usize) -> String {
+pub(crate) fn truncate(text: &str, n: usize) -> String {
     text.chars().take(n).collect()
 }
 
@@ -256,6 +299,21 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.to_string(), "HTTP 400: bad records");
+    }
+
+    #[test]
+    fn ebay_and_oauth_errors_are_explained() {
+        let ebay = r#"{"errors": [{"errorId": 25002, "message": "A user error", "longMessage": "Offer entity already exists."},
+            {"message": "Second"}]}"#;
+        assert_eq!(
+            detail(StatusCode::BAD_REQUEST, ebay),
+            "Offer entity already exists. (25002); Second"
+        );
+        let oauth = r#"{"error": "invalid_grant", "error_description": "the provided authorization grant is invalid"}"#;
+        assert_eq!(
+            detail(StatusCode::BAD_REQUEST, oauth),
+            "the provided authorization grant is invalid"
+        );
     }
 
     #[tokio::test]

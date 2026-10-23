@@ -76,6 +76,45 @@ str_enum!(
 );
 
 str_enum!(
+    /// Where a card's eBay listing is: an unpublished offer, live, sold, or ended without a sale.
+    EbayStatus { Draft = "draft", Listed = "listed", Sold = "sold", Ended = "ended" } default Draft
+);
+
+str_enum!(
+    /// An ungraded card's condition, on the four-step scale eBay uses for trading and sports cards (each
+    /// marketplace names the steps its own way).
+    CardCondition {
+        NearMint = "near_mint",
+        Excellent = "excellent",
+        VeryGood = "very_good",
+        Poor = "poor",
+    } default NearMint
+);
+
+impl CardCondition {
+    /// A condition as graders and marketplaces write it ("Near Mint", "Lightly Played", "LP", …), if known.
+    pub fn read(text: &str) -> Option<CardCondition> {
+        let t = text.trim().to_ascii_lowercase();
+        let t = t
+            .trim_start_matches("raw - ")
+            .trim_end_matches(" or better");
+        Some(match t {
+            "gem mint" | "mint" | "near mint" | "nm" | "nm-mt" | "near mint-mint" => {
+                CardCondition::NearMint
+            }
+            "excellent" | "ex" | "lightly played" | "light played" | "lp" => {
+                CardCondition::Excellent
+            }
+            "very good" | "vg" | "good" | "moderately played" | "mp" => CardCondition::VeryGood,
+            "poor" | "fair" | "heavily played" | "hp" | "damaged" | "dmg" | "played" => {
+                CardCondition::Poor
+            }
+            _ => return None,
+        })
+    }
+}
+
+str_enum!(
     ColorMode { Color = "color", Gray = "gray", Bw = "bw" } default Color
 );
 
@@ -182,6 +221,9 @@ pub struct SessionCounts {
     pub grading: i64,
     pub synced: i64,
     pub total_price: f64,
+    pub ebay_drafts: i64,
+    pub ebay_listed: i64,
+    pub ebay_sold: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,6 +242,8 @@ pub struct Session {
     pub finished_at: Option<String>,
     pub remote_session_id: Option<String>,
     pub sync_error: Option<String>,
+    pub ebay_error: Option<String>,
+    pub ebay_checked_at: Option<String>,
     pub counts: SessionCounts,
 }
 
@@ -261,6 +305,18 @@ pub struct ItemSummary {
     pub updated_at: String,
     /// The user picked the match from the candidates.
     pub picked: bool,
+    /// The card's eBay listing, once one was attempted.
+    pub ebay: Option<EbayListing>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EbayListing {
+    /// None: nothing is on eBay yet (the first attempt failed).
+    pub status: Option<EbayStatus>,
+    pub price: Option<f64>,
+    pub listing_id: Option<String>,
+    pub error: Option<String>,
 }
 
 /// Everything the detail panel shows about one item.
@@ -279,6 +335,12 @@ pub struct ItemDetail {
     pub analyzed_at: Option<String>,
     /// The row's id in Cards Cloud, once known.
     pub remote_id: Option<String>,
+    pub ebay_sku: Option<String>,
+    pub ebay_offer_id: Option<String>,
+    /// The card's pictures uploaded to eBay.
+    pub ebay_images: Vec<String>,
+    /// The card's pictures on the public image host (Whatnot export).
+    pub hosted_images: Vec<String>,
 }
 
 pub fn now() -> String {

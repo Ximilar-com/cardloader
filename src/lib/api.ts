@@ -75,6 +75,9 @@ export interface SessionCounts {
   grading: number;
   synced: number;
   totalPrice: number;
+  ebayDrafts: number;
+  ebayListed: number;
+  ebaySold: number;
 }
 
 export interface Session {
@@ -91,6 +94,9 @@ export interface Session {
   finishedAt: string | null;
   remoteSessionId: string | null;
   syncError: string | null;
+  /** Why the session's last eBay job stopped. */
+  ebayError: string | null;
+  ebayCheckedAt: string | null;
   counts: SessionCounts;
 }
 
@@ -119,6 +125,17 @@ export interface SlabLabel {
   certificate: string;
 }
 
+/** Where a card's eBay listing is: an unpublished offer, live, sold, or ended without a sale. */
+export type EbayStatus = "draft" | "listed" | "sold" | "ended";
+
+export interface EbayListing {
+  /** null: nothing is on eBay yet (the first attempt failed, see `error`). */
+  status: EbayStatus | null;
+  price: number | null;
+  listingId: string | null;
+  error: string | null;
+}
+
 export interface ItemSummary extends CardFields {
   id: number;
   sessionId: string;
@@ -140,6 +157,8 @@ export interface ItemSummary extends CardFields {
   /** The user picked the match from the candidates. */
   picked: boolean;
   updatedAt: string;
+  /** The card's eBay listing, once one was attempted. */
+  ebay: EbayListing | null;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -155,6 +174,10 @@ export interface ItemDetail extends ItemSummary {
   calls: number;
   analyzedAt: string | null;
   remoteId: string | null;
+  ebaySku: string | null;
+  ebayOfferId: string | null;
+  /** The card's pictures uploaded to eBay. */
+  ebayImages: string[];
 }
 
 export interface Settings {
@@ -171,6 +194,123 @@ export interface Settings {
   syncByDefault: boolean;
   engine: Engine;
   localModel: string;
+  ebay: EbaySettings;
+}
+
+/** The user's eBay developer keyset (the Cert ID is kept apart, like the API token) and what listings use. */
+export interface EbaySettings {
+  sandbox: boolean;
+  appId: string;
+  ruName: string;
+  apiBase?: string;
+  marketplace: string;
+  fulfillmentPolicyId: string;
+  paymentPolicyId: string;
+  returnPolicyId: string;
+  locationKey: string;
+  /** The connected seller; set when connecting. */
+  username: string | null;
+}
+
+export interface Named {
+  id: string;
+  name: string;
+}
+
+/** What the connected eBay account offers for listings. */
+export interface EbaySetup {
+  username: string | null;
+  /** Business policies are turned on; listings need them. */
+  optedIn: boolean;
+  fulfillmentPolicies: Named[];
+  paymentPolicies: Named[];
+  returnPolicies: Named[];
+  locations: Named[];
+}
+
+/** One card in the "List on eBay" dialog. */
+export interface EbayPreview {
+  itemId: number;
+  seq: number;
+  thumbPath: string | null;
+  title: string;
+  category: string | null;
+  condition: string | null;
+  /** The price it is offered at, else Ximilar's price. */
+  price: number | null;
+  ebay: EbayListing | null;
+  /** Why it can't be listed. */
+  problem: string | null;
+}
+
+/** The condition of ungraded cards. */
+export type CardCondition = "near_mint" | "excellent" | "very_good" | "poor";
+
+export interface EbayProgress {
+  sessionId: string;
+  action: "drafts" | "publish" | "refresh" | "remove" | "";
+  done: number;
+  total: number;
+  running: boolean;
+}
+
+/** A marketplace file: TCGplayer's list of ungraded cards, or Whatnot's bulk listing CSV. */
+export type ExportFormat = "tcgplayer" | "whatnot" | "shopify";
+
+/** A card left out of an export, and why. */
+export interface Skipped {
+  seq: number;
+  reason: string;
+}
+
+export interface TcgplayerExport {
+  rows: number;
+  skipped: Skipped[];
+}
+
+export interface WhatnotOptions {
+  /** Auction: the price is the starting bid. */
+  listingType: "auction" | "buy_it_now";
+  shippingProfile: string;
+  offerable: boolean;
+  /** For ungraded cards whose condition wasn't graded. */
+  condition: CardCondition;
+  uploadImages: boolean;
+}
+
+export interface WhatnotExport {
+  rows: number;
+  skipped: Skipped[];
+  withoutImages: number;
+  /** Why pictures stopped being uploaded. */
+  imageError: string | null;
+}
+
+export interface ShopifyOptions {
+  /** Products: new products with variants; inventory: stock of products imported before. */
+  file: "products" | "inventory";
+  /** by_card: one product per card, its conditions as variants; per_card: one product per scanned card. */
+  grouping: "by_card" | "per_card";
+  condition: CardCondition;
+  /** Active (published) products instead of drafts. */
+  active: boolean;
+  uploadImages: boolean;
+  /** The store location for the inventory file, exactly as Shopify names it. */
+  location: string;
+}
+
+export interface ShopifyExport {
+  products: number;
+  variants: number;
+  skipped: Skipped[];
+  withoutImages: number;
+  imageError: string | null;
+}
+
+export interface ExportProgress {
+  sessionId: string;
+  done: number;
+  total: number;
 }
 
 /** An on-device model as the Settings page shows it. */
@@ -223,6 +363,10 @@ export interface SettingsView extends Settings {
   tokenSet: boolean;
   /** "dev": a development build on macOS, which keeps the token in the settings file. */
   tokenStorage: "keychain" | "file" | "dev" | null;
+  ebayCertSet: boolean;
+  ebayConnected: boolean;
+  /** The ImgBB key that hosts pictures for the Whatnot export. */
+  imgbbKeySet: boolean;
 }
 
 export interface ConnectionCheck {
@@ -349,6 +493,55 @@ export const api = {
   getRemoteSession: (id: string) => invoke<{ session: RemoteSession; summary: Json }>("get_remote_session", { id }),
   listRemoteItems: (sessionId: string, page: number) =>
     invoke<Page<RemoteItem>>("list_remote_items", { sessionId, page }),
+
+  setEbayCert: (certId: string) => invoke<SettingsView>("set_ebay_cert", { certId }),
+  /** Opens eBay's consent page in a window and keeps the login. */
+  ebayConnect: () => invoke<SettingsView>("ebay_connect"),
+  /** Connects with the address (or code) eBay showed after consent. */
+  ebayConnectWith: (text: string) => invoke<SettingsView>("ebay_connect_with", { text }),
+  ebayDisconnect: () => invoke<SettingsView>("ebay_disconnect"),
+  ebaySetup: () => invoke<EbaySetup>("ebay_setup"),
+  ebayOptIn: () => invoke<EbaySetup>("ebay_opt_in"),
+  ebayCreateLocation: (postalCode: string, country: string) =>
+    invoke<EbaySetup>("ebay_create_location", { postalCode, country }),
+  ebayPreview: (sessionId: string) => invoke<EbayPreview[]>("ebay_preview", { sessionId }),
+  /** Unpublished offers (drafts) at these prices; progress arrives through onEbayProgress. */
+  ebayCreateDrafts: (sessionId: string, items: { itemId: number; price: number }[], condition: CardCondition) =>
+    invoke<void>("ebay_create_drafts", { sessionId, items, condition }),
+  /** Publishes the session's drafts (or the given cards'). */
+  ebayPublish: (sessionId: string, itemIds?: number[]) => invoke<void>("ebay_publish", { sessionId, itemIds }),
+  ebayRefresh: (sessionId: string, force = false) => invoke<void>("ebay_refresh", { sessionId, force }),
+  /** Deletes drafts and ends live listings. */
+  ebayRemove: (sessionId: string, itemIds: number[]) => invoke<void>("ebay_remove", { sessionId, itemIds }),
+  ebayCancel: (sessionId: string) => invoke<void>("ebay_cancel", { sessionId }),
+  ebayJob: (sessionId: string) => invoke<EbayProgress | null>("ebay_job", { sessionId }),
+  ebayListingUrl: (listingId: string) => invoke<string>("ebay_listing_url", { listingId }),
+
+  setImgbbKey: (key: string) => invoke<SettingsView>("set_imgbb_key", { key }),
+  /** The session's identified cards as the marketplace would get them. */
+  exportPreview: (sessionId: string, format: ExportFormat) =>
+    invoke<EbayPreview[]>("export_preview", { sessionId, format }),
+  exportTcgplayer: (
+    sessionId: string,
+    items: { itemId: number; price: number }[],
+    condition: CardCondition,
+    path: string,
+  ) => invoke<TcgplayerExport>("export_tcgplayer", { sessionId, items, condition, path }),
+  /** Uploads the pictures (progress through onExportProgress), then writes the file. */
+  exportWhatnot: (
+    sessionId: string,
+    items: { itemId: number; price: number }[],
+    options: WhatnotOptions,
+    path: string,
+  ) => invoke<WhatnotExport>("export_whatnot", { sessionId, items, options, path }),
+  /** Product CSV (pictures uploaded first; progress through onExportProgress) or inventory CSV. */
+  exportShopify: (
+    sessionId: string,
+    items: { itemId: number; price: number }[],
+    options: ShopifyOptions,
+    path: string,
+  ) => invoke<ShopifyExport>("export_shopify", { sessionId, items, options, path }),
+  cancelExport: (sessionId: string) => invoke<void>("cancel_export", { sessionId }),
 };
 
 export function onSessionUpdated(cb: (s: Session) => void): Promise<UnlistenFn> {
@@ -368,6 +561,14 @@ export interface CompareProgress {
 
 export function onCompareProgress(cb: (p: CompareProgress) => void): Promise<UnlistenFn> {
   return listen<CompareProgress>("compare-progress", (e) => cb(e.payload));
+}
+
+export function onEbayProgress(cb: (p: EbayProgress) => void): Promise<UnlistenFn> {
+  return listen<EbayProgress>("ebay-progress", (e) => cb(e.payload));
+}
+
+export function onExportProgress(cb: (p: ExportProgress) => void): Promise<UnlistenFn> {
+  return listen<ExportProgress>("export-progress", (e) => cb(e.payload));
 }
 
 export function onItemUpdated(cb: (i: ItemSummary) => void): Promise<UnlistenFn> {

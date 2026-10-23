@@ -7,14 +7,20 @@ import {
   Cpu,
   FolderOpen,
   KeyRound,
+  LogIn,
+  LogOut,
+  MapPin,
+  Plus,
   RefreshCw,
   ScanLine,
   SlidersHorizontal,
+  Store,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
+import { ebayReady } from "../components/Ebay";
 import { ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
 import { Check, DPI_OPTIONS, MULTIFEED_OPTIONS, PAIRING_OPTIONS } from "../components/NewSessionDialog";
@@ -24,6 +30,8 @@ import {
   errorText,
   type ConnectionCheck,
   type DeviceInfo,
+  type EbaySettings,
+  type EbaySetup,
   type ScannerSupport,
   type Settings,
   type SettingsView,
@@ -65,6 +73,15 @@ export default function SettingsPage() {
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSaved(false);
     setDraft({ ...draft, [key]: value });
+  };
+  const setEbay = (patch: Partial<EbaySettings>) => {
+    setSaved(false);
+    setDraft((d) => d && { ...d, ebay: { ...d.ebay, ...patch } });
+  };
+  // The eBay connection changes on its own (not with Save): take the new state, keep the other edits.
+  const applyView = (v: SettingsView) => {
+    setView(v);
+    setDraft((d) => d && { ...d, ebay: { ...d.ebay, username: v.ebay.username } });
   };
   const setScan = <K extends keyof Settings["scan"]>(key: K, value: Settings["scan"][K]) =>
     set("scan", { ...draft.scan, [key]: value });
@@ -148,6 +165,9 @@ export default function SettingsPage() {
               <span className="flex-1">{label}</span>
               {key === "ximilar" && view.tokenSet && (
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="token saved" />
+              )}
+              {key === "ebay" && view.ebayConnected && ebayReady(view.ebay) && (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="eBay connected" />
               )}
             </button>
           ))}
@@ -361,6 +381,9 @@ export default function SettingsPage() {
                 </Section>
               </>
             )}
+            {tab === "ebay" && (
+              <EbayTab view={view} draft={draft} setEbay={setEbay} applyView={applyView} setError={setError} />
+            )}
             {tab === "scanner" && (
               <Section
                 title="Scanner"
@@ -448,19 +471,414 @@ export default function SettingsPage() {
   );
 }
 
-type Tab = "ximilar" | "models" | "sessions" | "scanner";
+type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner";
 
 const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "ximilar", label: "Ximilar API", icon: KeyRound },
   { key: "models", label: "Local models", icon: Cpu },
   { key: "sessions", label: "New sessions", icon: SlidersHorizontal },
+  { key: "ebay", label: "Selling", icon: Store },
   { key: "scanner", label: "Scanner", icon: ScanLine },
 ];
 
 function strip(s: Settings | SettingsView): Settings {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { tokenSet, tokenStorage, ...rest } = s as SettingsView;
+  const { tokenSet, tokenStorage, ebayCertSet, ebayConnected, imgbbKeySet, ...rest } = s as SettingsView;
   return rest;
+}
+
+function EbayTab({
+  view,
+  draft,
+  setEbay,
+  applyView,
+  setError,
+}: {
+  view: SettingsView;
+  draft: Settings;
+  setEbay: (patch: Partial<EbaySettings>) => void;
+  applyView: (v: SettingsView) => void;
+  setError: (e: string | null) => void;
+}) {
+  const [cert, setCert] = useState("");
+  const [imgbbKey, setImgbbKey] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  /** The pasted consent address; null while the paste field is hidden. */
+  const [pasted, setPasted] = useState<string | null>(null);
+  const [setup, setSetup] = useState<{ for: string; setup: EbaySetup | null; error: string | null } | null>(null);
+  const [reloads, setReloads] = useState(0);
+  const [place, setPlace] = useState<{ postalCode: string; country: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const saved = view.ebay;
+  const ebay = draft.ebay;
+  const keysChanged = ebay.appId !== saved.appId || ebay.ruName !== saved.ruName || ebay.sandbox !== saved.sandbox;
+  const keysReady = !!(saved.appId && saved.ruName && view.ebayCertSet) && !keysChanged;
+  // The setup belongs to one account (and reload): an older answer isn't shown.
+  const account = `${saved.username ?? ""}/${saved.sandbox}/${reloads}`;
+
+  useEffect(() => {
+    if (!view.ebayConnected) return;
+    let alive = true;
+    api
+      .ebaySetup()
+      .then((s) => alive && setSetup({ for: account, setup: s, error: null }))
+      .catch((e) => alive && setSetup({ for: account, setup: null, error: errorText(e) }));
+    return () => {
+      alive = false;
+    };
+  }, [view.ebayConnected, account]);
+
+  const current = view.ebayConnected && setup?.for === account ? setup : null;
+
+  const saveCert = async (value: string) => {
+    setError(null);
+    try {
+      applyView(await api.setEbayCert(value));
+      setCert("");
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const saveImgbbKey = async (value: string) => {
+    setError(null);
+    try {
+      applyView(await api.setImgbbKey(value));
+      setImgbbKey("");
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const connect = async (text?: string) => {
+    setError(null);
+    setConnecting(true);
+    try {
+      applyView(text === undefined ? await api.ebayConnect() : await api.ebayConnectWith(text));
+      setPasted(null);
+    } catch (e) {
+      setError(errorText(e));
+      setPasted((p) => p ?? "");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const act = async (run: () => Promise<EbaySetup>) => {
+    setError(null);
+    setBusy(true);
+    try {
+      setSetup({ for: account, setup: await run(), error: null });
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addLocation = (p: { postalCode: string; country: string }) =>
+    act(async () => {
+      const s = await api.ebayCreateLocation(p.postalCode, p.country);
+      const v = await api.getSettings();
+      applyView(v);
+      setEbay({ locationKey: v.ebay.locationKey });
+      setPlace(null);
+      return s;
+    });
+
+  const named = (list: { id: string; name: string }[] | undefined, value: string) => [
+    { value: "", label: "Choose…", disabled: true },
+    ...(list ?? []).map((p) => ({ value: p.id, label: p.name })),
+    ...(value && !list?.some((p) => p.id === value) ? [{ value, label: value }] : []),
+  ];
+
+  return (
+    <>
+      <Section
+        title="eBay developer keys"
+        done={keysReady}
+        text={
+          <>
+            Cardloader lists cards with your own keys from the{" "}
+            <button className="text-accent underline" onClick={() => openUrl("https://developer.ebay.com/my/keys")}>
+              eBay developer program
+            </button>
+            . Create a keyset, then under <b>User Tokens</b> add an eBay Redirect URL (RuName) and keep eBay’s own “auth
+            accepted” page. Production keys work once eBay activates them, which needs the Marketplace Account Deletion
+            exemption (or notifications).
+          </>
+        }
+      >
+        <div className="grid grid-cols-2 gap-4">
+          <Field
+            label="Environment"
+            value={ebay.sandbox ? "sandbox" : "production"}
+            options={[
+              { value: "production", label: "Production", hint: "real listings" },
+              { value: "sandbox", label: "Sandbox", hint: "test listings" },
+            ]}
+            onChange={(v) => setEbay({ sandbox: v === "sandbox" })}
+          />
+          <div>
+            <label className="label">App ID (Client ID)</label>
+            <input
+              className="input font-mono"
+              value={ebay.appId}
+              onChange={(e) => setEbay({ appId: e.target.value })}
+              spellCheck={false}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="label">RuName (eBay Redirect URL name)</label>
+            <input
+              className="input font-mono"
+              value={ebay.ruName}
+              onChange={(e) => setEbay({ ruName: e.target.value })}
+              spellCheck={false}
+            />
+          </div>
+          <div className="col-span-2">
+            <label className="label">Cert ID (Client Secret)</label>
+            <div className="flex gap-2">
+              <input
+                type="password"
+                className="input font-mono"
+                placeholder={view.ebayCertSet ? "•••••••••••••••• (saved)" : "Paste the Cert ID"}
+                value={cert}
+                onChange={(e) => setCert(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && cert && saveCert(cert)}
+              />
+              <button className="btn btn-primary" disabled={!cert} onClick={() => saveCert(cert)}>
+                <KeyRound className="h-4 w-4" /> Save
+              </button>
+              {view.ebayCertSet && (
+                <button className="btn" onClick={() => saveCert("")}>
+                  Remove
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Kept with the API token; changing the keys disconnects eBay.</p>
+          </div>
+        </div>
+      </Section>
+
+      <Section
+        title="eBay account"
+        done={view.ebayConnected}
+        text="Sign in to the eBay seller account the cards are listed on. eBay asks you to agree once; the login lasts about 18 months."
+      >
+        {view.ebayConnected ? (
+          <div className="flex items-center gap-3">
+            <Status ok text={`Connected${saved.username ? ` as ${saved.username}` : ""}`} />
+            <div className="flex-1" />
+            <button
+              className="btn"
+              onClick={async () => {
+                setError(null);
+                try {
+                  applyView(await api.ebayDisconnect());
+                } catch (e) {
+                  setError(errorText(e));
+                }
+              }}
+            >
+              <LogOut className="h-4 w-4" /> Disconnect
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <button className="btn btn-primary" disabled={!keysReady || connecting} onClick={() => connect()}>
+                <LogIn className="h-4 w-4" /> {connecting ? "Waiting for eBay…" : "Connect eBay account"}
+              </button>
+              <span className="text-xs text-slate-500">
+                {keysChanged
+                  ? "Save the keys first."
+                  : !keysReady
+                    ? "Enter the keys above first."
+                    : connecting
+                      ? "Finish signing in in the eBay window."
+                      : ""}
+              </span>
+              <div className="flex-1" />
+              {pasted === null && keysReady && (
+                <button className="text-xs text-accent hover:underline" onClick={() => setPasted("")}>
+                  Paste the address instead
+                </button>
+              )}
+            </div>
+            {pasted !== null && (
+              <div>
+                <label className="label">Address eBay showed after you agreed</label>
+                <div className="flex gap-2">
+                  <input
+                    className="input font-mono text-xs"
+                    value={pasted}
+                    onChange={(e) => setPasted(e.target.value)}
+                    placeholder="https://…&code=…"
+                    spellCheck={false}
+                  />
+                  <button
+                    className="btn"
+                    disabled={!pasted.trim() || connecting || !keysReady}
+                    onClick={() => connect(pasted)}
+                  >
+                    Connect
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  If the window can’t finish: open eBay’s sign-in in your browser, agree, and paste the address of the
+                  page it ends on.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </Section>
+
+      {view.ebayConnected && (
+        <Section
+          title="Listings"
+          done={ebayReady(saved)}
+          text="What new listings use. Cards are listed on eBay US (EBAY_US), priced in US dollars, one of each, at a fixed price until sold."
+        >
+          {!current ? (
+            <p className="text-sm text-slate-500">Loading your eBay account…</p>
+          ) : current.error ? (
+            <ErrorNote>{current.error}</ErrorNote>
+          ) : (
+            current.setup && (
+              <>
+                {!current.setup.optedIn && (
+                  <div className="flex items-center gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                    <span className="flex-1">
+                      Business policies are off for this account; listings need them. Turn them on, then create
+                      shipping, payment and return policies in Seller Hub.
+                    </span>
+                    <button className="btn shrink-0" disabled={busy} onClick={() => act(api.ebayOptIn)}>
+                      Turn on business policies
+                    </button>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-4">
+                  <Field
+                    label="Shipping policy"
+                    value={ebay.fulfillmentPolicyId}
+                    options={named(current.setup.fulfillmentPolicies, ebay.fulfillmentPolicyId)}
+                    onChange={(v) => setEbay({ fulfillmentPolicyId: v })}
+                  />
+                  <Field
+                    label="Payment policy"
+                    value={ebay.paymentPolicyId}
+                    options={named(current.setup.paymentPolicies, ebay.paymentPolicyId)}
+                    onChange={(v) => setEbay({ paymentPolicyId: v })}
+                  />
+                  <Field
+                    label="Return policy"
+                    value={ebay.returnPolicyId}
+                    options={named(current.setup.returnPolicies, ebay.returnPolicyId)}
+                    onChange={(v) => setEbay({ returnPolicyId: v })}
+                  />
+                  <div>
+                    <div className="label">Ships from</div>
+                    <div className="flex gap-2">
+                      <Select
+                        value={ebay.locationKey}
+                        options={named(current.setup.locations, ebay.locationKey).map((o) => ({
+                          ...o,
+                          icon: o.value ? MapPin : undefined,
+                        }))}
+                        onChange={(v) => setEbay({ locationKey: v })}
+                        aria-label="Ships from"
+                      />
+                      <button
+                        className="btn shrink-0 px-2"
+                        title="Add a location"
+                        onClick={() => setPlace(place ? null : { postalCode: "", country: "US" })}
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {place && (
+                  <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                      <label className="label">Postal code</label>
+                      <input
+                        className="input"
+                        value={place.postalCode}
+                        onChange={(e) => setPlace({ ...place, postalCode: e.target.value })}
+                      />
+                    </div>
+                    <div className="w-28">
+                      <label className="label">Country</label>
+                      <input
+                        className="input uppercase"
+                        maxLength={2}
+                        value={place.country}
+                        onChange={(e) => setPlace({ ...place, country: e.target.value })}
+                      />
+                    </div>
+                    <button
+                      className="btn btn-primary"
+                      disabled={busy || !place.postalCode.trim() || place.country.trim().length !== 2}
+                      onClick={() => addLocation(place)}
+                    >
+                      Add location
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <button className="btn" onClick={() => setReloads((n) => n + 1)}>
+                    <RefreshCw className="h-4 w-4" /> Reload policies
+                  </button>
+                  <span className="text-xs text-slate-500">Changed policies on eBay? Reload them here, then Save.</span>
+                </div>
+              </>
+            )
+          )}
+        </Section>
+      )}
+
+      <Section
+        title="Picture hosting"
+        done={view.imgbbKeySet}
+        text={
+          <>
+            Whatnot’s CSV import downloads each card’s pictures from a public link, so the Whatnot export uploads them
+            to{" "}
+            <button className="text-accent underline" onClick={() => openUrl("https://api.imgbb.com/")}>
+              ImgBB
+            </button>{" "}
+            first (free; get an API key there). Uploaded pictures are public to anyone with the link.
+          </>
+        }
+      >
+        <div>
+          <label className="label">ImgBB API key</label>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              className="input font-mono"
+              placeholder={view.imgbbKeySet ? "•••••••••••••••• (saved)" : "Paste the API key"}
+              value={imgbbKey}
+              onChange={(e) => setImgbbKey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && imgbbKey && saveImgbbKey(imgbbKey)}
+            />
+            <button className="btn btn-primary" disabled={!imgbbKey} onClick={() => saveImgbbKey(imgbbKey)}>
+              <KeyRound className="h-4 w-4" /> Save
+            </button>
+            {view.imgbbKeySet && (
+              <button className="btn" onClick={() => saveImgbbKey("")}>
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </Section>
+    </>
+  );
 }
 
 function Section({

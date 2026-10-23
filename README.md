@@ -44,6 +44,14 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Continue a session.** Paste a Cards Cloud session's ID (or link) into the New session dialog to add cards to
   it, e.g. from another computer. Images of the folder that the session already has, matched by file name, are
   skipped.
+- **Sell on eBay.** List a session's cards on eBay with your own eBay developer keys: each card becomes a draft with
+  its pictures, title, item specifics and condition (graded slabs with their grader and grade), at Ximilar's price
+  or yours. Publish the drafts when they look right; Cardloader then shows which listings sold. See
+  [Selling on eBay](#selling-on-ebay).
+- **TCGplayer, Whatnot and Shopify.** Export a session's ungraded trading cards as a TCGplayer list (with each card's
+  TCGplayer product link), as Whatnot's bulk listing CSV for auctions and Buy it Now, or as Shopify products with
+  condition variants (or a Shopify inventory update), with the pictures uploaded to ImgBB. See
+  [TCGplayer, Whatnot and Shopify](#tcgplayer-whatnot-and-shopify).
 - **CSV import and export.** Import a spreadsheet as a new session: rows with a card name come in as identified
   cards, rows with only an image path are analysed. Any session can be exported to CSV, and an export imports
   back as it was.
@@ -122,6 +130,59 @@ local model** on your own cards to choose.
 - The models are made by Liquid AI and licensed under the [LFM Open License v1.0](https://www.liquid.ai/lfm-license),
   which limits commercial use above a revenue threshold. It is downloaded from Hugging Face, never bundled.
 - Models are stored in the app's data folder under `models/`; **Delete** in Settings removes them.
+
+## Selling on eBay
+
+Cardloader lists cards through eBay's Sell APIs with **your own eBay developer keys**: an open-source app can't
+ship eBay's client secret, and nothing runs on a server in between.
+
+1. Join the [eBay developer program](https://developer.ebay.com/) and create a keyset (Sandbox to try it out,
+   Production for real listings). eBay activates a Production keyset once you either subscribe to Marketplace
+   Account Deletion notifications or apply for the exemption (Cardloader keeps no eBay user data on a server).
+2. Under **User Tokens** of the keyset, add an eBay Redirect URL (RuName). Leave its "auth accepted" URL as eBay's
+   own page.
+3. In **Settings → eBay**, choose the environment and enter the App ID, Cert ID and RuName, then **Connect eBay
+   account** and agree on eBay's page. The login lasts about 18 months and is kept in the system keychain.
+4. Choose the shipping, payment and return policies and where cards ship from. Accounts without business policies
+   can turn them on there; create the policies in eBay's Seller Hub.
+5. On a finished session, **⋯ → List on eBay…** shows each identified card with its title, category and condition.
+   Prices come from Ximilar; cards without one need a price. **Create drafts** uploads the pictures and creates
+   unpublished listings, which you can check on eBay.
+6. **Publish on eBay** makes the drafts live. The session shows how many are drafts, listed and sold; listings are
+   checked again when the session is opened (at most every 10 minutes) or with the refresh button.
+
+Cards go to eBay US: trading cards to *CCG Individual Cards*, sports cards to *Sports Trading Card Singles*. A card
+in a graded slab is listed as Graded with its grader, grade and certificate number; other cards as Ungraded in the
+condition chosen in the dialog (Ximilar's own grade is an estimate, not a professional grade). Comics aren't listed
+yet. Listing fees and selling limits are eBay's.
+
+## TCGplayer, Whatnot and Shopify
+
+A session's **⋯** menu has **Export for TCGplayer…**, **Export for Whatnot…** and **Export for Shopify…**. Both show the cards with their
+prices (from Ximilar; cards without one need a price) and a condition for ungraded cards whose condition wasn't
+graded.
+
+- **TCGplayer**: a CSV of the ungraded trading cards in TCGplayer's terms — product line, set, name, number,
+  condition (Near Mint, Lightly Played, …), quantity and price, plus the TCGplayer product id and link from the match.
+  TCGplayer doesn't give API access to new apps, and its Seller Portal import takes only its own export files (they
+  carry its SKU ids), so add the cards in Seller Portal from this list. Graded cards are sold there only as Listings
+  with Photos, and TCGplayer has no sports cards; both are left out.
+- **Whatnot**: Whatnot's bulk listing CSV (its US template), for Seller Hub → Inventory → **Import from CSV** (draft
+  listings) or a show's **Upload CSV**. Choose Auction (the price is the starting bid) or Buy it Now, and a shipping
+  profile. Trading cards, sports singles and entertainment cards get Whatnot's categories and conditions; slabs are
+  listed as Graded with the grader, grade and certificate in the title and description. Whatnot downloads pictures
+  from public links, so with an [ImgBB](https://api.imgbb.com/) API key (Settings → Selling) the export uploads each
+  card's front and back there first, once per card. Without a key, add the photos in Whatnot.
+- **Shopify**: Shopify's product CSV (Products → **Import**) or its inventory CSV (Products → Inventory →
+  **Import**).
+  - *Products*: either one product per card (name, set and number), its conditions (Near Mint, Lightly Played, …) as
+    variants with the number of copies and the highest of their prices, or one product per scanned card. A graded slab
+    is always its own product with the grader and grade in its title. Products get Shopify's trading card category,
+    tags (game, set, year, grader), a description, and the pictures (uploaded to ImgBB, as for Whatnot). They are
+    drafts unless you choose to publish. Handles are made from the card, so importing again with **Overwrite products
+    with matching handles** updates the same products.
+  - *Inventory update*: sets each product's stock at a location (named exactly as in Shopify) to the number of
+    copies — for stores with several locations, or to restock products imported before (choose the same grouping).
 
 ## CSV import and export
 
@@ -216,6 +277,8 @@ src-tauri/src/
   commands.rs             everything the UI can call
   runner.rs               session runner: ingest → recognise → grade (async) → events
   sync.rs                 Cards Cloud mirroring
+  ebay/                   eBay: sign-in, listings (drafts, publish, status), Inventory/Media API client
+  market/                 TCGplayer, Whatnot and Shopify CSV exports, ImgBB picture hosting
   ximilar/                HTTP client, recognition, grading, Cards Cloud API
   local/                  on-device models: catalog, downloads, llama.cpp engine, prompts, comparison
   source/                 folder, watch folder, CSV file, scanners (SANE CLI, TWAIN sidecar)

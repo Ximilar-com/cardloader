@@ -127,6 +127,7 @@ mod tests {
             synced: true,
             updated_at: String::new(),
             picked: true,
+            ebay: None,
         };
         let text = csv(&[item]);
         let mut lines = text.lines();

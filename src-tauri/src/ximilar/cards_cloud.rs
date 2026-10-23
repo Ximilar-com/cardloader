@@ -447,6 +447,7 @@ mod tests {
                 synced: false,
                 updated_at: "2026-01-01T00:00:00Z".into(),
                 picked: false,
+                ebay: None,
             },
             event_id: "abc".into(),
             preview_path: None,
@@ -466,6 +467,10 @@ mod tests {
             calls: 3,
             analyzed_at: Some("2026-01-01T00:00:01Z".into()),
             remote_id: None,
+            ebay_sku: None,
+            ebay_offer_id: None,
+            ebay_images: vec![],
+            hosted_images: vec![],
         }
     }
 

@@ -3,13 +3,15 @@
 
 import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { Copy, Cpu, FileDown, FolderOpen, Pencil, Settings2, Trash2 } from "lucide-react";
+import { Copy, Cpu, FileDown, FileSpreadsheet, FolderOpen, Pencil, Settings2, Store, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { api, errorText, type RemoteSession, type Session } from "../lib/api";
+import { api, errorText, type ExportFormat, type RemoteSession, type Session } from "../lib/api";
 import type { MenuItem } from "./Menu";
 import Modal, { ErrorNote } from "./Modal";
 import { Check } from "./NewSessionDialog";
 import CompareDialog from "./CompareDialog";
+import { EbayListDialog } from "./Ebay";
+import { MarketExportDialog } from "./MarketExport";
 import NewSessionDialog from "./NewSessionDialog";
 
 type Dialog =
@@ -17,6 +19,8 @@ type Dialog =
   | { kind: "settings"; session: Session }
   | { kind: "duplicate"; session: Session }
   | { kind: "compare"; session: Session }
+  | { kind: "ebay"; session: Session }
+  | { kind: "market"; session: Session; format: ExportFormat }
   | { kind: "delete"; sessions: Session[] };
 
 const isActive = (s: Session) => s.status === "running" || s.status === "paused";
@@ -84,6 +88,19 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
         disabled: s.counts.done === 0,
         title: "How often the on-device model reads the same card as Ximilar",
       },
+      {
+        label: "List on eBay…",
+        icon: Store,
+        onClick: () => setDialog({ kind: "ebay", session: s }),
+        disabled: isActive(s) || s.counts.done === 0,
+        title: isActive(s) ? "Wait until the session has finished" : "Create eBay listings for the identified cards",
+      },
+      ...(["tcgplayer", "whatnot", "shopify"] as const).map((format) => ({
+        label: `Export for ${{ tcgplayer: "TCGplayer", whatnot: "Whatnot", shopify: "Shopify" }[format]}…`,
+        icon: FileSpreadsheet,
+        onClick: () => setDialog({ kind: "market", session: s, format }),
+        disabled: s.counts.done === 0,
+      })),
       { label: "Delete…", icon: Trash2, danger: true, onClick: () => setDialog({ kind: "delete", sessions: [s] }) },
     ].filter(Boolean) as MenuItem[];
 
@@ -101,6 +118,10 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       {dialog?.kind === "settings" && <NewSessionDialog mode="edit" from={dialog.session} onClose={close} />}
       {dialog?.kind === "duplicate" && <NewSessionDialog mode="duplicate" from={dialog.session} onClose={close} />}
       {dialog?.kind === "compare" && <CompareDialog session={dialog.session} onClose={close} />}
+      {dialog?.kind === "ebay" && <EbayListDialog session={dialog.session} onClose={close} />}
+      {dialog?.kind === "market" && (
+        <MarketExportDialog key={dialog.format} session={dialog.session} format={dialog.format} onClose={close} />
+      )}
       {dialog?.kind === "delete" && (
         <DeleteSessionsDialog sessions={dialog.sessions} onClose={close} onDeleted={(ids) => onDeleted?.(ids)} />
       )}
@@ -351,10 +372,13 @@ export function ConfirmDialog({
   children,
   onClose,
   onConfirm,
+  danger = true,
 }: {
   title: string;
   confirm: string;
   children: ReactNode;
+  /** A red confirm button; false for an ordinary action. */
+  danger?: boolean;
   onClose: () => void;
   onConfirm: () => Promise<unknown>;
 }) {
@@ -371,7 +395,7 @@ export function ConfirmDialog({
             Cancel
           </button>
           <button
-            className="btn btn-danger"
+            className={danger ? "btn btn-danger" : "btn btn-primary"}
             disabled={busy}
             onClick={() => {
               setBusy(true);

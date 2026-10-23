@@ -19,6 +19,8 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::db::Db;
+use crate::ebay::sync::{EbayProgress, Job};
+use crate::ebay::EbayAuth;
 use crate::error::{Error, Result};
 use crate::imaging;
 use crate::local::LocalModels;
@@ -34,12 +36,14 @@ use crate::ximilar::recognition::{self, RecognitionOptions};
 
 pub const EVENT_SESSION: &str = "session-updated";
 pub const EVENT_ITEM: &str = "item-updated";
+pub const EVENT_EBAY: &str = "ebay-progress";
 const GRADING_POLL: Duration = Duration::from_secs(3);
 
 /// Where progress goes: the webview in the app, a recorder in tests.
 pub trait EventSink: Send + Sync {
     fn session(&self, session: Session);
     fn item(&self, item: ItemSummary);
+    fn ebay(&self, _progress: &EbayProgress) {}
 }
 
 impl EventSink for AppHandle {
@@ -50,6 +54,15 @@ impl EventSink for AppHandle {
     fn item(&self, item: ItemSummary) {
         let _ = self.emit(EVENT_ITEM, item);
     }
+
+    fn ebay(&self, progress: &EbayProgress) {
+        let _ = self.emit(EVENT_EBAY, progress);
+    }
+}
+
+struct EbayJob {
+    cancel: CancellationToken,
+    progress: EbayProgress,
 }
 
 struct RunControl {
@@ -66,6 +79,11 @@ pub struct Runner {
     pub data_dir: PathBuf,
     runs: Mutex<HashMap<String, RunControl>>,
     syncs: Mutex<HashMap<String, CancellationToken>>,
+    ebay_jobs: Mutex<HashMap<String, EbayJob>>,
+    /// Running marketplace exports (Whatnot uploads pictures), by session.
+    pub exports: Mutex<HashMap<String, CancellationToken>>,
+    /// The eBay access token.
+    pub ebay: EbayAuth,
     /// On-device models (downloads, the loaded model).
     pub local: Arc<LocalModels>,
 }
@@ -85,6 +103,9 @@ impl Runner {
             settings,
             runs: Mutex::new(HashMap::new()),
             syncs: Mutex::new(HashMap::new()),
+            ebay_jobs: Mutex::new(HashMap::new()),
+            exports: Mutex::new(HashMap::new()),
+            ebay: EbayAuth::default(),
             local: Arc::new(LocalModels::new(data_dir.join("models"))),
             data_dir,
         })
@@ -156,7 +177,9 @@ impl Runner {
     /// Waits (a few seconds at most) until the session's run and sync have ended, e.g. after `stop`.
     pub async fn wait_idle(&self, id: &str) {
         let started = std::time::Instant::now();
-        while (self.is_running(id) || self.syncs.lock().unwrap().contains_key(id))
+        while (self.is_running(id)
+            || self.syncs.lock().unwrap().contains_key(id)
+            || self.ebay_jobs.lock().unwrap().contains_key(id))
             && started.elapsed() < Duration::from_secs(10)
         {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -276,7 +299,71 @@ impl Runner {
         if let Some(sync) = self.syncs.lock().unwrap().get(id) {
             sync.cancel();
         }
+        self.ebay_cancel(id);
         Ok(())
+    }
+
+    /// Starts an eBay job for a session that isn't running. A refresh while another job runs is skipped
+    /// (`false`); any other job waits for its turn by failing.
+    pub fn ebay_start(self: &Arc<Self>, id: &str, job: Job) -> Result<bool> {
+        if self.is_running(id) {
+            return Err(Error::msg("wait until the session has finished"));
+        }
+        let mut jobs = self.ebay_jobs.lock().unwrap();
+        if jobs.contains_key(id) {
+            return match job {
+                Job::Refresh { .. } => Ok(false),
+                _ => Err(Error::msg("eBay is still busy with this session")),
+            };
+        }
+        let cancel = CancellationToken::new();
+        jobs.insert(
+            id.to_string(),
+            EbayJob {
+                cancel: cancel.clone(),
+                progress: EbayProgress {
+                    session_id: id.to_string(),
+                    running: true,
+                    ..Default::default()
+                },
+            },
+        );
+        drop(jobs);
+        let runner = self.clone();
+        let id = id.to_string();
+        tauri::async_runtime::spawn(async move {
+            crate::ebay::sync::run(runner.clone(), id.clone(), job, cancel).await;
+            let done = runner.ebay_jobs.lock().unwrap().remove(&id);
+            if let Some(job) = done {
+                runner.events.ebay(&EbayProgress {
+                    running: false,
+                    ..job.progress
+                });
+            }
+        });
+        Ok(true)
+    }
+
+    pub fn ebay_cancel(&self, id: &str) {
+        if let Some(job) = self.ebay_jobs.lock().unwrap().get(id) {
+            job.cancel.cancel();
+        }
+    }
+
+    /// The session's running eBay job.
+    pub fn ebay_job(&self, id: &str) -> Option<EbayProgress> {
+        self.ebay_jobs
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|j| j.progress.clone())
+    }
+
+    pub fn ebay_progress(&self, progress: &EbayProgress) {
+        if let Some(job) = self.ebay_jobs.lock().unwrap().get_mut(&progress.session_id) {
+            job.progress = progress.clone();
+        }
+        self.events.ebay(progress);
     }
 
     pub fn stop_all(&self) {
@@ -1654,5 +1741,391 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Failed);
         assert!(s.error.unwrap().contains("Invalid token"));
         assert_eq!(s.counts.queued, 1, "the card stays queued for the next run");
+    }
+
+    /// eBay's Inventory and Media APIs for two cards: the first is accepted, the second's offer is refused.
+    async fn mock_ebay() -> MockServer {
+        let server = MockServer::start().await;
+        let ok = |status: u16, body: Value| ResponseTemplate::new(status).set_body_json(body);
+        Mock::given(method("POST"))
+            .and(path("/identity/v1/oauth2/token"))
+            .respond_with(ok(
+                200,
+                json!({"access_token": "access", "expires_in": 7200}),
+            ))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/commerce/media/v1_beta/image/create_image_from_file"))
+            .respond_with(ok(
+                201,
+                json!({"imageUrl": "https://i.example.com/card.jpg"}),
+            ))
+            .mount(&server)
+            .await;
+        let skus = |r: &Request| -> Vec<String> {
+            let body: Value = serde_json::from_slice(&r.body).unwrap();
+            body["requests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| e["sku"].as_str().unwrap().to_string())
+                .collect()
+        };
+        Mock::given(method("POST"))
+            .and(path(
+                "/sell/inventory/v1/bulk_create_or_replace_inventory_item",
+            ))
+            .respond_with(move |r: &Request| {
+                let entries: Vec<Value> = skus(r)
+                    .into_iter()
+                    .map(|sku| json!({"statusCode": 200, "sku": sku, "locale": "en_US"}))
+                    .collect();
+                ResponseTemplate::new(207).set_body_json(json!({"responses": entries}))
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sell/inventory/v1/bulk_create_offer"))
+            .respond_with(move |r: &Request| {
+                let entries: Vec<Value> = skus(r)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, sku)| match i {
+                        0 => json!({"statusCode": 200, "sku": sku, "offerId": "offer-1"}),
+                        _ => json!({"statusCode": 400, "sku": sku,
+                            "errors": [{"errorId": 25005, "message": "Invalid category."}]}),
+                    })
+                    .collect();
+                ResponseTemplate::new(207).set_body_json(json!({"responses": entries}))
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("PUT"))
+            .and(path("/sell/inventory/v1/offer/offer-1"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/sell/inventory/v1/bulk_publish_offer"))
+            .respond_with(ok(
+                207,
+                json!({"responses": [{"statusCode": 200, "offerId": "offer-1", "listingId": "1100"}]}),
+            ))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/sell/inventory/v1/offer/offer-1"))
+            .respond_with(ok(
+                200,
+                json!({"offerId": "offer-1", "status": "PUBLISHED",
+                    "listing": {"listingId": "1100", "listingStatus": "ACTIVE", "soldQuantity": 1}}),
+            ))
+            .mount(&server)
+            .await;
+        server
+    }
+
+    async fn wait_ebay(runner: &Runner, id: &str) {
+        let started = Instant::now();
+        while runner.ebay_job(id).is_some() {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "eBay job did not end"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// A finished session's cards become eBay drafts, one is repriced, published, and read back as sold.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn ebay_listing_end_to_end() {
+        use crate::ebay::listing::CardCondition;
+        use crate::ebay::sync::{DraftItem, Job};
+        use crate::settings::{EbaySettings, Secret};
+
+        let ximilar = mock_ximilar().await;
+        let ebay = mock_ebay().await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        for name in ["a", "b"] {
+            RgbImage::from_pixel(630, 880, Rgb([20, 30, 200]))
+                .save(cards.join(format!("{name}.png")))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        let settings = Settings {
+            api_base_url: ximilar.uri(),
+            ebay: EbaySettings {
+                app_id: "Demo-App".into(),
+                ru_name: "Demo-RuName".into(),
+                api_base: ebay.uri(),
+                fulfillment_policy_id: "ship-1".into(),
+                payment_policy_id: "pay-1".into(),
+                return_policy_id: "return-1".into(),
+                location_key: "home".into(),
+                ..EbaySettings::default()
+            },
+            ..Settings::default()
+        };
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            settings,
+            "token",
+        ));
+        store.set_secret(Secret::EbayCert, "cert").unwrap();
+        store.set_secret(Secret::EbayRefresh, "refresh").unwrap();
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "To sell".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Auto,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        let started = Instant::now();
+        while runner.is_running(&session.id) {
+            assert!(started.elapsed() < Duration::from_secs(30));
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let items = db.items(&session.id).unwrap();
+        assert_eq!(items.len(), 2);
+        let (first, second) = (items[0].id, items[1].id);
+
+        let drafts = |prices: &[(i64, f64)]| Job::Drafts {
+            items: prices
+                .iter()
+                .map(|&(item_id, price)| DraftItem { item_id, price })
+                .collect(),
+            condition: CardCondition::NearMint,
+        };
+        assert!(runner
+            .ebay_start(&session.id, drafts(&[(first, 12.5), (second, 30.0)]))
+            .unwrap());
+        wait_ebay(&runner, &session.id).await;
+
+        let requests = ebay.received_requests().await.unwrap();
+        let token = requests
+            .iter()
+            .find(|r| r.url.path() == "/identity/v1/oauth2/token")
+            .unwrap();
+        assert!(String::from_utf8_lossy(&token.body).contains("grant_type=refresh_token"));
+        assert!(token.headers["authorization"]
+            .to_str()
+            .unwrap()
+            .starts_with("Basic "));
+        assert_eq!(
+            bodies(
+                &requests,
+                "/commerce/media/v1_beta/image/create_image_from_file"
+            )
+            .len(),
+            2,
+            "one picture per card"
+        );
+        let inventory = bodies(
+            &requests,
+            "/sell/inventory/v1/bulk_create_or_replace_inventory_item",
+        );
+        let entry = &inventory[0]["requests"][0];
+        assert_eq!(entry["condition"], "LIKE_NEW", "the cards are in PSA slabs");
+        assert_eq!(
+            entry["conditionDescriptors"],
+            json!([{"name": "27501", "values": ["275010"]}, {"name": "27502", "values": ["275020"]},
+                   {"name": "27503", "additionalInfo": "87654321"}])
+        );
+        assert_eq!(
+            entry["product"]["imageUrls"],
+            json!(["https://i.example.com/card.jpg"])
+        );
+        assert_eq!(entry["product"]["aspects"]["Game"], json!(["Pokémon TCG"]));
+        assert_eq!(
+            entry["product"]["title"],
+            "2023 Pokemon Obsidian Flames Charizard ex #125 PSA 10"
+        );
+        let offers = bodies(&requests, "/sell/inventory/v1/bulk_create_offer");
+        let offer = &offers[0]["requests"][0];
+        assert_eq!(offer["pricingSummary"]["price"]["value"], "12.50");
+        assert_eq!(offer["listingPolicies"]["fulfillmentPolicyId"], "ship-1");
+        assert_eq!(offer["merchantLocationKey"], "home");
+        assert_eq!(offer["categoryId"], "183454");
+
+        let listing = db.item_summary(first).unwrap().ebay.unwrap();
+        assert_eq!(
+            (listing.status, listing.price),
+            (Some(EbayStatus::Draft), Some(12.5))
+        );
+        let refused = db.item_summary(second).unwrap().ebay.unwrap();
+        assert_eq!(refused.status, None);
+        assert_eq!(refused.error.as_deref(), Some("Invalid category. (25005)"));
+        assert_eq!(db.session(&session.id).unwrap().counts.ebay_drafts, 1);
+
+        // A new price updates the offer, with the pictures already on eBay.
+        runner
+            .ebay_start(&session.id, drafts(&[(first, 15.0)]))
+            .unwrap();
+        wait_ebay(&runner, &session.id).await;
+        let requests = ebay.received_requests().await.unwrap();
+        let updates = bodies(&requests, "/sell/inventory/v1/offer/offer-1");
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0]["pricingSummary"]["price"]["value"], "15.00");
+        assert_eq!(
+            bodies(
+                &requests,
+                "/commerce/media/v1_beta/image/create_image_from_file"
+            )
+            .len(),
+            2
+        );
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|r| r.url.path() == "/identity/v1/oauth2/token")
+                .count(),
+            1,
+            "the access token is reused"
+        );
+
+        runner.ebay_start(&session.id, Job::Publish(None)).unwrap();
+        wait_ebay(&runner, &session.id).await;
+        let requests = ebay.received_requests().await.unwrap();
+        let published = bodies(&requests, "/sell/inventory/v1/bulk_publish_offer");
+        assert_eq!(published[0]["requests"], json!([{"offerId": "offer-1"}]));
+        let listing = db.item_summary(first).unwrap().ebay.unwrap();
+        assert_eq!(listing.status, Some(EbayStatus::Listed));
+        assert_eq!(listing.listing_id.as_deref(), Some("1100"));
+        assert_eq!(listing.price, Some(15.0));
+
+        runner
+            .ebay_start(&session.id, Job::Refresh { force: true })
+            .unwrap();
+        wait_ebay(&runner, &session.id).await;
+        let session = db.session(&session.id).unwrap();
+        assert_eq!(
+            db.item_summary(first).unwrap().ebay.unwrap().status,
+            Some(EbayStatus::Sold)
+        );
+        assert_eq!(session.counts.ebay_sold, 1);
+        assert!(session.ebay_checked_at.is_some());
+        assert_eq!(session.ebay_error, None);
+    }
+
+    /// A finished session as Whatnot's CSV: pictures go to ImgBB once, and the rows follow Whatnot's template.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn whatnot_export_uploads_pictures_once() {
+        use crate::market::whatnot::{self, ListingType, Options};
+        use crate::market::PricedItem;
+        use crate::settings::Secret;
+
+        let ximilar = mock_ximilar().await;
+        let imgbb = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/1/upload"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"data": {"url": "https://i.ibb.co/x/card.jpg"}, "success": true}),
+            ))
+            .mount(&imgbb)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        for name in ["a_front", "a_back"] {
+            RgbImage::from_pixel(630, 880, Rgb([90, 30, 20]))
+                .save(cards.join(format!("{name}.png")))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        let settings = Settings {
+            api_base_url: ximilar.uri(),
+            image_host_base: imgbb.uri(),
+            ..Settings::default()
+        };
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            settings,
+            "token",
+        ));
+        store.set_secret(Secret::ImgbbKey, "key").unwrap();
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "Show".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Auto,
+                options: SessionOptions {
+                    pairing: Pairing::FrontBack,
+                    ..SessionOptions::default()
+                },
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        let started = Instant::now();
+        while runner.is_running(&session.id) {
+            assert!(started.elapsed() < Duration::from_secs(30));
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        let item = db.items(&session.id).unwrap()[0].id;
+        let options = Options {
+            listing_type: ListingType::Auction,
+            shipping_profile: "0-1 oz".into(),
+            offerable: false,
+            condition: CardCondition::NearMint,
+            upload_images: true,
+        };
+        let priced = [PricedItem {
+            item_id: item,
+            price: 12.5,
+        }];
+        let cancel = CancellationToken::new();
+        let steps = Mutex::new(Vec::new());
+        let (text, export) = whatnot::export(&runner, &priced, &options, &cancel, |done, total| {
+            steps.lock().unwrap().push((done, total))
+        })
+        .await
+        .unwrap();
+        assert_eq!((export.rows, export.without_images), (1, 0));
+        assert_eq!(steps.into_inner().unwrap(), vec![(1, 1)]);
+        let mut rows = csv::Reader::from_reader(text.as_bytes());
+        let row = rows.records().next().unwrap().unwrap();
+        assert_eq!(&row[0], "Trading Card Games");
+        assert_eq!(&row[1], "Pokémon Cards");
+        assert_eq!(
+            &row[2],
+            "2023 Pokemon Obsidian Flames Charizard ex #125 PSA 10"
+        );
+        assert_eq!((&row[5], &row[6], &row[10]), ("Auction", "13", "Graded"));
+        assert_eq!(
+            (&row[13], &row[14]),
+            ("https://i.ibb.co/x/card.jpg", "https://i.ibb.co/x/card.jpg")
+        );
+        assert_eq!(
+            imgbb.received_requests().await.unwrap().len(),
+            2,
+            "front and back"
+        );
+
+        // Exported again: the pictures are on ImgBB already.
+        let (_, again) = whatnot::export(&runner, &priced, &options, &cancel, |_, _| {})
+            .await
+            .unwrap();
+        assert_eq!(again.without_images, 0);
+        assert_eq!(imgbb.received_requests().await.unwrap().len(), 2);
     }
 }

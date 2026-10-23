@@ -12,10 +12,13 @@ export default function DetailPanel({
   onClose,
   onRetry,
   onPick,
+  ebay,
 }: {
   view: CardView;
   onClose: () => void;
   onRetry?: () => void;
+  /** The card's eBay section, when it has a listing. */
+  ebay?: ReactNode;
   /** Makes a candidate the match; without it, candidates are read-only. */
   onPick?: (index: number) => Promise<unknown>;
 }) {
@@ -76,6 +79,8 @@ export default function DetailPanel({
             />
           </div>
         )}
+
+        {ebay}
 
         {view.fields.length > 0 && (
           <Section title="Card">

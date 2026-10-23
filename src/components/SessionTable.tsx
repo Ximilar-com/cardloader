@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import type { SlabLabel } from "../lib/api";
 import type { Row } from "../lib/cardview";
 import { grade, price } from "../lib/format";
+import { EbayBadge } from "./Ebay";
 import StatusChip, { ConfidenceChip, PickedChip } from "./StatusChip";
 
 /** Card and set take the spare width, unless conditions or slabs need it: they are words, not a number. */
@@ -13,7 +14,7 @@ function gridColumns(showSlab: boolean, wordy: boolean): string {
     ? ["minmax(110px,1.2fr)", "minmax(100px,1fr)", "minmax(68px,0.6fr)"]
     : ["minmax(130px,1.5fr)", "minmax(110px,1.2fr)", "52px"];
   const slab = showSlab ? ["minmax(72px,0.7fr)"] : [];
-  return ["44px", "32px", card, set, "68px", "84px", grade, ...slab, "104px"].join(" ");
+  return ["44px", "32px", card, set, "68px", "84px", grade, ...slab, "136px"].join(" ");
 }
 const ROW_HEIGHT = 56;
 
@@ -150,6 +151,7 @@ export default function SessionTable({
                 <span className="flex items-center gap-1.5">
                   {r.status && <StatusChip status={r.status} />}
                   {r.synced && <Cloud className="h-3.5 w-3.5 text-slate-400" aria-label="Synced" />}
+                  <EbayBadge listing={r.ebay} />
                 </span>
               </div>
             );

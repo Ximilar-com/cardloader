@@ -1,9 +1,11 @@
 mod commands;
 mod db;
+mod ebay;
 mod error;
 mod export;
 mod imaging;
 mod local;
+mod market;
 mod model;
 mod pairing;
 mod runner;
@@ -97,6 +99,27 @@ pub fn run() {
             commands::delete_remote_session,
             commands::get_remote_session,
             commands::list_remote_items,
+            commands::set_ebay_cert,
+            commands::ebay_connect,
+            commands::ebay_connect_with,
+            commands::ebay_disconnect,
+            commands::ebay_setup,
+            commands::ebay_opt_in,
+            commands::ebay_create_location,
+            commands::ebay_preview,
+            commands::ebay_create_drafts,
+            commands::ebay_publish,
+            commands::ebay_refresh,
+            commands::ebay_remove,
+            commands::ebay_cancel,
+            commands::ebay_job,
+            commands::ebay_listing_url,
+            commands::set_imgbb_key,
+            commands::export_preview,
+            commands::export_tcgplayer,
+            commands::export_whatnot,
+            commands::export_shopify,
+            commands::cancel_export,
         ])
         .build(tauri::generate_context!())
         .expect("error while building cardloader")

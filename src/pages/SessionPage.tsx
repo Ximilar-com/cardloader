@@ -11,21 +11,28 @@ import {
   Square,
   Pencil,
   ArrowDownToLine,
+  RefreshCw,
+  Send,
+  Store,
+  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
+import { EbaySection } from "../components/Ebay";
 import Menu from "../components/Menu";
 import { ErrorNote } from "../components/Modal";
-import { useSessionActions } from "../components/SessionActions";
+import { ConfirmDialog, useSessionActions } from "../components/SessionActions";
 import ProgressBar from "../components/ProgressBar";
 import SessionTable from "../components/SessionTable";
 import StatusChip from "../components/StatusChip";
 import {
   api,
   errorText,
+  onEbayProgress,
   onItemUpdated,
   onSessionUpdated,
+  type EbayProgress,
   type ItemDetail,
   type ItemSummary,
   type Session,
@@ -49,6 +56,9 @@ function SessionView({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const actions = useSessionActions({ onDeleted: () => navigate("/sessions") });
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  const [ebayJob, setEbayJob] = useState<EbayProgress | null>(null);
+  /** Cards to publish (all drafts: null), awaiting confirmation. */
+  const [publishing, setPublishing] = useState<{ ids: number[] | null; count: number } | null>(null);
   const samples = useRef<[number, number][]>([]);
   const selectedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -58,8 +68,13 @@ function SessionView({ id }: { id: string }) {
   useEffect(() => {
     api
       .getSession(id)
-      .then(setSession)
+      .then((s) => {
+        setSession(s);
+        // Listings may have sold since: read them back (eBay limits how often).
+        if (s.counts.ebayListed > 0 || s.counts.ebayDrafts > 0) api.ebayRefresh(id).catch(() => {});
+      })
       .catch((e) => setError(errorText(e)));
+    api.ebayJob(id).then((job) => setEbayJob(job?.running ? job : null));
     api
       .listItems(id)
       .then(setItems)
@@ -102,9 +117,13 @@ function SessionView({ id }: { id: string }) {
       });
       if (String(item.id) === selectedRef.current) api.getItem(item.id).then(setDetail);
     });
+    const unEbay = onEbayProgress((p) => {
+      if (p.sessionId === id) setEbayJob(p.running ? p : null);
+    });
     return () => {
       void unSession.then((f) => f());
       void unItem.then((f) => f());
+      void unEbay.then((f) => f());
     };
   }, [id]);
 
@@ -215,6 +234,16 @@ function SessionView({ id }: { id: string }) {
                   <CloudUpload className="h-4 w-4" /> Upload
                 </button>
               )}
+              {!active && counts.ebayDrafts > 0 && (
+                <button
+                  className="btn"
+                  disabled={!!ebayJob}
+                  onClick={() => setPublishing({ ids: null, count: counts.ebayDrafts })}
+                  title="Publish the drafts: they go live on eBay"
+                >
+                  <Send className="h-4 w-4" /> Publish on eBay
+                </button>
+              )}
               <Menu items={actions.menu(session)} label="Session actions" />
             </div>
           </div>
@@ -251,6 +280,7 @@ function SessionView({ id }: { id: string }) {
                   )}
                 </span>
               )}
+              <EbayStatus session={session} job={ebayJob} />
               <button
                 className={clsx("flex items-center gap-1", follow ? "text-accent" : "hover:text-slate-700")}
                 onClick={() => setFollow((f) => !f)}
@@ -302,6 +332,16 @@ function SessionView({ id }: { id: string }) {
               ? () => act(() => api.retryItems(id, [detail.id]).then(() => api.runSession(id)))
               : undefined
           }
+          ebay={
+            detail.ebay && (
+              <EbaySection
+                listing={detail.ebay}
+                busy={!!ebayJob || active}
+                onPublish={() => setPublishing({ ids: [detail.id], count: 1 })}
+                onRemove={() => act(() => api.ebayRemove(id, [detail.id]))}
+              />
+            )
+          }
           onPick={
             detail.status === "done" || detail.status === "grading"
               ? (index) =>
@@ -314,8 +354,76 @@ function SessionView({ id }: { id: string }) {
         />
       )}
 
+      {publishing && (
+        <ConfirmDialog
+          title="Publish on eBay?"
+          confirm={`Publish ${publishing.count} listing${publishing.count === 1 ? "" : "s"}`}
+          danger={false}
+          onClose={() => setPublishing(null)}
+          onConfirm={() => api.ebayPublish(id, publishing.ids ?? undefined)}
+        >
+          {publishing.count === 1 ? "The draft goes" : `${publishing.count} drafts go`} live on eBay at the prices they
+          were drafted with. eBay’s fees apply once listed or sold.
+        </ConfirmDialog>
+      )}
+
       {actions.node}
     </div>
+  );
+}
+
+const JOB_LABELS: Record<EbayProgress["action"], string> = {
+  drafts: "creating drafts",
+  publish: "publishing",
+  refresh: "checking listings",
+  remove: "removing",
+  "": "working",
+};
+
+/** The session's cards on eBay, or the job running for them. */
+function EbayStatus({ session, job }: { session: Session; job: EbayProgress | null }) {
+  const { ebayDrafts, ebayListed, ebaySold } = session.counts;
+  if (!job && !session.ebayError && ebayDrafts + ebayListed + ebaySold === 0) return null;
+  const parts = [
+    ebayDrafts > 0 && `${ebayDrafts} draft${ebayDrafts === 1 ? "" : "s"}`,
+    ebayListed > 0 && `${ebayListed} listed`,
+    ebaySold > 0 && `${ebaySold} sold`,
+  ].filter(Boolean);
+  return (
+    <span
+      className={clsx("flex items-center gap-1", session.ebayError && !job && "text-amber-600")}
+      title={session.ebayError ?? undefined}
+    >
+      <Store className="h-3.5 w-3.5" />
+      {job ? (
+        <>
+          eBay: {JOB_LABELS[job.action]}
+          {job.total > 0 && ` ${job.done}/${job.total}`}…
+          {job.action !== "refresh" && (
+            <button
+              className="ml-1 text-slate-400 hover:text-slate-700"
+              onClick={() => api.ebayCancel(session.id)}
+              title="Stop"
+              aria-label="Stop the eBay job"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          eBay: {session.ebayError ?? (parts.join(" · ") || "nothing listed")}
+          <button
+            className="ml-1 text-slate-400 hover:text-slate-700"
+            onClick={() => api.ebayRefresh(session.id, true).catch(() => {})}
+            title="Check the listings on eBay now"
+            aria-label="Check the listings on eBay"
+          >
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </>
+      )}
+    </span>
   );
 }
 

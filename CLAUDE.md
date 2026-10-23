@@ -43,11 +43,17 @@ src-tauri/src/
   sync.rs         mirroring a session to Ximilar Cards Cloud (batches, images, PATCHed match corrections)
   db.rs           SQLite (rusqlite, one Mutex<Connection>); migrations/NNN_*.sql applied by PRAGMA user_version
   model.rs        serde types shared with the UI (camelCase on the wire)
-  settings.rs     settings.json + API token in the OS keychain (keyring)
+  settings.rs     settings.json + secrets (API token, eBay Cert ID and login) in the OS keychain (keyring)
   imaging.rs      decode, EXIF orientation, thumbnails/previews, JPEG/base64 for upload
   export.rs       CSV export
   source/         folder, watch folder (notify), csv_file.rs (import parser), scanner/{sane.rs, twain.rs}
   ximilar/        http.rs (client, retry, error classes), recognition.rs, grading.rs, cards_cloud.rs
+  ebay/           selling on eBay with the user's keyset: mod.rs (OAuth: consent window, tokens, account setup),
+                  client.rs (REST calls, errors[]), listing.rs (card → category, condition descriptors, title,
+                  item specifics, inventory item + offer), sync.rs (jobs: drafts, publish, refresh, remove)
+  market/         files for other marketplaces: tcgplayer.rs (list of ungraded cards), whatnot.rs (bulk listing
+                  CSV), shopify.rs (product CSV with condition variants, inventory CSV), imgbb.rs (public picture
+                  hosting, `Hosting`); shares eBay's card typing and titles
   local/          on-device identification: catalog.rs (pinned model files + SHA-256), download.rs (resumable),
                   llama.rs (llama.cpp engine, feature-gated), identify.rs (prompts, GBNF grammars, parsing),
                   compare.rs (agreement with Ximilar), mod.rs (LocalModels: status, downloads, loaded model)
@@ -60,7 +66,7 @@ src/
 ```
 
 Events from Rust: `session-updated` (Session), `item-updated` (ItemSummary), `model-updated` (ModelStatus, download
-progress) and `compare-progress`; pages patch their state from them.
+progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch their state from them.
 
 ## Rules for changes
 
@@ -129,10 +135,33 @@ progress) and `compare-progress`; pages patch their state from them.
 - Real-model checks are opt-in (`#[ignore]`): `real_model_reads_cards` (needs `CARDLOADER_MODELS`, `CARDLOADER_CARDS`)
   and `real_download` (`CARDLOADER_DOWNLOAD_TO`), both for `CARDLOADER_MODEL` (default the 450M model). Run them with `--release -- --ignored --nocapture`. Never commit
   model files or card images.
+- **eBay** (`ebay/`): the user's own keyset (App ID, RuName in settings; Cert ID and the refresh token are
+  `settings::Secret`s like the API token; changing the keyset or environment disconnects). eBay redirects only to
+  https pages, so consent opens in a webview window (`ebay-login`, in no capability) and the code is read from its
+  navigation (`consent_result`); pasting the final address is the fallback. Access tokens live in memory
+  (`EbayAuth`). A card becomes an inventory item (SKU `cl-<session[..8]>-<event_id>`) plus an **unpublished offer =
+  a draft**; publishing is a separate job. Bulk calls take ≤ 25 and answer per card (HTTP 207): a card's error stays
+  on the card (`items.ebay_error`), login/network failures stop the job (`sessions.ebay_error`). TCG → 183454, sports
+  → 261328, comics not listed; graded only from a slab label (descriptors 27501/27502/27503), else ungraded with
+  40001 (value ids differ per category). Item specific names are not verified against eBay's taxonomy yet.
+  Marketplace: EBAY_US only (`listing::MARKETPLACES`). One eBay job per session (`Runner::ebay_start`).
+- **TCGplayer / Whatnot exports** (`market/`): TCGplayer gives no API to new apps and its "Import to Staged" CSV
+  matches rows only by its SKU ids (product + condition + printing + language), which we don't have — so the
+  TCGplayer export is a list for Seller Portal (product line, set, name, number, TCGplayer condition, price, and the
+  product id from Ximilar's `tcgplayer.com/product/{id}` link). Graded cards (Listings with Photos only) and sports
+  cards (no such line) are left out. Whatnot's CSV is its US template's 21 columns in order, with its exact category,
+  sub category and condition strings (the condition scale differs for sports singles); prices are whole dollars
+  rounded up; no BOM (it would be read into the first header). Pictures must be public URLs: they go to ImgBB with the
+  user's key (`Secret::ImgbbKey`) once per card (`items.hosted_images`). Cards whose condition Ximilar graded keep it
+  (`CardCondition::read`). Shopify: CSV only (no Admin API: since 2026 a store token needs a Dev Dashboard app). The
+  product file uses the 2024 header names for the columns we fill; ungraded copies of a card share a product whose
+  handle comes from game/set/name/number (stable across sessions), conditions are `Option1` "Condition" variants;
+  slabs and "one product per scanned card" get their own handle and a `Title`/`Default Title` variant. The inventory
+  file matches rows by handle + option value and sets `On hand (new)` at a named location.
 - The browser demo logs `[TAURI] Couldn't find callback id` warnings from its mocked events; they are harmless.
 
 ## Not verified automatically
 
-Real Ximilar API calls, real scanners (SANE/TWAIN), signed release builds, and the real local model (CI uses a
-fake `VisionModel`; see the opt-in tests above). Say so when a change depends on them,
-and describe how it was checked.
+Real Ximilar API calls, real eBay calls (use a sandbox keyset), real scanners (SANE/TWAIN), signed release builds, and
+the real local model (CI uses a fake `VisionModel`; see the opt-in tests above). Say so when a change depends on
+them, and describe how it was checked.

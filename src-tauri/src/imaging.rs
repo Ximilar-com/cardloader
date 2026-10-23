@@ -77,6 +77,12 @@ pub fn make_derivatives(source: &Path, dir: &Path, stem: &str) -> Result<(String
     ))
 }
 
+/// A card picture for a marketplace: a JPEG at the preview size.
+pub fn listing_jpeg(path: &Path) -> Result<Vec<u8>> {
+    let img = open(path)?;
+    jpeg_bytes(&fit_long_edge(&img, PREVIEW_LONG_EDGE), 90)
+}
+
 /// The base64 JPEG of an image with its long edge capped.
 pub fn encode_for_upload(path: &Path, long_edge: u32, quality: u8) -> Result<String> {
     let img = open(path)?;

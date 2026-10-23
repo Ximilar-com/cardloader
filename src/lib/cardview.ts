@@ -1,6 +1,6 @@
 // One shape for the table and detail panel, built from a local item or a Cards Cloud row.
 
-import type { ItemDetail, ItemStatus, ItemSummary, Json, RemoteItem, SlabLabel } from "./api";
+import type { EbayListing, ItemDetail, ItemStatus, ItemSummary, Json, RemoteItem, SlabLabel } from "./api";
 import { fileUrl } from "./format";
 
 export interface Row {
@@ -22,6 +22,7 @@ export interface Row {
   error?: string | null;
   synced?: boolean;
   picked?: boolean;
+  ebay?: EbayListing | null;
 }
 
 export interface CardImage {
@@ -136,6 +137,7 @@ export function rowFromItem(i: ItemSummary): Row {
     error: i.error,
     synced: i.synced,
     picked: i.picked,
+    ebay: i.ebay,
   };
 }
 

@@ -883,7 +883,7 @@ export const PAIRING_OPTIONS: SelectOption<Pairing>[] = [
 ];
 
 /** Opens Settings at one of its tabs. */
-function OpenSettings({ section, onOpen }: { section: string; onOpen: () => void }) {
+export function OpenSettings({ section, onOpen }: { section: string; onOpen: () => void }) {
   const navigate = useNavigate();
   return (
     <button
