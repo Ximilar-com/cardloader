@@ -101,6 +101,10 @@ export default function NewSessionDialog({
   useEffect(() => {
     api.getSettings().then((s) => {
       setTokenSet(s.tokenSet);
+      // Scanner sessions always scan with the settings in Settings → Scanner (see `saveScan`).
+      if (from?.sourceKind === "scanner") {
+        setOptions((o) => o && { ...o, scan: s.scan, pairing: s.scan.duplex ? "front_back" : "single" });
+      }
       if (from) return;
       setIdMode(s.defaultIdMode);
       setFolder(s.defaultFolder ?? "");
@@ -218,11 +222,19 @@ export default function NewSessionDialog({
   const needsToken = !local || !!options?.syncRemote;
   const canRun = (!needsToken || tokenSet) && (!local || !!model);
 
+  // The scanner row edits Settings → Scanner, which every scanner run uses.
+  const saveScan = async () => {
+    if (kind !== "scanner" || !chosen) return;
+    const settings = await api.getSettings();
+    await api.saveSettings({ ...settings, scan: chosen.scan });
+  };
+
   const save = async () => {
     if (!chosen || !from) return;
     setBusy(true);
     setError(null);
     try {
+      await saveScan();
       const saved = await api.updateSession(from.id, name, idMode, chosen);
       onSaved?.(saved);
       onClose();
@@ -244,6 +256,7 @@ export default function NewSessionDialog({
       options: chosen,
     };
     try {
+      await saveScan();
       const created =
         kind === "csv"
           ? await api.importCsv(session, reanalyze)

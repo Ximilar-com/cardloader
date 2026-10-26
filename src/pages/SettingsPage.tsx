@@ -451,7 +451,8 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <p className="text-xs text-slate-500">
-                  Standard cards are 63 × 88 mm; a slightly larger frame (66 × 92 mm) keeps the card edges in the scan.
+                  Every scanner session scans with these settings, also when it is continued. Standard cards are 63 × 88
+                  mm; a slightly larger frame (66 × 92 mm) keeps the card edges in the scan.
                 </p>
               </Section>
             )}

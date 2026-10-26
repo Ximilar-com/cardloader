@@ -200,7 +200,15 @@ impl Runner {
             self.emit_session(id);
             return Ok(());
         }
-        let session = self.db.session(id)?;
+        let mut session = self.db.session(id)?;
+        if session.source_kind == SourceKind::Scanner {
+            let options = with_scanner(&session.options, &self.settings.get().scan);
+            if options != session.options {
+                self.db
+                    .update_session_meta(id, &session.name, session.id_mode, &options)?;
+                session.options = options;
+            }
+        }
         let local = session.options.engine == Engine::Local;
         if local && !self.local.is_ready(&session.options.local_model) {
             return Err(Error::msg(
@@ -935,6 +943,20 @@ async fn encode(path: PathBuf, long_edge: u32) -> Result<String> {
         .map_err(|e| Error::msg(e.to_string()))?
 }
 
+/// Scanner sessions run with the scanner settings as they are now, so a change in Settings applies to
+/// sessions that are continued too. A duplex scan gives front + back of every card.
+fn with_scanner(options: &SessionOptions, scan: &ScanSettings) -> SessionOptions {
+    SessionOptions {
+        scan: scan.clone(),
+        pairing: if scan.duplex {
+            Pairing::FrontBack
+        } else {
+            Pairing::Single
+        },
+        ..options.clone()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1043,6 +1065,57 @@ mod tests {
             .filter(|r| r.url.path() == p)
             .map(|r| serde_json::from_slice(&r.body).unwrap_or(Value::Null))
             .collect()
+    }
+
+    /// A scanner session that is run again scans with the scanner settings as they are in Settings now.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn scanner_session_uses_current_scan_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::memory().unwrap();
+        let scan = ScanSettings {
+            dpi: 300,
+            duplex: true,
+            rotation: ScanRotation::UpsideDown,
+            back_first: true,
+            ..ScanSettings::default()
+        };
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            Settings {
+                scan: scan.clone(),
+                ..Settings::default()
+            },
+            "token",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "Scans".into(),
+                source_kind: SourceKind::Scanner,
+                source_ref: "fujitsu:fi-8170:1234".into(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions {
+                    pairing: Pairing::Single,
+                    scan: ScanSettings {
+                        duplex: false,
+                        ..ScanSettings::default()
+                    },
+                    ..SessionOptions::default()
+                },
+            })
+            .unwrap();
+
+        runner.start(&session.id).unwrap();
+        let options = db.session(&session.id).unwrap().options;
+        assert_eq!(options.scan, scan);
+        assert_eq!(options.pairing, Pairing::FrontBack);
+        runner.stop(&session.id).ok();
     }
 
     /// A folder of two front/back cards, auto-detected, graded and synced — end to end against a mock API.
