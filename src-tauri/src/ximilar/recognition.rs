@@ -234,6 +234,10 @@ pub fn build_request(
     opts: &RecognitionOptions,
 ) -> Value {
     let mut body = json!({});
+    // Without it the endpoint tags a turned card (`Rotation`) but identifies it as it lies, i.e. wrongly.
+    if !opts.known_rotation {
+        body["rotate"] = json!(true);
+    }
     if opts.magic_ai && endpoint == Endpoint::Sport {
         body["magic_ai"] = json!(true);
     }
@@ -932,6 +936,7 @@ mod tests {
         let front = &sport["records"][0]["_objects"][0];
         assert_eq!(front["Side"], "front");
         assert_eq!(front["Rotation"], "rotation_ok");
+        assert!(sport.get("rotate").is_none(), "upright cards aren't turned");
         assert_eq!(front["Category"], "Card/Sport Card");
         assert_eq!(front["Top Category"], "Card");
         assert!(
@@ -987,6 +992,10 @@ mod tests {
         let none = build_request(Endpoint::Tcg, "F", None, &RecognitionOptions::default());
         let record = none["records"][0].as_object().unwrap();
         assert_eq!(record.len(), 2, "{record:?}");
+        assert_eq!(
+            none["rotate"], true,
+            "the endpoint turns the card when needed"
+        );
     }
 
     #[test]

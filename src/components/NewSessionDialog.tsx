@@ -721,7 +721,7 @@ function KnownAttributes({
         label="Upright"
         checked={options.knownRotation}
         onChange={(v) => onChange({ knownRotation: v })}
-        hint="No card is rotated or upside down."
+        hint="No card is rotated or upside down. Otherwise Ximilar turns each card upright before identifying it."
       />
       {idMode === "tcg" && (
         <div className="grid grid-cols-2 gap-3">
