@@ -39,7 +39,7 @@ impl ModelSpec {
     }
 }
 
-pub const DEFAULT_MODEL: &str = "lfm2-vl-3b";
+pub const DEFAULT_MODEL: &str = "lfm2.5-vl-3b";
 
 const LFM_LICENSE: &str = "LFM Open License v1.0";
 const LFM_LICENSE_URL: &str = "https://www.liquid.ai/lfm-license";
@@ -62,26 +62,26 @@ macro_rules! hf {
 pub const MODELS: &[ModelSpec] = &[
     ModelSpec {
         id: DEFAULT_MODEL,
-        name: "LFM2-VL 3B",
+        name: "LFM2.5-VL 3B",
         tier: "Accurate",
         params: "3B",
-        description: "The largest model (Q4_K_M): the most reliable names and numbers, and the slowest (about 5 \
-                      times the 450M time). Best on a computer with 8 GB of memory or more.",
-        memory_mb: 2_400,
+        description: "Liquid AI's largest LFM2.5 vision model (Q4_K_M): the most reliable names and numbers, and the \
+                      slowest. Best on a computer with 8 GB of memory or more.",
+        memory_mb: 2_500,
         license_name: LFM_LICENSE,
         license_url: LFM_LICENSE_URL,
-        homepage: "https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF",
+        homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF",
         model: ModelFile {
-            name: "LFM2-VL-3B-Q4_K_M.gguf",
-            url: hf!("LiquidAI/LFM2-VL-3B-GGUF" @ "da5c839b488cbdf55739f30459527ec703d11212" / "LFM2-VL-3B-Q4_K_M.gguf"),
-            size: 1_563_668_256,
-            sha256: "07b435d85daec5dec0e2be6644f36201d1a0dff8904d83e41175ba2d3b6f3ffe",
+            name: "LFM2.5-VL-3B-Q4_K_M.gguf",
+            url: hf!("LiquidAI/LFM2.5-VL-3B-GGUF" @ "6f730e9a2c454e8af9adc29db58e638e01e5957f" / "LFM2.5-VL-3B-Q4_K_M.gguf"),
+            size: 1_674_455_072,
+            sha256: "2436cf4bbac9a16e5dfc7799a140e583c2bc15958f4b24a391f8a8b10ecb8884",
         },
         mmproj: ModelFile {
-            name: "mmproj-LFM2-VL-3B-Q8_0.gguf",
-            url: hf!("LiquidAI/LFM2-VL-3B-GGUF" @ "da5c839b488cbdf55739f30459527ec703d11212" / "mmproj-LFM2-VL-3B-Q8_0.gguf"),
-            size: 586_769_376,
-            sha256: "135dd0ee2a0ceb597fac0d8640dae6c86f28c7ca2cd5b88eb309c32fe8f8dde9",
+            name: "mmproj-LFM2.5-VL-3B-Q8_0.gguf",
+            url: hf!("LiquidAI/LFM2.5-VL-3B-GGUF" @ "6f730e9a2c454e8af9adc29db58e638e01e5957f" / "mmproj-LFM2.5-VL-3B-Q8_0.gguf"),
+            size: 583_109_984,
+            sha256: "ecbbe7097f696dba67172738d79c9f01132cdb6c0b457606315e268df3d67e64",
         },
     },
     ModelSpec {
@@ -113,8 +113,8 @@ pub const MODELS: &[ModelSpec] = &[
         name: "LFM2.5-VL 1.6B",
         tier: "Balanced",
         params: "1.6B",
-        description: "The newer 1.6B model (Q4_K_M): reads names and numbers clearly better than 450M, about \
-                      2–3 times slower. The best balance for most computers.",
+        description: "The 1.6B model (Q4_K_M): reads names and numbers clearly better than 450M, about 2–3 times \
+                      slower. A good balance for most computers.",
         memory_mb: 1_500,
         license_name: LFM_LICENSE,
         license_url: LFM_LICENSE_URL,
@@ -130,30 +130,6 @@ pub const MODELS: &[ModelSpec] = &[
             url: hf!("LiquidAI/LFM2.5-VL-1.6B-GGUF" @ "36fc16bc95133424921bcc3da009e83b2f23ffb5" / "mmproj-LFM2.5-VL-1.6b-Q8_0.gguf"),
             size: 583_109_888,
             sha256: "2ce89e610c56f3198ece2b86cf61743a08b9307279c89125eb2412ebb908689d",
-        },
-    },
-    ModelSpec {
-        id: "lfm2-vl-1.6b",
-        name: "LFM2-VL 1.6B",
-        tier: "Balanced",
-        params: "1.6B",
-        description: "The first-generation 1.6B model (Q8_0; no 4-bit K-quant is published for it). Kept for \
-                      comparison: LFM2.5-VL 1.6B is more accurate and faster.",
-        memory_mb: 2_000,
-        license_name: LFM_LICENSE,
-        license_url: LFM_LICENSE_URL,
-        homepage: "https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF",
-        model: ModelFile {
-            name: "LFM2-VL-1.6B-Q8_0.gguf",
-            url: hf!("LiquidAI/LFM2-VL-1.6B-GGUF" @ "6121de267003bb4d4f325fe10abdc735aee06747" / "LFM2-VL-1.6B-Q8_0.gguf"),
-            size: 1_246_252_448,
-            sha256: "4c3b66c0a6bf25d5ef876edf118a96deebc15de04d58f4e280cdcfda708b7932",
-        },
-        mmproj: ModelFile {
-            name: "mmproj-LFM2-VL-1.6B-Q8_0.gguf",
-            url: hf!("LiquidAI/LFM2-VL-1.6B-GGUF" @ "6121de267003bb4d4f325fe10abdc735aee06747" / "mmproj-LFM2-VL-1.6B-Q8_0.gguf"),
-            size: 564_115_648,
-            sha256: "65ec437db88d65fff93f472d00c145e09880769ac67fedff5cd1c0f8d8301d87",
         },
     },
 ];

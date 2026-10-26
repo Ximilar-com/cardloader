@@ -78,7 +78,7 @@ const settings: SettingsView = {
   concurrency: 3,
   syncByDefault: true,
   engine: "ximilar",
-  localModel: "lfm2-vl-3b",
+  localModel: "lfm2.5-vl-3b",
   ebay: {
     sandbox: true,
     appId: "Demo-Cardload-SBX-0a1b2c3d4-5e6f7a8b",
@@ -385,7 +385,7 @@ function seed() {
     scan: settings.scan,
     syncRemote: true,
     engine: "ximilar" as const,
-    localModel: "lfm2-vl-3b",
+    localModel: "lfm2.5-vl-3b",
   };
   sessions.push(
     {
@@ -521,14 +521,15 @@ const lfm = {
 const models: ModelStatus[] = [
   {
     ...lfm,
-    id: "lfm2-vl-3b",
-    name: "LFM2-VL 3B",
+    id: "lfm2.5-vl-3b",
+    name: "LFM2.5-VL 3B",
     tier: "Accurate",
     params: "3B",
-    memoryMb: 2400,
-    size: 2_150_437_632,
-    description: "The largest model (Q4_K_M): the most reliable names and numbers, and the slowest.",
-    homepage: "https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF",
+    memoryMb: 2500,
+    size: 2_257_565_056,
+    description:
+      "Liquid AI's largest LFM2.5 vision model (Q4_K_M): the most reliable names and numbers, and the slowest.",
+    homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF",
   },
   {
     ...lfm,
@@ -550,21 +551,8 @@ const models: ModelStatus[] = [
     params: "1.6B",
     memoryMb: 1500,
     size: 1_314_006_144,
-    description:
-      "The newer 1.6B model (Q4_K_M): reads names and numbers clearly better than 450M, about 2–3 times slower.",
+    description: "The 1.6B model (Q4_K_M): reads names and numbers clearly better than 450M, about 2–3 times slower.",
     homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF",
-  },
-  {
-    ...lfm,
-    id: "lfm2-vl-1.6b",
-    name: "LFM2-VL 1.6B",
-    tier: "Balanced",
-    params: "1.6B",
-    memoryMb: 2000,
-    size: 1_810_368_096,
-    description:
-      "The first-generation 1.6B model (Q8_0). Kept for comparison: LFM2.5-VL 1.6B is more accurate and faster.",
-    homepage: "https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF",
   },
 ];
 models[0] = { ...models[0], state: "ready", downloaded: models[0].size };

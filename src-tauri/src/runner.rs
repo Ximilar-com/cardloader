@@ -1808,13 +1808,13 @@ mod tests {
             Some("Near Mint or Better")
         );
         let grading = item.grading.clone().unwrap();
-        assert_eq!(grading["engine"], "local/lfm2-vl-3b");
+        assert_eq!(grading["engine"], "local/lfm2.5-vl-3b");
         assert_eq!(grading["response"]["records"][0]["grades"]["surface"], 7.0);
         assert_eq!(item.summary.card.full_name, "Pikachu #58/102");
         assert_eq!(item.summary.confidence.as_deref(), Some("local"));
         assert_eq!(item.summary.price, None);
         assert_eq!(item.calls, 0);
-        assert_eq!(item.recognition.unwrap()["endpoint"], "local/lfm2-vl-3b");
+        assert_eq!(item.recognition.unwrap()["endpoint"], "local/lfm2.5-vl-3b");
 
         // Syncing still needs Ximilar.
         db.update_session_meta(

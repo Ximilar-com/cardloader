@@ -116,10 +116,9 @@ the engine and model it was created with, and **New session** can pick another d
 
 | Model | Download | Memory | Time per card |
 | --- | --- | --- | --- |
-| [LFM2-VL 3B](https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF) (default) | 2.2 GB | ~2.4 GB | 4.1 s |
+| [LFM2.5-VL 3B](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF) (default) | 2.3 GB | ~2.5 GB | 3.2 s |
 | [LFM2.5-VL 450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) | 330 MB | ~0.6 GB | 0.7 s |
 | [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 1.9 s |
-| [LFM2-VL 1.6B](https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF) | 1.8 GB | ~2.0 GB | 2.4 s |
 
 Times are for an Apple-silicon Mac (Metal); the CPU on Windows and Linux is slower. To choose, run **Compare with
 local model** on your own cards (below).
