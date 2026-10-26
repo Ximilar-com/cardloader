@@ -77,7 +77,7 @@ Download the installer for your platform:
 | Windows 10/11 | [Installer (.exe)][dl-exe] or [.msi][dl-msi] |
 | Linux | [.AppImage][dl-appimage], [.deb][dl-deb] or [.rpm][dl-rpm] |
 
-[dl-dmg]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_universal.dmg
+[dl-dmg]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader_0.2.0_universal.dmg
 [dl-exe]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_x64-setup.exe
 [dl-msi]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_x64_en-US.msi
 [dl-appimage]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_amd64.AppImage
