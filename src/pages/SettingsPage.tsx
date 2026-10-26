@@ -24,7 +24,15 @@ import { useLocation } from "react-router-dom";
 import { ebayReady } from "../components/Ebay";
 import { ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
-import { Check, DPI_OPTIONS, MULTIFEED_OPTIONS, PAIRING_OPTIONS, GAME_OPTIONS } from "../components/NewSessionDialog";
+import {
+  Check,
+  DPI_OPTIONS,
+  MULTIFEED_OPTIONS,
+  PAIRING_OPTIONS,
+  GAME_OPTIONS,
+  CONDITION_OPTIONS,
+  conditionScale,
+} from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
 import {
@@ -315,7 +323,7 @@ export default function SettingsPage() {
                       onClick={() => set("engine", "local")}
                       icon={<Cpu className="h-5 w-5" />}
                       title="Local model"
-                      text="A small vision model on this computer: free and offline. Reads the name, number and year printed on the card; no prices, candidates or grading."
+                      text="A small vision model on this computer: free and offline. Reads the name, number and year printed on the card and estimates grades and condition; no prices or candidates."
                     />
                   </div>
                   {draft.engine === "local" && (
@@ -378,6 +386,12 @@ export default function SettingsPage() {
                       value={draft.defaultGrading}
                       options={optionsOf(GRADING_LABELS)}
                       onChange={(v) => set("defaultGrading", v)}
+                    />
+                    <Field
+                      label="Condition scale"
+                      value={conditionScale(draft.defaultConditionMode, false)}
+                      options={CONDITION_OPTIONS}
+                      onChange={(v) => set("defaultConditionMode", v)}
                     />
                     <Field
                       label="Images per card"

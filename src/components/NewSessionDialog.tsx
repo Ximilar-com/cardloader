@@ -113,7 +113,7 @@ export default function NewSessionDialog({
         priceStats: s.priceStats,
         slab: false,
         grading: s.defaultGrading,
-        conditionMode: "ebay",
+        conditionMode: s.defaultConditionMode,
         // A duplex scanner gives front + back of every card (as `chooseSource` does).
         pairing: initialKind === "scanner" && s.scan.duplex ? "front_back" : s.defaultPairing,
         bothSides: false,
@@ -527,15 +527,15 @@ export default function NewSessionDialog({
             )}
             {local && (
               <p className="col-span-2 -mt-2 text-xs text-slate-500">
-                Runs on this computer: reads the name, collector number and year printed on each card. No prices, other
-                candidates or grading.
+                Runs on this computer: reads the name, collector number and year printed on each card, and estimates
+                grades and condition. No prices or other candidates.
               </p>
             )}
             <div className={local ? "hidden" : undefined}>
               <label className="label">Identify as</label>
               <Select value={idMode} onChange={setIdMode} options={optionsOf(ID_MODE_LABELS)} />
             </div>
-            <div className={local ? "hidden" : undefined}>
+            <div>
               <label className="label">Grading</label>
               <Select value={options.grading} onChange={(v) => set("grading", v)} options={optionsOf(GRADING_LABELS)} />
             </div>
@@ -551,18 +551,13 @@ export default function NewSessionDialog({
                 />
               </div>
             )}
-            {!local && options.grading === "condition" ? (
+            {options.grading === "condition" || (local && options.grading === "grade") ? (
               <div>
                 <label className="label">Condition scale</label>
                 <Select
-                  value={options.conditionMode}
+                  value={conditionScale(options.conditionMode, local)}
                   onChange={(v) => set("conditionMode", v)}
-                  options={[
-                    { value: "ebay", label: "eBay" },
-                    { value: "tcgplayer", label: "TCGplayer" },
-                    { value: "cardmarket", label: "Cardmarket" },
-                    { value: "ximilar", label: "Ximilar" },
-                  ]}
+                  options={local ? LOCAL_CONDITION_OPTIONS : CONDITION_OPTIONS}
                 />
               </div>
             ) : (
@@ -893,6 +888,23 @@ export const DPI_OPTIONS: SelectOption<string>[] = [
   { value: "300", label: "300 dpi", hint: "identification" },
   { value: "600", label: "600 dpi", hint: "grading" },
 ];
+
+/** Condition scales; the local model knows all but Ximilar's own (`local::grade::SCALES`). */
+export const CONDITION_OPTIONS: SelectOption<string>[] = [
+  { value: "tcgplayer", label: "TCGplayer" },
+  { value: "cardmarket", label: "Cardmarket" },
+  { value: "ebay_tcg", label: "eBay", hint: "trading cards" },
+  { value: "ebay_sport", label: "eBay", hint: "sports cards" },
+  { value: "ximilar", label: "Ximilar", hint: "API only" },
+];
+export const LOCAL_CONDITION_OPTIONS = CONDITION_OPTIONS.filter((o) => o.value !== "ximilar");
+
+/** The scale shown for a session's mode, as the backend reads it (`local::grade::scale`). */
+export function conditionScale(mode: string, local: boolean): string {
+  if (mode === "ebay") return local ? "ebay_sport" : "ebay_tcg";
+  if (local && !LOCAL_CONDITION_OPTIONS.some((o) => o.value === mode)) return "tcgplayer";
+  return CONDITION_OPTIONS.some((o) => o.value === mode) ? mode : "ebay_tcg";
+}
 
 export const MULTIFEED_OPTIONS: SelectOption<"off" | "default">[] = [
   { value: "off", label: "Off", hint: "recommended for cards" },

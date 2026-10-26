@@ -32,7 +32,13 @@ pub fn build_request(
     }
     let mut body = json!({"type": "card-grader", "endpoint": endpoint, "records": records});
     if mode == GradingMode::Condition {
-        body["mode"] = json!(condition_mode);
+        // The eBay trading and sports scales of local grading are one "ebay" scale to Ximilar.
+        let mode = if condition_mode.starts_with("ebay") {
+            "ebay"
+        } else {
+            condition_mode
+        };
+        body["mode"] = json!(mode);
     }
     body
 }

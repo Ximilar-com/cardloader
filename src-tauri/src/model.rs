@@ -95,6 +95,8 @@ impl CardCondition {
     /// A condition as graders and marketplaces write it ("Near Mint", "Lightly Played", "LP", …), if known.
     pub fn read(text: &str) -> Option<CardCondition> {
         let t = text.trim().to_ascii_lowercase();
+        // "Lightly Played (Excellent)": eBay's trading card steps carry the sports name in brackets.
+        let t = t.split(" (").next().unwrap_or_default();
         let t = t
             .trim_start_matches("raw - ")
             .trim_end_matches(" or better");
@@ -201,7 +203,7 @@ impl Default for SessionOptions {
             price_stats: true,
             slab: false,
             grading: GradingMode::Off,
-            condition_mode: "ebay".into(),
+            condition_mode: "ebay_tcg".into(),
             pairing: Pairing::Single,
             both_sides: false,
             magic_ai: false,

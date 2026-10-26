@@ -129,8 +129,15 @@ local model** on your own cards to choose.
   Windows and Linux. The model is loaded once (a few seconds) and reads one card at a time.
 - Two quick looks per card: the whole card for the name, year and game, and the enlarged bottom edge for the
   collector number and set code. The answers are held to a fixed JSON shape, so they always parse.
-- What it can't do: tell reprints and variants apart, give a match score, other candidates or prices, or grade.
+- What it can't do: tell reprints and variants apart, give a match score, other candidates or prices.
   Rows show a **Local** tag instead of High/Medium/Low. Cards Cloud sync still works (with your Ximilar token).
+- **Grading and condition (estimates).** A local session can also grade: each side gets one more question, and
+  the card takes the worse side. **Condition** picks a label of the chosen scale (TCGplayer, Cardmarket, eBay
+  trading cards or eBay sports cards; Settings → New sessions sets the default, the New session dialog per session);
+  on 7 scanned Pokémon cards the 450M model matched Ximilar's condition on 2 of the 3 that had one, at about 0.3 s per
+  side. **Full grade** asks for corners, edges, surface and centering from 1 to 10 and caps the final grade one point
+  above the weakest, but these models can't really judge wear by numbers: the 450M and 1.6B models answer about 7–8
+  for nearly every card. Treat local grades as a rough sort, never as a grader's opinion.
 - **How good is it on your cards?** On a session identified by Ximilar, **⋯ → Compare with local model…** runs
   a downloaded model on the same cards and shows how often the name and the number agree, and how long each card
   took. Run it again with another model to compare models side by side. The session itself isn't changed.

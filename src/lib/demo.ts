@@ -70,6 +70,7 @@ const settings: SettingsView = {
   defaultGrading: "grade",
   defaultPairing: "single",
   defaultSubcategory: "",
+  defaultConditionMode: "ebay_tcg",
   defaultSources: ["scanner", "folder"],
   // The demo starts with the setup, as a first launch does.
   setupDone: false,

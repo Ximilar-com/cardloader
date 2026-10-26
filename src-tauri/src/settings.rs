@@ -57,6 +57,9 @@ pub struct Settings {
     pub default_pairing: Pairing,
     /// The game (TCG) new sessions start with; empty = any.
     pub default_subcategory: String,
+    /// The condition scale of new sessions: tcgplayer, cardmarket, ebay_tcg, ebay_sport (and ximilar, for
+    /// the API only). See `local::grade::SCALES`.
+    pub default_condition_mode: String,
     /// How the user brings in cards, the main one first: what "New session" opens.
     pub default_sources: Vec<SourceKind>,
     /// The first-run setup was finished or skipped.
@@ -139,6 +142,7 @@ impl Default for Settings {
             default_grading: GradingMode::Off,
             default_pairing: Pairing::Single,
             default_subcategory: String::new(),
+            default_condition_mode: "ebay_tcg".into(),
             default_sources: vec![SourceKind::Folder],
             setup_done: false,
             price_stats: true,

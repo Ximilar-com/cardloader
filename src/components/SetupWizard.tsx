@@ -219,7 +219,7 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
               <Tile
                 icon={Cpu}
                 label="Local AI model"
-                hint="Runs on this computer, offline and free. Reads name, number and set; less precise."
+                hint="Runs on this computer, offline and free. Reads name, number and set and estimates condition; less precise."
                 selected={answers.engine === "local"}
                 onClick={() => setAnswers((a) => ({ ...a, engine: "local" }))}
               />
@@ -246,7 +246,9 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
               <div className="mt-6 space-y-3">
                 {answers.goals.length > 0 && (
                   <p className="text-sm text-amber-700 dark:text-amber-400">
-                    Grading, condition and prices need the Ximilar API; the local model only identifies cards.
+                    {answers.goals.includes("prices") && "Prices need the Ximilar API. "}
+                    {answers.goals.some((g) => g !== "prices") &&
+                      "The local model’s grades and conditions are rough estimates of a small model, not a grader’s."}
                   </p>
                 )}
                 {models && <ModelPicker models={models} value={localModel} onChange={setLocalModel} />}

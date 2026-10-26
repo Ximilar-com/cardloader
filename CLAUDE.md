@@ -130,7 +130,12 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   strip (collector number, set code); a 450M model reads small print only when it is enlarged, and fills a "set name"
   with random card text, so that field isn't asked for. Answers are constrained by hand-written GBNF grammars (field
   order matters; a schema-generated grammar sorts keys). Local items have `confidence = "local"`, no distance or
-  price, `calls = 0`, and `recognition.endpoint = "local/<model>"`; grading is skipped and concurrency is 1.
+  price, `calls = 0`, and `recognition.endpoint = "local/<model>"`; concurrency is 1.
+- **Local grading** (`local::grade`): one more generation per side after identification, stored in Ximilar's shape
+  (`records[0].grades`, `records[0]._objects[0].Condition`) so the UI reads both alike; the card takes the worse side.
+  `condition_mode` names a scale (`tcgplayer`, `cardmarket`, `ebay_tcg`, `ebay_sport`; Ximilar gets `ebay` for both
+  eBay ones). Small models echo the numbers a prompt suggests: spell out every step of a numeric scale, and expect
+  condition labels to be more useful than numeric grades (`real_model_grades_cards`).
 - **Adding a model**: append a `ModelSpec` to `local::catalog::MODELS` (smallest first) with a pinned revision
   (`https://huggingface.co/api/models/<repo>` → `sha`), file sizes and SHA-256 (`.../tree/main` → `lfs.oid`), a GGUF
   quant plus its `mmproj`. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak memory before

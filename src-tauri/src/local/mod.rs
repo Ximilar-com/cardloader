@@ -4,6 +4,7 @@
 pub mod catalog;
 pub mod compare;
 pub mod download;
+pub mod grade;
 pub mod identify;
 #[cfg(feature = "local-model")]
 mod llama;
@@ -19,6 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, Result};
 use crate::imaging;
+use crate::model::GradingMode;
 use crate::ximilar::recognition::Recognition;
 use catalog::ModelSpec;
 
@@ -366,6 +368,56 @@ impl LocalModels {
         });
         Ok((recognition, raw))
     }
+
+    /// Grades the card in `sides` (front, then back if there is one) with model `id`: a grade and its
+    /// condition, a condition on `scale`, or centering only. Returns the grading and the raw record to store.
+    pub async fn grade(
+        &self,
+        id: &str,
+        sides: &[PathBuf],
+        mode: GradingMode,
+        scale: &'static grade::Scale,
+    ) -> Result<grade::LocalGrading> {
+        let engine = self.engine(id).await?;
+        let paths = sides.to_vec();
+        let images = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u8>>> {
+            paths
+                .iter()
+                .map(|p| {
+                    let img = imaging::open(p)?;
+                    imaging::jpeg_bytes(&imaging::fit_long_edge(&img, CARD_LONG_EDGE), 90)
+                })
+                .collect()
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))??;
+        let started = Instant::now();
+        let answers = tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+            let (prompt, grammar) = match mode {
+                GradingMode::Condition => (
+                    grade::condition_prompt(scale),
+                    grade::condition_grammar(scale),
+                ),
+                _ => (grade::GRADE_PROMPT.to_string(), grade::grade_grammar()),
+            };
+            images
+                .iter()
+                .map(|jpeg| engine.generate(jpeg, &prompt, Some(&grammar), MAX_ANSWER_TOKENS))
+                .collect()
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))??;
+        let seconds = started.elapsed().as_secs_f64();
+        let mut graded = grade::parse(mode, scale, &answers).map_err(Error::Msg)?;
+        graded.raw = json!({
+            "endpoint": mode.as_str(),
+            "engine": format!("local/{id}"),
+            "seconds": (seconds * 100.0).round() / 100.0,
+            "answers": answers,
+            "response": graded.raw,
+        });
+        Ok(graded)
+    }
 }
 
 #[cfg(test)]
@@ -440,6 +492,45 @@ mod real_model {
             started.elapsed().as_secs_f64(),
             updates.lock().unwrap()
         );
+    }
+
+    /// Grades each card of `CARDLOADER_CARDS` (one image per card) in all three modes, on the TCGplayer scale.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn real_model_grades_cards() {
+        let models = std::env::var("CARDLOADER_MODELS").expect("CARDLOADER_MODELS");
+        let cards = std::env::var("CARDLOADER_CARDS").expect("CARDLOADER_CARDS");
+        let local = LocalModels::new(PathBuf::from(models));
+        let id = test_model();
+        assert!(local.is_ready(&id), "model files missing");
+        let mut paths: Vec<_> = std::fs::read_dir(cards)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| imaging::is_supported(p))
+            .collect();
+        paths.sort();
+        let scale = grade::scale("tcgplayer");
+        for path in &paths {
+            let side = [path.clone()];
+            let g = local
+                .grade(&id, &side, GradingMode::Grade, scale)
+                .await
+                .unwrap();
+            let c = local
+                .grade(&id, &side, GradingMode::Condition, scale)
+                .await
+                .unwrap();
+            println!(
+                "{:<36} grade {:>4} {:<18} {:>5.2}s | condition {:<18} {:>5.2}s | {}",
+                path.file_name().unwrap().to_string_lossy(),
+                g.grade.unwrap_or_default(),
+                g.condition.unwrap_or_default(),
+                g.raw["seconds"].as_f64().unwrap(),
+                c.condition.unwrap_or_default(),
+                c.raw["seconds"].as_f64().unwrap(),
+                g.raw["answers"][0]
+            );
+        }
     }
 
     #[tokio::test(flavor = "multi_thread")]

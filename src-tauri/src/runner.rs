@@ -872,10 +872,9 @@ impl Runner {
             .preview_path
             .clone()
             .unwrap_or_else(|| item.summary.front_path.clone());
-        let (rec, raw) = self
-            .local
-            .identify(&session.options.local_model, Path::new(&image))
-            .await?;
+        let model = &session.options.local_model;
+        let (rec, raw) = self.local.identify(model, Path::new(&image)).await?;
+        let grading = session.options.grading;
         self.db.save_recognition(
             item.summary.id,
             &rec.id_type,
@@ -886,8 +885,36 @@ impl Runner {
             None,
             &raw,
             0,
-            ItemStatus::Done,
+            if grading == GradingMode::Off {
+                ItemStatus::Done
+            } else {
+                ItemStatus::Grading
+            },
         )?;
+        if grading == GradingMode::Off {
+            return Ok(());
+        }
+        self.emit_item(item.summary.id);
+        let sides: Vec<PathBuf> = [Some(image), item.back_preview_path.clone()]
+            .into_iter()
+            .flatten()
+            .map(PathBuf::from)
+            .collect();
+        let scale = crate::local::grade::scale(&session.options.condition_mode);
+        match self.local.grade(model, &sides, grading, scale).await {
+            Ok(g) => self.db.save_grading(
+                item.summary.id,
+                g.grade,
+                g.condition.as_deref(),
+                &g.raw,
+                &[],
+            )?,
+            Err(e) => self.db.set_item_status(
+                item.summary.id,
+                ItemStatus::Error,
+                Some(&format!("grading: {e}")),
+            )?,
+        }
         Ok(())
     }
 
@@ -1757,7 +1784,8 @@ mod tests {
 
         crate::local::testing::install_fake(
             &runner.local,
-            r#"{"name": "Pikachu", "year": "1999", "game": "pokemon", "card_number": "58/102", "set_code": ""}"#,
+            r#"{"name": "Pikachu", "year": "1999", "game": "pokemon", "card_number": "58/102", "set_code": "",
+                "corners": 9, "edges": 8.5, "surface": 7, "centering": 9}"#,
         );
         runner.start(&session.id).unwrap();
         let started = Instant::now();
@@ -1771,11 +1799,17 @@ mod tests {
         let s = db.session(&session.id).unwrap();
         assert_eq!(s.status, SessionStatus::Completed, "{s:?}");
         let item = db.item(db.items(&session.id).unwrap()[0].id).unwrap();
+        assert_eq!(item.summary.status, ItemStatus::Done);
+        // Graded by the local model: mean 8.375, capped at the surface's 7 + 1.
+        assert_eq!(item.summary.grade, Some(8.0));
+        // On the default scale, eBay's for trading cards.
         assert_eq!(
-            item.summary.status,
-            ItemStatus::Done,
-            "grading is skipped locally"
+            item.summary.condition.as_deref(),
+            Some("Near Mint or Better")
         );
+        let grading = item.grading.clone().unwrap();
+        assert_eq!(grading["engine"], "local/lfm2.5-vl-450m");
+        assert_eq!(grading["response"]["records"][0]["grades"]["surface"], 7.0);
         assert_eq!(item.summary.card.full_name, "Pikachu #58/102");
         assert_eq!(item.summary.confidence.as_deref(), Some("local"));
         assert_eq!(item.summary.price, None);

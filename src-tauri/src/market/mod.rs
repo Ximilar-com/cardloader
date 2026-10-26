@@ -194,6 +194,16 @@ mod tests {
             Some(CardCondition::VeryGood)
         );
         assert_eq!(CardCondition::read("damaged"), Some(CardCondition::Poor));
+        // Every label of the local model's scales.
+        for scale in crate::local::grade::SCALES {
+            for (label, _, _) in scale.labels {
+                assert!(CardCondition::read(label).is_some(), "{label}");
+            }
+        }
+        assert_eq!(
+            CardCondition::read("Moderately Played (Very Good)"),
+            Some(CardCondition::VeryGood)
+        );
         assert_eq!(CardCondition::read("9.5"), None);
     }
 }

@@ -195,6 +195,8 @@ export interface Settings {
   defaultPairing: Pairing;
   /** The game (TCG) new sessions start with; empty = any. */
   defaultSubcategory: string;
+  /** Condition scale of new sessions: tcgplayer, cardmarket, ebay_tcg, ebay_sport (ximilar: the API only). */
+  defaultConditionMode: string;
   /** How cards are brought in, the main one first: what "New session" opens. */
   defaultSources: SourceKind[];
   /** The first-run setup was finished or skipped. */
