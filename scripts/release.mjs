@@ -68,14 +68,14 @@ function nextVersion(current, how) {
 function replaceIn(file, pattern, replacement, count) {
   const path = join(root, file);
   const text = readFileSync(path, "utf8");
-  const found = text.match(
-    new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g"),
-  );
+  // Global, so the replacement changes every line counted (a plain pattern would change only the first).
+  const all = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
+  const found = text.match(all);
   if ((found?.length ?? 0) !== count) fail(`expected ${count} version line(s) in ${file}, found ${found?.length ?? 0}`);
   console.log(`  ${file}`);
   if (!dryRun) {
     bumped.add(file);
-    writeFileSync(path, text.replace(pattern, replacement));
+    writeFileSync(path, text.replace(all, replacement));
   }
 }
 

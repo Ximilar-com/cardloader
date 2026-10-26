@@ -78,11 +78,11 @@ Download the installer for your platform:
 | Linux | [.AppImage][dl-appimage], [.deb][dl-deb] or [.rpm][dl-rpm] |
 
 [dl-dmg]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader_0.2.0_universal.dmg
-[dl-exe]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_x64-setup.exe
-[dl-msi]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_x64_en-US.msi
-[dl-appimage]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_amd64.AppImage
-[dl-deb]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader_0.1.0_amd64.deb
-[dl-rpm]: https://github.com/Ximilar-com/cardloader/releases/download/v0.1.0/Cardloader-0.1.0-1.x86_64.rpm
+[dl-exe]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader_0.2.0_x64-setup.exe
+[dl-msi]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader_0.2.0_x64_en-US.msi
+[dl-appimage]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader_0.2.0_amd64.AppImage
+[dl-deb]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader_0.2.0_amd64.deb
+[dl-rpm]: https://github.com/Ximilar-com/cardloader/releases/download/v0.2.0/Cardloader-0.2.0-1.x86_64.rpm
 
 Release notes and earlier versions are on the [Releases](https://github.com/Ximilar-com/cardloader/releases) page.
 
