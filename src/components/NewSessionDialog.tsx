@@ -114,7 +114,8 @@ export default function NewSessionDialog({
         slab: false,
         grading: s.defaultGrading,
         conditionMode: "ebay",
-        pairing: s.defaultPairing,
+        // A duplex scanner gives front + back of every card (as `chooseSource` does).
+        pairing: initialKind === "scanner" && s.scan.duplex ? "front_back" : s.defaultPairing,
         bothSides: false,
         magicAi: false,
         customEndpoint: "",
@@ -123,14 +124,14 @@ export default function NewSessionDialog({
         knownSide: false,
         knownRotation: false,
         alphabet: "",
-        subcategory: "",
+        subcategory: s.defaultSubcategory,
         scan: s.scan,
         syncRemote: s.syncByDefault,
         engine: s.engine,
         localModel: s.localModel,
       });
     });
-  }, [from]);
+  }, [from, initialKind]);
 
   useEffect(() => {
     if (!folder || kind === "scanner" || kind === "csv") return;
@@ -631,8 +632,12 @@ const ALPHABET_OPTIONS: SelectOption<string>[] = [
 ];
 
 // Subcategory values as Ximilar's collectibles taxonomy spells them (mirrors recognition::TCG_GAMES / SPORTS).
-const GAME_LABELS: Record<string, string> = { Pokemon: "Pokémon", "YuGiOh!": "Yu-Gi-Oh!", Lotr: "Lord of the Rings" };
-const TCG_GAMES = [
+export const GAME_LABELS: Record<string, string> = {
+  Pokemon: "Pokémon",
+  "YuGiOh!": "Yu-Gi-Oh!",
+  Lotr: "Lord of the Rings",
+};
+export const TCG_GAMES = [
   "Arkham Horror",
   "Digimon",
   "Dragon Ball Super",
@@ -664,7 +669,7 @@ const subcategoryOptions = (values: string[], any: string): SelectOption<string>
   { value: "", label: any, hint: "Ximilar reads it from the card" },
   ...values.map((v) => ({ value: v, label: GAME_LABELS[v] ?? v })).sort((a, b) => a.label.localeCompare(b.label)),
 ];
-const GAME_OPTIONS = subcategoryOptions(TCG_GAMES, "Any game");
+export const GAME_OPTIONS = subcategoryOptions(TCG_GAMES, "Any game");
 const SPORT_OPTIONS = subcategoryOptions(SPORTS, "Any sport");
 
 /** What is already known about every card, so Ximilar skips working it out: faster and more accurate. */

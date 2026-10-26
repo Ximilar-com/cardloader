@@ -86,6 +86,21 @@ pub fn list_sessions(state: S) -> Result<Vec<Session>> {
     state.db.sessions()
 }
 
+/// Cards analysed per day over the last `days` days (today included), for the dashboard.
+#[tauri::command]
+pub fn dashboard_activity(state: S, days: u32) -> Result<Vec<DayCount>> {
+    use chrono::{Duration, Local, SecondsFormat, TimeZone, Utc};
+    let first = Local::now().date_naive() - Duration::days(i64::from(days.max(1)) - 1);
+    let since = Local
+        .from_local_datetime(&first.and_hms_opt(0, 0, 0).unwrap_or_default())
+        .earliest()
+        .map(|t| t.with_timezone(&Utc))
+        .unwrap_or_else(Utc::now);
+    state
+        .db
+        .analysed_per_day(&since.to_rfc3339_opts(SecondsFormat::Millis, true))
+}
+
 #[tauri::command]
 pub fn get_session(state: S, id: String) -> Result<Session> {
     state.db.session(&id)

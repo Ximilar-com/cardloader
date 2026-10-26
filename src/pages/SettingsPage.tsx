@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ScanLine,
   SlidersHorizontal,
+  Wand2,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -17,7 +18,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
-import { Check, DPI_OPTIONS, MULTIFEED_OPTIONS, PAIRING_OPTIONS } from "../components/NewSessionDialog";
+import { Check, DPI_OPTIONS, MULTIFEED_OPTIONS, PAIRING_OPTIONS, GAME_OPTIONS } from "../components/NewSessionDialog";
+import { useSetupWizard } from "../components/SetupWizard";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
 import {
   api,
@@ -28,7 +30,7 @@ import {
   type Settings,
   type SettingsView,
 } from "../lib/api";
-import { GRADING_LABELS, ID_MODE_LABELS } from "../lib/format";
+import { GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView | null>(null);
@@ -42,6 +44,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const models = useModels();
+  const showSetup = useSetupWizard((s) => s.show);
   // Another page can open Settings at a tab: navigate("/settings", { state: { section } }).
   const section = (useLocation().state as { section?: Tab } | null)?.section;
   const [tab, setTab] = useState<Tab>(section ?? "ximilar");
@@ -328,6 +331,22 @@ export default function SettingsPage() {
                       options={optionsOf(ID_MODE_LABELS)}
                       onChange={(v) => set("defaultIdMode", v)}
                     />
+                    {draft.defaultIdMode === "tcg" ? (
+                      <Field
+                        label="Game"
+                        value={draft.defaultSubcategory}
+                        options={GAME_OPTIONS}
+                        onChange={(v) => set("defaultSubcategory", v)}
+                      />
+                    ) : (
+                      <div />
+                    )}
+                    <Field
+                      label="New session opens"
+                      value={draft.defaultSources[0] ?? "folder"}
+                      options={SOURCE_OPTIONS}
+                      onChange={(v) => set("defaultSources", [v, ...draft.defaultSources.filter((s) => s !== v)])}
+                    />
                     <Field
                       label="Grading"
                       value={draft.defaultGrading}
@@ -358,6 +377,9 @@ export default function SettingsPage() {
                       onChange={(v) => set("syncByDefault", v)}
                     />
                   </div>
+                  <button className="btn mt-4" onClick={() => showSetup(view)}>
+                    <Wand2 className="h-4 w-4" /> Run setup again
+                  </button>
                 </Section>
               </>
             )}
@@ -533,6 +555,10 @@ const SIDE_ORDER_OPTIONS: SelectOption<"front" | "back">[] = [
   { value: "front", label: "Front, then back" },
   { value: "back", label: "Back, then front" },
 ];
+
+const SOURCE_OPTIONS: SelectOption<Settings["defaultSources"][number]>[] = (
+  ["scanner", "folder", "watch_folder", "csv"] as const
+).map((value) => ({ value, label: SOURCE_LABELS[value] }));
 
 const COLOR_OPTIONS: SelectOption<Settings["scan"]["color"]>[] = [
   { value: "color", label: "Colour" },

@@ -170,6 +170,12 @@ export interface Settings {
   defaultIdMode: IdMode;
   defaultGrading: GradingMode;
   defaultPairing: Pairing;
+  /** The game (TCG) new sessions start with; empty = any. */
+  defaultSubcategory: string;
+  /** How cards are brought in, the main one first: what "New session" opens. */
+  defaultSources: SourceKind[];
+  /** The first-run setup was finished or skipped. */
+  setupDone: boolean;
   priceStats: boolean;
   concurrency: number;
   syncByDefault: boolean;
@@ -221,6 +227,12 @@ export interface CompareReport {
   secondsPerCard: number;
   cancelled: boolean;
   rows: CompareRow[];
+}
+
+/** Cards analysed on one local day (`YYYY-MM-DD`). */
+export interface DayCount {
+  date: string;
+  cards: number;
 }
 
 export interface SettingsView extends Settings {
@@ -307,6 +319,7 @@ export const api = {
   testConnection: () => invoke<ConnectionCheck>("test_connection"),
 
   listSessions: () => invoke<Session[]>("list_sessions"),
+  dashboardActivity: (days: number) => invoke<DayCount[]>("dashboard_activity", { days }),
   getSession: (id: string) => invoke<Session>("get_session", { id }),
   /** `remoteSession`: the ID or link of a Cards Cloud session to continue; files whose cards it has are skipped. */
   createSession: (session: NewSession, remoteSession?: string) =>

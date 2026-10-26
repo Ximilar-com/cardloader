@@ -55,8 +55,11 @@ src/
   lib/api.ts      TypeScript types + wrappers for every command and event
   lib/cardview.ts one Row/CardView shape for local items and Cards Cloud rows
   lib/demo.ts     mockIPC answers for `npm run dev` outside Tauri
-  pages/          SessionsPage (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, SettingsPage
-  components/     SessionTable (virtualized), DetailPanel, NewSessionDialog, SessionActions, Menu, …
+  lib/setup.ts    first-run setup answers ↔ the default settings they become (only the settings are stored)
+  pages/          DashboardPage (home: 7-day bars, activity heatmap, last sessions, defaults), SessionsPage
+                  (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, SettingsPage
+  components/     SetupWizard (shown while `setupDone` is false; rerun from Home or Settings), SessionTable
+                  (virtualized), DetailPanel, NewSessionDialog, SessionActions, Menu, …
 ```
 
 Events from Rust: `session-updated` (Session), `item-updated` (ItemSummary), `model-updated` (ModelStatus, download

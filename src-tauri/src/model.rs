@@ -291,6 +291,14 @@ pub struct ItemDetail {
     pub remote_id: Option<String>,
 }
 
+/// Cards analysed on one local day (`YYYY-MM-DD`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayCount {
+    pub date: String,
+    pub cards: u32,
+}
+
 pub fn now() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }

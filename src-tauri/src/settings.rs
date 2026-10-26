@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings};
+use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind};
 
 pub const DEFAULT_API_BASE: &str = "https://api.ximilar.com";
 const KEYRING_SERVICE: &str = "com.ximilar.cardloader";
@@ -28,6 +28,12 @@ pub struct Settings {
     pub default_id_mode: IdMode,
     pub default_grading: GradingMode,
     pub default_pairing: Pairing,
+    /// The game (TCG) new sessions start with; empty = any.
+    pub default_subcategory: String,
+    /// How the user brings in cards, the main one first: what "New session" opens.
+    pub default_sources: Vec<SourceKind>,
+    /// The first-run setup was finished or skipped.
+    pub setup_done: bool,
     pub price_stats: bool,
     pub concurrency: u32,
     pub sync_by_default: bool,
@@ -50,6 +56,9 @@ impl Default for Settings {
             default_id_mode: IdMode::Auto,
             default_grading: GradingMode::Off,
             default_pairing: Pairing::Single,
+            default_subcategory: String::new(),
+            default_sources: vec![SourceKind::Folder],
+            setup_done: false,
             price_stats: true,
             concurrency: 4,
             sync_by_default: false,
@@ -232,6 +241,10 @@ mod tests {
         assert_eq!(settings.concurrency, 2);
         assert_eq!(settings.api_base_url, DEFAULT_API_BASE);
         assert_eq!(settings.scan.dpi, 600);
+        // Settings from before the setup wizard: it is shown once.
+        assert!(!settings.setup_done);
+        assert_eq!(settings.default_sources, vec![SourceKind::Folder]);
+        assert_eq!(settings.default_subcategory, "");
     }
 
     #[test]

@@ -59,6 +59,10 @@ const settings: SettingsView = {
   defaultIdMode: "auto",
   defaultGrading: "grade",
   defaultPairing: "single",
+  defaultSubcategory: "",
+  defaultSources: ["scanner", "folder"],
+  // The demo starts with the setup, as a first launch does.
+  setupDone: false,
   priceStats: true,
   concurrency: 4,
   syncByDefault: true,
@@ -543,6 +547,24 @@ async function compareDemo(sessionId: string, runId: string, modelId: string) {
   };
 }
 
+/** Cards analysed per day over the last `days` days: scanning on most weekdays, rarely at weekends. */
+function activity(days: number) {
+  const out = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const roll = (Math.sin(i * 12.9898) * 43758.5453) % 1;
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    if (Math.abs(roll) < (weekend ? 0.8 : 0.35)) continue;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    out.push({
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      cards: Math.round(Math.abs(roll) * 180) + 5,
+    });
+  }
+  return out;
+}
+
 export function installDemo() {
   seed();
   mockConvertFileSrc("macos");
@@ -550,10 +572,14 @@ export function installDemo() {
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, never>;
       switch (cmd) {
-        case "get_settings":
         case "save_settings":
+          Object.assign(settings, a.settings);
+          return settings;
+        case "get_settings":
         case "set_token":
           return settings;
+        case "dashboard_activity":
+          return activity(a.days);
         case "test_connection":
           return { ok: true, account: "demo@example.com", error: null, cardsCloud: true, cardsCloudError: null };
         case "list_sessions":

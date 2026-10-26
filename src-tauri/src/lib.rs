@@ -66,6 +66,7 @@ pub fn run() {
             commands::set_token,
             commands::test_connection,
             commands::list_sessions,
+            commands::dashboard_activity,
             commands::get_session,
             commands::create_session,
             commands::update_session,

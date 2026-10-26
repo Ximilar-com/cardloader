@@ -342,6 +342,23 @@ impl Db {
         })
     }
 
+    /// Cards analysed per local day since `since` (an RFC 3339 UTC time, as stored), oldest first.
+    pub fn analysed_per_day(&self, since: &str) -> Result<Vec<DayCount>> {
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT date(analyzed_at, 'localtime') AS day, COUNT(*) FROM items
+                 WHERE analyzed_at >= ?1 GROUP BY day ORDER BY day",
+            )?;
+            let rows = stmt.query_map(params![since], |r| {
+                Ok(DayCount {
+                    date: r.get(0)?,
+                    cards: r.get(1)?,
+                })
+            })?;
+            rows.collect()
+        })
+    }
+
     /// Source paths already in the session, so a re-run of a folder only adds new files.
     pub fn known_paths(&self, session_id: &str) -> Result<std::collections::HashSet<String>> {
         self.with(|c| {
@@ -765,6 +782,52 @@ mod tests {
             options: SessionOptions::default(),
         })
         .unwrap()
+    }
+
+    #[test]
+    fn counts_analysed_cards_per_day() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        for (i, at) in [
+            Some("2026-10-19T12:00:00.000Z"),
+            Some("2026-10-20T12:00:00.000Z"),
+            Some("2026-10-20T12:30:00.000Z"),
+            None,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = db
+                .insert_item(
+                    &s.id,
+                    &format!("/{i}.jpg"),
+                    None,
+                    &ItemImages::default(),
+                    None,
+                )
+                .unwrap();
+            db.with(|c| {
+                c.execute(
+                    "UPDATE items SET analyzed_at = ?2 WHERE id = ?1",
+                    params![id, at],
+                )
+            })
+            .unwrap();
+        }
+        let days = db.analysed_per_day("2026-10-20T00:00:00.000Z").unwrap();
+        assert_eq!(
+            days,
+            vec![DayCount {
+                date: "2026-10-20".into(),
+                cards: 2
+            }]
+        );
+        assert_eq!(
+            db.analysed_per_day("2026-01-01T00:00:00.000Z")
+                .unwrap()
+                .len(),
+            2
+        );
     }
 
     #[test]
