@@ -114,16 +114,15 @@ grading. Cards Cloud bills one call per session and one per stored image. See [X
 accept its license and download it (with progress; downloads can be cancelled and resumed). Each session keeps
 the engine and model it was created with, and **New session** can pick another downloaded model per session.
 
-| Model | Download | Memory | Names read right | Numbers read right | Time per card |
-| --- | --- | --- | --- | --- | --- |
-| [LFM2.5-VL 450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) (default) | 330 MB | ~0.6 GB | 20 / 21 | 16 / 21 | 0.7 s |
-| [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 21 / 21 | 18 / 21 | 1.9 s |
-| [LFM2-VL 1.6B](https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF) | 1.8 GB | ~2.0 GB | 19 / 21 | 15 / 21 | 2.4 s |
-| [LFM2-VL 3B](https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF) | 2.2 GB | ~2.4 GB | 21 / 21 | 20 / 21 | 4.1 s |
+| Model | Download | Memory | Time per card |
+| --- | --- | --- | --- |
+| [LFM2-VL 3B](https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF) (default) | 2.2 GB | ~2.4 GB | 4.1 s |
+| [LFM2.5-VL 450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) | 330 MB | ~0.6 GB | 0.7 s |
+| [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 1.9 s |
+| [LFM2-VL 1.6B](https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF) | 1.8 GB | ~2.0 GB | 2.4 s |
 
-Measured on an Apple-silicon Mac (Metal) with 21 clean card images (12 Pokémon from 1999–2023, 9 Magic). Real
-scans, other games and sports cards will differ, and the CPU on Windows/Linux is slower — use **Compare with
-local model** on your own cards to choose.
+Times are for an Apple-silicon Mac (Metal); the CPU on Windows and Linux is slower. To choose, run **Compare with
+local model** on your own cards (below).
 
 - The model runs in the app through [llama.cpp](https://github.com/ggml-org/llama.cpp): Metal on Macs, the CPU on
   Windows and Linux. The model is loaded once (a few seconds) and reads one card at a time.
@@ -135,11 +134,7 @@ local model** on your own cards to choose.
   the card takes the worse side. **Condition** picks a label of the chosen scale (TCGplayer, Cardmarket, eBay
   trading cards or eBay sports cards; Settings → New sessions sets the default, the New session dialog per session).
   **Full grade** asks for corners, edges, surface and centering from 1 to 10 and caps the final grade one point
-  above the weakest. Treat both as a rough sort, never as a grader's opinion: on 4 scanned Pokémon cards with a
-  Ximilar condition, the 450M model named the same condition for 2 (0.3 s per side), the 1.6B and 3B models for 1
-  (they call nearly every card Near Mint; 0.9 s and 1.4 s per side), and no model's numeric grades followed the
-  cards' wear (the 450M and 1.6B models answer about 7–8 for nearly every card; the 3B model's grades vary but rank
-  a Near Mint card below a Moderately Played one).
+  above the weakest. Both are rough estimates of a small model, not a grader's opinion.
 - **How good is it on your cards?** On a session identified by Ximilar, **⋯ → Compare with local model…** runs
   a downloaded model on the same cards and shows how often the name and the number agree, and how long each card
   took. Run it again with another model to compare models side by side. The session itself isn't changed.

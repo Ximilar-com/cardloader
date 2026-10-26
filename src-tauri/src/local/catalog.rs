@@ -39,7 +39,7 @@ impl ModelSpec {
     }
 }
 
-pub const DEFAULT_MODEL: &str = "lfm2.5-vl-450m";
+pub const DEFAULT_MODEL: &str = "lfm2-vl-3b";
 
 const LFM_LICENSE: &str = "LFM Open License v1.0";
 const LFM_LICENSE_URL: &str = "https://www.liquid.ai/lfm-license";
@@ -58,10 +58,34 @@ macro_rules! hf {
     };
 }
 
-/// Smallest first: the order the Settings page lists them in.
+/// The default first, then smallest first: the order the Settings page and the pickers list them in.
 pub const MODELS: &[ModelSpec] = &[
     ModelSpec {
         id: DEFAULT_MODEL,
+        name: "LFM2-VL 3B",
+        tier: "Accurate",
+        params: "3B",
+        description: "The largest model (Q4_K_M): the most reliable names and numbers, and the slowest (about 5 \
+                      times the 450M time). Best on a computer with 8 GB of memory or more.",
+        memory_mb: 2_400,
+        license_name: LFM_LICENSE,
+        license_url: LFM_LICENSE_URL,
+        homepage: "https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF",
+        model: ModelFile {
+            name: "LFM2-VL-3B-Q4_K_M.gguf",
+            url: hf!("LiquidAI/LFM2-VL-3B-GGUF" @ "da5c839b488cbdf55739f30459527ec703d11212" / "LFM2-VL-3B-Q4_K_M.gguf"),
+            size: 1_563_668_256,
+            sha256: "07b435d85daec5dec0e2be6644f36201d1a0dff8904d83e41175ba2d3b6f3ffe",
+        },
+        mmproj: ModelFile {
+            name: "mmproj-LFM2-VL-3B-Q8_0.gguf",
+            url: hf!("LiquidAI/LFM2-VL-3B-GGUF" @ "da5c839b488cbdf55739f30459527ec703d11212" / "mmproj-LFM2-VL-3B-Q8_0.gguf"),
+            size: 586_769_376,
+            sha256: "135dd0ee2a0ceb597fac0d8640dae6c86f28c7ca2cd5b88eb309c32fe8f8dde9",
+        },
+    },
+    ModelSpec {
+        id: "lfm2.5-vl-450m",
         name: "LFM2.5-VL 450M",
         tier: "Fast",
         params: "450M",
@@ -130,30 +154,6 @@ pub const MODELS: &[ModelSpec] = &[
             url: hf!("LiquidAI/LFM2-VL-1.6B-GGUF" @ "6121de267003bb4d4f325fe10abdc735aee06747" / "mmproj-LFM2-VL-1.6B-Q8_0.gguf"),
             size: 564_115_648,
             sha256: "65ec437db88d65fff93f472d00c145e09880769ac67fedff5cd1c0f8d8301d87",
-        },
-    },
-    ModelSpec {
-        id: "lfm2-vl-3b",
-        name: "LFM2-VL 3B",
-        tier: "Accurate",
-        params: "3B",
-        description: "The largest model (Q4_K_M): the most reliable names and numbers, and the slowest (about 5 \
-                      times the 450M time). Best on a computer with 8 GB of memory or more.",
-        memory_mb: 2_400,
-        license_name: LFM_LICENSE,
-        license_url: LFM_LICENSE_URL,
-        homepage: "https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF",
-        model: ModelFile {
-            name: "LFM2-VL-3B-Q4_K_M.gguf",
-            url: hf!("LiquidAI/LFM2-VL-3B-GGUF" @ "da5c839b488cbdf55739f30459527ec703d11212" / "LFM2-VL-3B-Q4_K_M.gguf"),
-            size: 1_563_668_256,
-            sha256: "07b435d85daec5dec0e2be6644f36201d1a0dff8904d83e41175ba2d3b6f3ffe",
-        },
-        mmproj: ModelFile {
-            name: "mmproj-LFM2-VL-3B-Q8_0.gguf",
-            url: hf!("LiquidAI/LFM2-VL-3B-GGUF" @ "da5c839b488cbdf55739f30459527ec703d11212" / "mmproj-LFM2-VL-3B-Q8_0.gguf"),
-            size: 586_769_376,
-            sha256: "135dd0ee2a0ceb597fac0d8640dae6c86f28c7ca2cd5b88eb309c32fe8f8dde9",
         },
     },
 ];

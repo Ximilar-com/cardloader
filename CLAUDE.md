@@ -136,14 +136,14 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   `condition_mode` names a scale (`tcgplayer`, `cardmarket`, `ebay_tcg`, `ebay_sport`; Ximilar gets `ebay` for both
   eBay ones). Small models echo the numbers a prompt suggests: spell out every step of a numeric scale, and expect
   condition labels to be more useful than numeric grades (`real_model_grades_cards`).
-- **Adding a model**: append a `ModelSpec` to `local::catalog::MODELS` (smallest first) with a pinned revision
+- **Adding a model**: add a `ModelSpec` to `local::catalog::MODELS` (the default first, then smallest first) with a pinned revision
   (`https://huggingface.co/api/models/<repo>` → `sha`), file sizes and SHA-256 (`.../tree/main` → `lfs.oid`), a GGUF
   quant plus its `mmproj`. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak memory before
   writing its description; mirror it in `src/lib/demo.ts`.
 - `llama-cpp-2`'s `LlamaSampler::sample` already accepts the token; accepting it again corrupts the grammar
   (`GGML_ASSERT(!stacks.empty())`). The llama.cpp backend can be initialised once per process (`OnceLock`).
 - Real-model checks are opt-in (`#[ignore]`): `real_model_reads_cards` (needs `CARDLOADER_MODELS`, `CARDLOADER_CARDS`)
-  and `real_download` (`CARDLOADER_DOWNLOAD_TO`), both for `CARDLOADER_MODEL` (default the 450M model). Run them with `--release -- --ignored --nocapture`. Never commit
+  and `real_download` (`CARDLOADER_DOWNLOAD_TO`), both for `CARDLOADER_MODEL` (default `catalog::DEFAULT_MODEL`, the 3B model). Run them with `--release -- --ignored --nocapture`. Never commit
   model files or card images.
 - **eBay** (`ebay/`): the user's own keyset (App ID, RuName in settings; Cert ID and the refresh token are
   `settings::Secret`s like the API token; changing the keyset or environment disconnects). eBay redirects only to

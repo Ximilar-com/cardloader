@@ -78,7 +78,7 @@ const settings: SettingsView = {
   concurrency: 3,
   syncByDefault: true,
   engine: "ximilar",
-  localModel: "lfm2.5-vl-450m",
+  localModel: "lfm2-vl-3b",
   ebay: {
     sandbox: true,
     appId: "Demo-Cardload-SBX-0a1b2c3d4-5e6f7a8b",
@@ -385,7 +385,7 @@ function seed() {
     scan: settings.scan,
     syncRemote: true,
     engine: "ximilar" as const,
-    localModel: "lfm2.5-vl-450m",
+    localModel: "lfm2-vl-3b",
   };
   sessions.push(
     {
@@ -517,7 +517,19 @@ const lfm = {
   error: null,
   supported: true,
 };
+// The default first, as `local::catalog::MODELS`.
 const models: ModelStatus[] = [
+  {
+    ...lfm,
+    id: "lfm2-vl-3b",
+    name: "LFM2-VL 3B",
+    tier: "Accurate",
+    params: "3B",
+    memoryMb: 2400,
+    size: 2_150_437_632,
+    description: "The largest model (Q4_K_M): the most reliable names and numbers, and the slowest.",
+    homepage: "https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF",
+  },
   {
     ...lfm,
     id: "lfm2.5-vl-450m",
@@ -553,17 +565,6 @@ const models: ModelStatus[] = [
     description:
       "The first-generation 1.6B model (Q8_0). Kept for comparison: LFM2.5-VL 1.6B is more accurate and faster.",
     homepage: "https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF",
-  },
-  {
-    ...lfm,
-    id: "lfm2-vl-3b",
-    name: "LFM2-VL 3B",
-    tier: "Accurate",
-    params: "3B",
-    memoryMb: 2400,
-    size: 2_150_437_632,
-    description: "The largest model (Q4_K_M): the most reliable names and numbers, and the slowest.",
-    homepage: "https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF",
   },
 ];
 models[0] = { ...models[0], state: "ready", downloaded: models[0].size };
