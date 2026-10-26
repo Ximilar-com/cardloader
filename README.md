@@ -15,12 +15,17 @@
 Cardloader is an open-source desktop app for Windows, macOS and Linux, built with [Tauri 2](https://tauri.app)
 (Rust) and React.
 
+- **Home and setup.** On first launch, five questions (what you scan, which game, whether you grade, check
+  condition or want prices, how cards come in, and whether the Ximilar API or a local model identifies them) set
+  the defaults of new sessions; run them again any time from Home or Settings. Home shows the cards analysed in the
+  last 7 days, a year of activity, the last sessions and those defaults.
 - **Sessions.** Each analysis of a folder, or each run of the scanner, is a session. The table fills in as
   results arrive; click a card to see its images, the best match, price statistics, grading and links. If the
   match is wrong, select one of the other candidates instead; the correction is also sent to Cards Cloud.
 - **Identification.** The [Collectibles Recognition](https://docs.ximilar.com/collectibles/recognition) endpoints
   identify the cards: TCG ID (Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana and more), Sport ID, Comics ID and Slab
-  ID. In **Auto** mode, `/analyze` detects the card type and identifies the card in one call.
+  ID. In **Auto** mode, `/analyze` detects the card type and identifies the card in one call. Rotated and
+  upside-down cards are turned upright before they are identified, unless the session says every card is upright.
 - **Front and back.** In a folder, images named `card_F.jpg` and `card_B.jpg` (or `_front`/`_back`, any image
   format) are paired by name; other images pair with the next one. When a session is set to **Identify from the front
   and the back**, the back goes to recognition together with the front. This helps sports cards, whose backs carry
@@ -35,7 +40,8 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   (corners, edges, surface, centering, final grade) using both sides, check its condition, or measure centering
   only. The grading overlays are saved alongside the session.
 - **Scanner.** Cardloader drives a RICOH/Fujitsu **fi-8170**, or any SANE/TWAIN document scanner, in duplex batches.
-  Front and back are paired automatically.
+  Front and back are paired automatically, in the order you feed them (front or back first), and pages fed upside
+  down can be turned as they are scanned.
 - **Watch folder.** Cardloader can also analyse images as another app saves them into a folder, for example
   PaperStream Capture.
 - **Cards Cloud.** Sessions can be mirrored live to
@@ -88,12 +94,13 @@ To build and install from source instead, see [Development](#development) and ru
 
 ## Getting started
 
-1. Open **Settings**, paste your Ximilar API token and click **Test connection**. You can find the token in the
+1. On first launch, answer the setup questions (or skip them); they set the defaults of new sessions.
+2. Open **Settings**, paste your Ximilar API token and click **Test connection**. You can find the token in the
    [Ximilar App](https://app.ximilar.com). Collectibles recognition needs the Business plan or a trial;
    Cards Cloud sync needs the Cards Cloud service on your account. The token is stored in the system keychain.
-2. Click **Sessions → New session**. Pick a folder (or a scanner), choose how to identify the cards, whether to
+3. Click **New session** (on Home or Sessions). Pick a folder (or a scanner), choose how to identify the cards, whether to
    grade them and whether to sync to Cards Cloud, then click **Create & run**.
-3. Watch the cards come in. Click any row to see its details. Use **Pause** and **Stop** whenever you like;
+4. Watch the cards come in. Click any row to see its details. Use **Pause** and **Stop** whenever you like;
    **Run again** picks up where the session left off, including new files added to the folder.
 
 To bring in cards you already have in a spreadsheet, click **Import CSV** instead (see below).
@@ -213,6 +220,12 @@ contains before anything is imported. One row is one card, and columns are recog
 Cardloader scans in **ADF duplex** mode. The defaults are a 66 × 92 mm frame, which is slightly larger than a
 standard 63 × 88 mm card, 600 dpi, colour, and **multifeed detection off** (stiff cards trigger false double-feed
 errors). Start with small stacks of up to about 10 cards, and don't feed sleeved cards.
+
+- **Settings → Scanner** applies to every scanner session, also when it is continued.
+- **Rotation: Upside down** turns each page as it is scanned, for cards fed bottom edge first.
+- **Side order: Back, then front** is for cards fed back side up.
+- A session that doesn't grade scans at **300 dpi**: identification gets a preview of at most 1600 px, which a
+  300 dpi card nearly fills. Grading uses the full 600 dpi scan.
 
 | OS | What to install | How Cardloader talks to it |
 | --- | --- | --- |
