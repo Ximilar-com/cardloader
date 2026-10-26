@@ -64,7 +64,7 @@ const settings: SettingsView = {
   // The demo starts with the setup, as a first launch does.
   setupDone: false,
   priceStats: true,
-  concurrency: 4,
+  concurrency: 3,
   syncByDefault: true,
   engine: "ximilar",
   localModel: "lfm2.5-vl-450m",

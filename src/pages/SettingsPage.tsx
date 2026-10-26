@@ -123,10 +123,16 @@ export default function SettingsPage() {
         <h1 className="text-lg font-semibold">Settings</h1>
         <div className="flex-1" />
         {saved && !dirty && <span className="text-sm text-emerald-600">Saved</span>}
+        {dirty && (
+          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Unsaved changes
+          </span>
+        )}
         <button className="btn" disabled={!dirty} onClick={() => setDraft(view)}>
           Discard
         </button>
-        <button className="btn btn-primary" disabled={!dirty} onClick={save}>
+        {/* Gray until something changes, then the accent with a ring, so a pending save stands out. */}
+        <button className={clsx("btn", dirty && "btn-primary ring-4 ring-accent/25")} disabled={!dirty} onClick={save}>
           Save
         </button>
       </header>
@@ -359,17 +365,12 @@ export default function SettingsPage() {
                       options={PAIRING_OPTIONS}
                       onChange={(v) => set("defaultPairing", v)}
                     />
-                    <div>
-                      <label className="label">Parallel requests</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={16}
-                        className="input"
-                        value={draft.concurrency}
-                        onChange={(e) => set("concurrency", Number(e.target.value) || 1)}
-                      />
-                    </div>
+                    <Field
+                      label="Parallel requests"
+                      value={String(Math.min(draft.concurrency, 3))}
+                      options={CONCURRENCY_OPTIONS}
+                      onChange={(v) => set("concurrency", Number(v))}
+                    />
                     <Check label="Price statistics" checked={draft.priceStats} onChange={(v) => set("priceStats", v)} />
                     <Check
                       label="Sync new sessions to Cards Cloud"
@@ -559,6 +560,13 @@ const SIDE_ORDER_OPTIONS: SelectOption<"front" | "back">[] = [
 const SOURCE_OPTIONS: SelectOption<Settings["defaultSources"][number]>[] = (
   ["scanner", "folder", "watch_folder", "csv"] as const
 ).map((value) => ({ value, label: SOURCE_LABELS[value] }));
+
+// At most 3, as `settings::MAX_CONCURRENCY`.
+const CONCURRENCY_OPTIONS: SelectOption<string>[] = [
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3", hint: "fastest" },
+];
 
 const COLOR_OPTIONS: SelectOption<Settings["scan"]["color"]>[] = [
   { value: "color", label: "Colour" },

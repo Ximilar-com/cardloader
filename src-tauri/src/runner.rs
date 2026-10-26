@@ -329,7 +329,10 @@ impl Runner {
         // The local model reads one card at a time.
         let concurrency = match session.options.engine {
             Engine::Local => 1,
-            Engine::Ximilar => self.settings.get().concurrency.clamp(1, 16) as usize,
+            Engine::Ximilar => {
+                let max = crate::settings::MAX_CONCURRENCY;
+                self.settings.get().concurrency.clamp(1, max) as usize
+            }
         };
 
         let (finished_tx, finished_rx) = watch::channel(None);
