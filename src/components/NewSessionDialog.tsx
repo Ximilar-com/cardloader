@@ -214,6 +214,8 @@ export default function NewSessionDialog({
   const needsCsv = !editing && kind === "csv" && !csvPath.trim();
   const sourceMissing = needsFolder || needsCsv;
   const local = options?.engine === "local";
+  // Only grading uses more than a 300 dpi scan (the runner's `scan_settings`).
+  const grades = !local && options?.grading !== "off";
   // Only a downloaded model can be picked: the chosen one, else the first downloaded.
   const ready = models?.filter((m) => m.state === "ready") ?? [];
   const model = ready.find((m) => m.id === options?.localModel) ?? ready[0];
@@ -461,10 +463,12 @@ export default function NewSessionDialog({
                 <div>
                   <label className="label">Resolution</label>
                   <Select
-                    value={String(options.scan.dpi)}
+                    value={grades ? String(options.scan.dpi) : "300"}
                     onChange={(v) => set("scan", { ...options.scan, dpi: Number(v) })}
                     options={DPI_OPTIONS}
+                    disabled={!grades}
                   />
+                  {!grades && <p className="mt-1 text-xs text-slate-500">300 dpi when not grading.</p>}
                 </div>
                 <div>
                   <label className="label">Sides</label>

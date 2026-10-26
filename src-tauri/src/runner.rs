@@ -531,7 +531,7 @@ impl Runner {
                 source::scanner::scan(
                     app,
                     &session.source_ref,
-                    &session.options.scan,
+                    &scan_settings(&session.options),
                     out,
                     pairing,
                     tx,
@@ -943,6 +943,22 @@ async fn encode(path: PathBuf, long_edge: u32) -> Result<String> {
         .map_err(|e| Error::msg(e.to_string()))?
 }
 
+/// Recognition gets a preview of at most `PREVIEW_LONG_EDGE` px, which 300 dpi nearly fills; only grading
+/// uses the full scan, so a session that doesn't grade scans at 300 dpi at most.
+const IDENTIFICATION_DPI: u32 = 300;
+
+fn scan_settings(options: &SessionOptions) -> ScanSettings {
+    let grades = options.grading != GradingMode::Off && options.engine == Engine::Ximilar;
+    ScanSettings {
+        dpi: if grades {
+            options.scan.dpi
+        } else {
+            options.scan.dpi.min(IDENTIFICATION_DPI)
+        },
+        ..options.scan.clone()
+    }
+}
+
 /// Scanner sessions run with the scanner settings as they are now, so a change in Settings applies to
 /// sessions that are continued too. A duplex scan gives front + back of every card.
 fn with_scanner(options: &SessionOptions, scan: &ScanSettings) -> SessionOptions {
@@ -1116,6 +1132,22 @@ mod tests {
         assert_eq!(options.scan, scan);
         assert_eq!(options.pairing, Pairing::FrontBack);
         runner.stop(&session.id).ok();
+    }
+
+    #[test]
+    fn scans_at_300_dpi_without_grading() {
+        let mut options = SessionOptions {
+            scan: ScanSettings {
+                dpi: 600,
+                ..ScanSettings::default()
+            },
+            ..SessionOptions::default()
+        };
+        assert_eq!(scan_settings(&options).dpi, 300);
+        options.grading = GradingMode::Grade;
+        assert_eq!(scan_settings(&options).dpi, 600);
+        options.engine = Engine::Local;
+        assert_eq!(scan_settings(&options).dpi, 300);
     }
 
     /// A folder of two front/back cards, auto-detected, graded and synced — end to end against a mock API.
