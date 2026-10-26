@@ -83,6 +83,11 @@ str_enum!(
     MultifeedMode { Off = "off", Default = "default" } default Off
 );
 
+str_enum!(
+    /// How scanned pages are turned before use, for cards fed into the scanner the other way up.
+    ScanRotation { None = "none", UpsideDown = "upside_down" } default None
+);
+
 /// Scanner settings; tuned for trading cards by default.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -93,6 +98,9 @@ pub struct ScanSettings {
     pub page_width_mm: f32,
     pub page_height_mm: f32,
     pub multifeed: MultifeedMode,
+    pub rotation: ScanRotation,
+    /// Duplex: the scanner's first side of each card is the card's back (cards fed back side up).
+    pub back_first: bool,
 }
 
 impl Default for ScanSettings {
@@ -104,6 +112,8 @@ impl Default for ScanSettings {
             page_width_mm: 66.0,
             page_height_mm: 92.0,
             multifeed: MultifeedMode::Off,
+            rotation: ScanRotation::None,
+            back_first: false,
         }
     }
 }

@@ -428,6 +428,12 @@ export default function SettingsPage() {
                     options={MULTIFEED_OPTIONS}
                     onChange={(v) => setScan("multifeed", v)}
                   />
+                  <Field
+                    label="Rotation"
+                    value={draft.scan.rotation}
+                    options={ROTATION_OPTIONS}
+                    onChange={(v) => setScan("rotation", v)}
+                  />
                   <div className="flex items-end pb-2">
                     <Check
                       label="Scan both sides (duplex)"
@@ -435,6 +441,14 @@ export default function SettingsPage() {
                       onChange={(v) => setScan("duplex", v)}
                     />
                   </div>
+                  {draft.scan.duplex && (
+                    <Field
+                      label="Side order"
+                      value={draft.scan.backFirst ? "back" : "front"}
+                      options={SIDE_ORDER_OPTIONS}
+                      onChange={(v) => setScan("backFirst", v === "back")}
+                    />
+                  )}
                 </div>
                 <p className="text-xs text-slate-500">
                   Standard cards are 63 × 88 mm; a slightly larger frame (66 × 92 mm) keeps the card edges in the scan.
@@ -507,6 +521,16 @@ function Field<T extends string>({
     </div>
   );
 }
+
+const ROTATION_OPTIONS: SelectOption<Settings["scan"]["rotation"]>[] = [
+  { value: "none", label: "None" },
+  { value: "upside_down", label: "Upside down", hint: "cards fed bottom edge first" },
+];
+
+const SIDE_ORDER_OPTIONS: SelectOption<"front" | "back">[] = [
+  { value: "front", label: "Front, then back" },
+  { value: "back", label: "Back, then front" },
+];
 
 const COLOR_OPTIONS: SelectOption<Settings["scan"]["color"]>[] = [
   { value: "color", label: "Colour" },

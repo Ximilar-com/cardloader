@@ -28,6 +28,7 @@ export type SessionStatus = "draft" | "running" | "paused" | "stopped" | "comple
 export type ItemStatus = "queued" | "recognizing" | "grading" | "done" | "error";
 export type ColorMode = "color" | "gray" | "bw";
 export type MultifeedMode = "off" | "default";
+export type ScanRotation = "none" | "upside_down";
 
 export interface ScanSettings {
   dpi: number;
@@ -36,6 +37,9 @@ export interface ScanSettings {
   pageWidthMm: number;
   pageHeightMm: number;
   multifeed: MultifeedMode;
+  rotation: ScanRotation;
+  /** Duplex: the scanner's first side of each card is the card's back. */
+  backFirst: boolean;
 }
 
 export interface SessionOptions {
