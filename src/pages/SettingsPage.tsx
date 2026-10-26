@@ -15,6 +15,7 @@ import {
   ScanLine,
   SlidersHorizontal,
   Store,
+  Wand2,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -23,7 +24,8 @@ import { useLocation } from "react-router-dom";
 import { ebayReady } from "../components/Ebay";
 import { ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
-import { Check, DPI_OPTIONS, MULTIFEED_OPTIONS, PAIRING_OPTIONS } from "../components/NewSessionDialog";
+import { Check, DPI_OPTIONS, MULTIFEED_OPTIONS, PAIRING_OPTIONS, GAME_OPTIONS } from "../components/NewSessionDialog";
+import { useSetupWizard } from "../components/SetupWizard";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
 import {
   api,
@@ -36,7 +38,7 @@ import {
   type Settings,
   type SettingsView,
 } from "../lib/api";
-import { GRADING_LABELS, ID_MODE_LABELS } from "../lib/format";
+import { GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
 
 export default function SettingsPage() {
   const [view, setView] = useState<SettingsView | null>(null);
@@ -50,6 +52,7 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const models = useModels();
+  const showSetup = useSetupWizard((s) => s.show);
   // Another page can open Settings at a tab: navigate("/settings", { state: { section } }).
   const section = (useLocation().state as { section?: Tab } | null)?.section;
   const [tab, setTab] = useState<Tab>(section ?? "ximilar");
@@ -137,10 +140,16 @@ export default function SettingsPage() {
         <h1 className="text-lg font-semibold">Settings</h1>
         <div className="flex-1" />
         {saved && !dirty && <span className="text-sm text-emerald-600">Saved</span>}
+        {dirty && (
+          <span className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Unsaved changes
+          </span>
+        )}
         <button className="btn" disabled={!dirty} onClick={() => setDraft(view)}>
           Discard
         </button>
-        <button className="btn btn-primary" disabled={!dirty} onClick={save}>
+        {/* Gray until something changes, then the accent with a ring, so a pending save stands out. */}
+        <button className={clsx("btn", dirty && "btn-primary ring-4 ring-accent/25")} disabled={!dirty} onClick={save}>
           Save
         </button>
       </header>
@@ -348,6 +357,22 @@ export default function SettingsPage() {
                       options={optionsOf(ID_MODE_LABELS)}
                       onChange={(v) => set("defaultIdMode", v)}
                     />
+                    {draft.defaultIdMode === "tcg" ? (
+                      <Field
+                        label="Game"
+                        value={draft.defaultSubcategory}
+                        options={GAME_OPTIONS}
+                        onChange={(v) => set("defaultSubcategory", v)}
+                      />
+                    ) : (
+                      <div />
+                    )}
+                    <Field
+                      label="New session opens"
+                      value={draft.defaultSources[0] ?? "folder"}
+                      options={SOURCE_OPTIONS}
+                      onChange={(v) => set("defaultSources", [v, ...draft.defaultSources.filter((s) => s !== v)])}
+                    />
                     <Field
                       label="Grading"
                       value={draft.defaultGrading}
@@ -360,17 +385,12 @@ export default function SettingsPage() {
                       options={PAIRING_OPTIONS}
                       onChange={(v) => set("defaultPairing", v)}
                     />
-                    <div>
-                      <label className="label">Parallel requests</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={16}
-                        className="input"
-                        value={draft.concurrency}
-                        onChange={(e) => set("concurrency", Number(e.target.value) || 1)}
-                      />
-                    </div>
+                    <Field
+                      label="Parallel requests"
+                      value={String(Math.min(draft.concurrency, 3))}
+                      options={CONCURRENCY_OPTIONS}
+                      onChange={(v) => set("concurrency", Number(v))}
+                    />
                     <Check label="Price statistics" checked={draft.priceStats} onChange={(v) => set("priceStats", v)} />
                     <Check
                       label="Sync new sessions to Cards Cloud"
@@ -378,6 +398,9 @@ export default function SettingsPage() {
                       onChange={(v) => set("syncByDefault", v)}
                     />
                   </div>
+                  <button className="btn mt-4" onClick={() => showSetup(view)}>
+                    <Wand2 className="h-4 w-4" /> Run setup again
+                  </button>
                 </Section>
               </>
             )}
@@ -451,6 +474,12 @@ export default function SettingsPage() {
                     options={MULTIFEED_OPTIONS}
                     onChange={(v) => setScan("multifeed", v)}
                   />
+                  <Field
+                    label="Rotation"
+                    value={draft.scan.rotation}
+                    options={ROTATION_OPTIONS}
+                    onChange={(v) => setScan("rotation", v)}
+                  />
                   <div className="flex items-end pb-2">
                     <Check
                       label="Scan both sides (duplex)"
@@ -458,9 +487,19 @@ export default function SettingsPage() {
                       onChange={(v) => setScan("duplex", v)}
                     />
                   </div>
+                  {draft.scan.duplex && (
+                    <Field
+                      label="Side order"
+                      value={draft.scan.backFirst ? "back" : "front"}
+                      options={SIDE_ORDER_OPTIONS}
+                      onChange={(v) => setScan("backFirst", v === "back")}
+                    />
+                  )}
                 </div>
                 <p className="text-xs text-slate-500">
-                  Standard cards are 63 × 88 mm; a slightly larger frame (66 × 92 mm) keeps the card edges in the scan.
+                  Every scanner session scans with these settings, also when it is continued. Sessions that don’t grade
+                  scan at 300 dpi at most. Standard cards are 63 × 88 mm; a slightly larger frame (66 × 92 mm) keeps the
+                  card edges in the scan.
                 </p>
               </Section>
             )}
@@ -925,6 +964,27 @@ function Field<T extends string>({
     </div>
   );
 }
+
+const ROTATION_OPTIONS: SelectOption<Settings["scan"]["rotation"]>[] = [
+  { value: "none", label: "None" },
+  { value: "upside_down", label: "Upside down", hint: "cards fed bottom edge first" },
+];
+
+const SIDE_ORDER_OPTIONS: SelectOption<"front" | "back">[] = [
+  { value: "front", label: "Front, then back" },
+  { value: "back", label: "Back, then front" },
+];
+
+const SOURCE_OPTIONS: SelectOption<Settings["defaultSources"][number]>[] = (
+  ["scanner", "folder", "watch_folder", "csv"] as const
+).map((value) => ({ value, label: SOURCE_LABELS[value] }));
+
+// At most 3, as `settings::MAX_CONCURRENCY`.
+const CONCURRENCY_OPTIONS: SelectOption<string>[] = [
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3", hint: "fastest" },
+];
 
 const COLOR_OPTIONS: SelectOption<Settings["scan"]["color"]>[] = [
   { value: "color", label: "Colour" },

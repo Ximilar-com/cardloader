@@ -29,6 +29,10 @@ export default function SessionsPage() {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "remote" ? "remote" : "local";
   const [creating, setCreating] = useState<SourceKind | null>(null);
+  const [source, setSource] = useState<SourceKind>("folder");
+  useEffect(() => {
+    api.getSettings().then((s) => s.defaultSources[0] && setSource(s.defaultSources[0]));
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -64,7 +68,7 @@ export default function SessionsPage() {
         >
           <FileUp className="h-4 w-4" /> Import CSV
         </button>
-        <button className="btn btn-primary" onClick={() => setCreating("folder")}>
+        <button className="btn btn-primary" onClick={() => setCreating(source)}>
           <Plus className="h-4 w-4" /> New session
         </button>
       </header>

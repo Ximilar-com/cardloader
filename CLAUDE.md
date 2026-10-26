@@ -61,8 +61,11 @@ src/
   lib/api.ts      TypeScript types + wrappers for every command and event
   lib/cardview.ts one Row/CardView shape for local items and Cards Cloud rows
   lib/demo.ts     mockIPC answers for `npm run dev` outside Tauri
-  pages/          SessionsPage (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, SettingsPage
-  components/     SessionTable (virtualized), DetailPanel, NewSessionDialog, SessionActions, Menu, …
+  lib/setup.ts    first-run setup answers ↔ the default settings they become (only the settings are stored)
+  pages/          DashboardPage (home: 7-day bars, activity heatmap, last sessions, defaults), SessionsPage
+                  (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, SettingsPage
+  components/     SetupWizard (shown while `setupDone` is false; rerun from Home or Settings), SessionTable
+                  (virtualized), DetailPanel, NewSessionDialog, SessionActions, Menu, …
 ```
 
 Events from Rust: `session-updated` (Session), `item-updated` (ItemSummary), `model-updated` (ModelStatus, download
@@ -108,7 +111,9 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
 - **Known attributes** ("Faster and more accurate" in the dialog: `known_category`, `known_side`, `known_rotation`,
   `alphabet` for TCG, `subcategory` = game or sport as the taxonomy spells it, e.g. `Pokemon`, `YuGiOh!`; lists in
   `recognition::TCG_GAMES` / `SPORTS`, mirrored in `NewSessionDialog.tsx`) go on the record, as Ximilar's docs show, or on that card object when detection is skipped. The
-  category is the session type's (`Endpoint::category_attrs`), never in Auto (`detects_type`).
+  category is the session type's (`Endpoint::category_attrs`), never in Auto (`detects_type`). Unless the
+  images are known to be upright, the request has root `"rotate": true`: without it the endpoints tag a turned card
+  (`Rotation: rotated_upside_down`) but identify it as it lies.
 - Confidence tiers on the best-match distance: ≤ 0.30 high, ≤ 0.40 medium, else low (duplicated in `cardview.ts`).
 - Grading (`account/v2/request/`, type `card-grader`) is asynchronous: submit, poll status, fetch the result; result
   image URLs are temporary, so overlays are downloaded into the session folder.

@@ -9,6 +9,7 @@ use image::imageops::FilterType;
 use image::{DynamicImage, ImageDecoder, ImageReader};
 
 use crate::error::Result;
+use crate::model::ScanRotation;
 
 pub const SUPPORTED_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "webp", "tif", "tiff", "bmp"];
 /// Long edge of the image sent to recognition and shown in the detail panel.
@@ -57,20 +58,27 @@ pub fn b64(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
+/// Turns a scanned page in place, before anything else reads it.
+pub fn rotate_file(path: &Path, rotation: ScanRotation) -> Result<()> {
+    match rotation {
+        ScanRotation::None => Ok(()),
+        ScanRotation::UpsideDown => Ok(open(path)?.rotate180().save(path)?),
+    }
+}
+
 /// Writes the thumbnail and preview JPEGs of `source` into `dir` as `<stem>_thumb.jpg` / `<stem>_preview.jpg`.
 pub fn make_derivatives(source: &Path, dir: &Path, stem: &str) -> Result<(String, String)> {
     let img = open(source)?;
     std::fs::create_dir_all(dir)?;
     let thumb = dir.join(format!("{stem}_thumb.jpg"));
     let preview = dir.join(format!("{stem}_preview.jpg"));
+    let preview_img = fit_long_edge(&img, PREVIEW_LONG_EDGE);
+    // From the preview: shrinking a full scan to a thumbnail costs as much as making the preview again.
     std::fs::write(
         &thumb,
-        jpeg_bytes(&fit_long_edge(&img, THUMB_LONG_EDGE), 82)?,
+        jpeg_bytes(&fit_long_edge(&preview_img, THUMB_LONG_EDGE), 82)?,
     )?;
-    std::fs::write(
-        &preview,
-        jpeg_bytes(&fit_long_edge(&img, PREVIEW_LONG_EDGE), 90)?,
-    )?;
+    std::fs::write(&preview, jpeg_bytes(&preview_img, 90)?)?;
     Ok((
         thumb.to_string_lossy().into_owned(),
         preview.to_string_lossy().into_owned(),
@@ -106,6 +114,22 @@ mod tests {
         let preview = image::open(preview).unwrap();
         assert_eq!((thumb.width(), thumb.height()), (120, 240));
         assert_eq!((preview.width(), preview.height()), (800, 1600));
+    }
+
+    #[test]
+    fn rotates_scans_upside_down() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("scan.png");
+        let mut img = RgbImage::from_pixel(2, 3, Rgb([0, 0, 0]));
+        img.put_pixel(0, 0, Rgb([255, 0, 0]));
+        img.save(&src).unwrap();
+        rotate_file(&src, ScanRotation::None).unwrap();
+        assert_eq!(image::open(&src).unwrap().to_rgb8().get_pixel(0, 0)[0], 255);
+        rotate_file(&src, ScanRotation::UpsideDown).unwrap();
+        let turned = image::open(&src).unwrap().to_rgb8();
+        assert_eq!(turned.dimensions(), (2, 3));
+        assert_eq!(turned.get_pixel(1, 2)[0], 255);
+        assert_eq!(turned.get_pixel(0, 0)[0], 0);
     }
 
     #[test]

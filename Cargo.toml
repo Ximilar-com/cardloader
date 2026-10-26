@@ -16,3 +16,30 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# Dev builds (`just dev`) handle full-resolution scans: unoptimised, decoding and resizing one 600 dpi page takes
+# seconds instead of a tenth of one, so a scanned card's row shows up late. Optimise the image crates only.
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.simd-adler32]
+opt-level = 3
+[profile.dev.package.adler2]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3
+[profile.dev.package.zune-jpeg]
+opt-level = 3
+[profile.dev.package.zune-core]
+opt-level = 3
+[profile.dev.package.image-webp]
+opt-level = 3
+[profile.dev.package.tiff]
+opt-level = 3
+[profile.dev.package.weezl]
+opt-level = 3

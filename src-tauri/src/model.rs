@@ -122,6 +122,11 @@ str_enum!(
     MultifeedMode { Off = "off", Default = "default" } default Off
 );
 
+str_enum!(
+    /// How scanned pages are turned before use, for cards fed into the scanner the other way up.
+    ScanRotation { None = "none", UpsideDown = "upside_down" } default None
+);
+
 /// Scanner settings; tuned for trading cards by default.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -132,6 +137,9 @@ pub struct ScanSettings {
     pub page_width_mm: f32,
     pub page_height_mm: f32,
     pub multifeed: MultifeedMode,
+    pub rotation: ScanRotation,
+    /// Duplex: the scanner's first side of each card is the card's back (cards fed back side up).
+    pub back_first: bool,
 }
 
 impl Default for ScanSettings {
@@ -143,6 +151,8 @@ impl Default for ScanSettings {
             page_width_mm: 66.0,
             page_height_mm: 92.0,
             multifeed: MultifeedMode::Off,
+            rotation: ScanRotation::None,
+            back_first: false,
         }
     }
 }
@@ -341,6 +351,14 @@ pub struct ItemDetail {
     pub ebay_images: Vec<String>,
     /// The card's pictures on the public image host (Whatnot export).
     pub hosted_images: Vec<String>,
+}
+
+/// Cards analysed on one local day (`YYYY-MM-DD`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DayCount {
+    pub date: String,
+    pub cards: u32,
 }
 
 pub fn now() -> String {

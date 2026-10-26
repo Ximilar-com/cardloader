@@ -9,9 +9,11 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings};
+use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind};
 
 pub const DEFAULT_API_BASE: &str = "https://api.ximilar.com";
+/// Recognition requests in flight at once (Settings → Parallel requests).
+pub const MAX_CONCURRENCY: u32 = 3;
 const KEYRING_SERVICE: &str = "com.ximilar.cardloader";
 /// What is kept in the keychain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -53,6 +55,12 @@ pub struct Settings {
     pub default_id_mode: IdMode,
     pub default_grading: GradingMode,
     pub default_pairing: Pairing,
+    /// The game (TCG) new sessions start with; empty = any.
+    pub default_subcategory: String,
+    /// How the user brings in cards, the main one first: what "New session" opens.
+    pub default_sources: Vec<SourceKind>,
+    /// The first-run setup was finished or skipped.
+    pub setup_done: bool,
     pub price_stats: bool,
     pub concurrency: u32,
     pub sync_by_default: bool,
@@ -130,8 +138,11 @@ impl Default for Settings {
             default_id_mode: IdMode::Auto,
             default_grading: GradingMode::Off,
             default_pairing: Pairing::Single,
+            default_subcategory: String::new(),
+            default_sources: vec![SourceKind::Folder],
+            setup_done: false,
             price_stats: true,
-            concurrency: 4,
+            concurrency: MAX_CONCURRENCY,
             sync_by_default: false,
             engine: Engine::Ximilar,
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
@@ -166,10 +177,12 @@ pub struct SettingsStore {
 
 impl SettingsStore {
     pub fn load(path: PathBuf) -> Self {
-        let settings = std::fs::read_to_string(&path)
+        let mut settings: Settings = std::fs::read_to_string(&path)
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or_default();
+        // Files saved when more were allowed.
+        settings.concurrency = settings.concurrency.clamp(1, MAX_CONCURRENCY);
         SettingsStore {
             path,
             settings: Mutex::new(settings),
@@ -221,7 +234,7 @@ impl SettingsStore {
         let mut guard = self.settings.lock().unwrap();
         new.fallback_token = guard.fallback_token.clone();
         new.fallback_secrets = guard.fallback_secrets.clone();
-        new.concurrency = new.concurrency.clamp(1, 16);
+        new.concurrency = new.concurrency.clamp(1, MAX_CONCURRENCY);
         new.api_base_url = normalize_base(&new.api_base_url);
         new.workspace = new
             .workspace
@@ -385,8 +398,29 @@ mod tests {
     fn missing_fields_take_defaults() {
         let settings: Settings = serde_json::from_str(r#"{"concurrency": 2}"#).unwrap();
         assert_eq!(settings.concurrency, 2);
+        assert_eq!(Settings::default().concurrency, MAX_CONCURRENCY);
         assert_eq!(settings.api_base_url, DEFAULT_API_BASE);
         assert_eq!(settings.scan.dpi, 600);
+        // Settings from before the setup wizard: it is shown once.
+        assert!(!settings.setup_done);
+        assert_eq!(settings.default_sources, vec![SourceKind::Folder]);
+        assert_eq!(settings.default_subcategory, "");
+    }
+
+    #[test]
+    fn parallel_requests_are_capped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(&path, r#"{"concurrency": 8}"#).unwrap();
+        let store = SettingsStore::load(path);
+        assert_eq!(store.get().concurrency, MAX_CONCURRENCY);
+        store
+            .update(Settings {
+                concurrency: 16,
+                ..store.get()
+            })
+            .unwrap();
+        assert_eq!(store.get().concurrency, MAX_CONCURRENCY);
     }
 
     #[test]

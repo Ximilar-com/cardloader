@@ -14,7 +14,8 @@ use tauri::AppHandle;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::imaging;
 use crate::model::{Pairing, ScanSettings};
 use crate::pairing::{Side, StreamPairer, Unit};
 
@@ -65,23 +66,24 @@ pub async fn scan(
         .format("scan_%Y%m%d_%H%M%S")
         .to_string();
     let (page_tx, mut page_rx) = mpsc::channel::<(PathBuf, Side)>(64);
+    let rotation = settings.rotation;
+    let mut cards = Cards::new(pairing, settings.duplex && settings.back_first);
     let pairer_task = tokio::spawn(async move {
-        let mut pairer = StreamPairer::default();
         while let Some((path, side)) = page_rx.recv().await {
-            let unit = match pairing {
-                Pairing::Single => Some(Unit {
-                    front: path,
-                    back: None,
-                }),
-                Pairing::FrontBack => pairer.push(path, side),
-            };
-            if let Some(unit) = unit {
+            let page = path.clone();
+            let turned = tokio::task::spawn_blocking(move || imaging::rotate_file(&page, rotation))
+                .await
+                .unwrap_or_else(|e| Err(Error::msg(e.to_string())));
+            if let Err(e) = turned {
+                tracing::warn!("could not turn {}: {e}", path.display());
+            }
+            if let Some(unit) = cards.push(path, side) {
                 if tx.send(unit).await.is_err() {
                     return;
                 }
             }
         }
-        if let Some(unit) = pairer.flush() {
+        if let Some(unit) = cards.flush() {
             let _ = tx.send(unit).await;
         }
     });
@@ -94,11 +96,98 @@ pub async fn scan(
     result
 }
 
+/// Scanned pages as cards, in the order the scanner delivers them.
+struct Cards {
+    pairing: Pairing,
+    /// The page the scanner calls the front is the card's back.
+    back_first: bool,
+    pairer: StreamPairer,
+}
+
+impl Cards {
+    fn new(pairing: Pairing, back_first: bool) -> Self {
+        Cards {
+            pairing,
+            back_first,
+            pairer: StreamPairer::default(),
+        }
+    }
+
+    fn push(&mut self, path: PathBuf, side: Side) -> Option<Unit> {
+        match self.pairing {
+            Pairing::Single => Some(Unit {
+                front: path,
+                back: None,
+            }),
+            Pairing::FrontBack => self.pairer.push(path, side).map(|u| self.order(u)),
+        }
+    }
+
+    fn flush(&mut self) -> Option<Unit> {
+        self.pairer.flush()
+    }
+
+    fn order(&self, unit: Unit) -> Unit {
+        match unit.back {
+            Some(back) if self.back_first => Unit {
+                front: back,
+                back: Some(unit.front),
+            },
+            _ => unit,
+        }
+    }
+}
+
 /// Duplex scanners deliver front, back, front, back…
 fn side_for(index: usize, duplex: bool) -> Side {
     match (duplex, index % 2) {
         (false, _) => Side::Front,
         (true, 1) => Side::Front,
         (true, _) => Side::Back,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pages(cards: &mut Cards, n: usize) -> Vec<Unit> {
+        let mut units: Vec<Unit> = (1..=n)
+            .filter_map(|i| cards.push(PathBuf::from(format!("scan_{i}.png")), side_for(i, true)))
+            .collect();
+        units.extend(cards.flush());
+        units
+    }
+
+    fn unit(front: &str, back: Option<&str>) -> Unit {
+        Unit {
+            front: front.into(),
+            back: back.map(PathBuf::from),
+        }
+    }
+
+    #[test]
+    fn duplex_pages_pair_front_first() {
+        let units = pages(&mut Cards::new(Pairing::FrontBack, false), 4);
+        assert_eq!(
+            units,
+            vec![
+                unit("scan_1.png", Some("scan_2.png")),
+                unit("scan_3.png", Some("scan_4.png"))
+            ]
+        );
+    }
+
+    #[test]
+    fn duplex_pages_pair_back_first() {
+        let units = pages(&mut Cards::new(Pairing::FrontBack, true), 5);
+        assert_eq!(
+            units,
+            vec![
+                unit("scan_2.png", Some("scan_1.png")),
+                unit("scan_4.png", Some("scan_3.png")),
+                unit("scan_5.png", None)
+            ]
+        );
     }
 }

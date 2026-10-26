@@ -101,6 +101,10 @@ export default function NewSessionDialog({
   useEffect(() => {
     api.getSettings().then((s) => {
       setTokenSet(s.tokenSet);
+      // Scanner sessions always scan with the settings in Settings → Scanner (see `saveScan`).
+      if (from?.sourceKind === "scanner") {
+        setOptions((o) => o && { ...o, scan: s.scan, pairing: s.scan.duplex ? "front_back" : "single" });
+      }
       if (from) return;
       setIdMode(s.defaultIdMode);
       setFolder(s.defaultFolder ?? "");
@@ -110,7 +114,8 @@ export default function NewSessionDialog({
         slab: false,
         grading: s.defaultGrading,
         conditionMode: "ebay",
-        pairing: s.defaultPairing,
+        // A duplex scanner gives front + back of every card (as `chooseSource` does).
+        pairing: initialKind === "scanner" && s.scan.duplex ? "front_back" : s.defaultPairing,
         bothSides: false,
         magicAi: false,
         customEndpoint: "",
@@ -119,14 +124,14 @@ export default function NewSessionDialog({
         knownSide: false,
         knownRotation: false,
         alphabet: "",
-        subcategory: "",
+        subcategory: s.defaultSubcategory,
         scan: s.scan,
         syncRemote: s.syncByDefault,
         engine: s.engine,
         localModel: s.localModel,
       });
     });
-  }, [from]);
+  }, [from, initialKind]);
 
   useEffect(() => {
     if (!folder || kind === "scanner" || kind === "csv") return;
@@ -210,6 +215,8 @@ export default function NewSessionDialog({
   const needsCsv = !editing && kind === "csv" && !csvPath.trim();
   const sourceMissing = needsFolder || needsCsv;
   const local = options?.engine === "local";
+  // Only grading uses more than a 300 dpi scan (the runner's `scan_settings`).
+  const grades = !local && options?.grading !== "off";
   // Only a downloaded model can be picked: the chosen one, else the first downloaded.
   const ready = models?.filter((m) => m.state === "ready") ?? [];
   const model = ready.find((m) => m.id === options?.localModel) ?? ready[0];
@@ -218,11 +225,19 @@ export default function NewSessionDialog({
   const needsToken = !local || !!options?.syncRemote;
   const canRun = (!needsToken || tokenSet) && (!local || !!model);
 
+  // The scanner row edits Settings → Scanner, which every scanner run uses.
+  const saveScan = async () => {
+    if (kind !== "scanner" || !chosen) return;
+    const settings = await api.getSettings();
+    await api.saveSettings({ ...settings, scan: chosen.scan });
+  };
+
   const save = async () => {
     if (!chosen || !from) return;
     setBusy(true);
     setError(null);
     try {
+      await saveScan();
       const saved = await api.updateSession(from.id, name, idMode, chosen);
       onSaved?.(saved);
       onClose();
@@ -244,6 +259,7 @@ export default function NewSessionDialog({
       options: chosen,
     };
     try {
+      await saveScan();
       const created =
         kind === "csv"
           ? await api.importCsv(session, reanalyze)
@@ -448,10 +464,12 @@ export default function NewSessionDialog({
                 <div>
                   <label className="label">Resolution</label>
                   <Select
-                    value={String(options.scan.dpi)}
+                    value={grades ? String(options.scan.dpi) : "300"}
                     onChange={(v) => set("scan", { ...options.scan, dpi: Number(v) })}
                     options={DPI_OPTIONS}
+                    disabled={!grades}
                   />
+                  {!grades && <p className="mt-1 text-xs text-slate-500">300 dpi when not grading.</p>}
                 </div>
                 <div>
                   <label className="label">Sides</label>
@@ -614,8 +632,12 @@ const ALPHABET_OPTIONS: SelectOption<string>[] = [
 ];
 
 // Subcategory values as Ximilar's collectibles taxonomy spells them (mirrors recognition::TCG_GAMES / SPORTS).
-const GAME_LABELS: Record<string, string> = { Pokemon: "Pokémon", "YuGiOh!": "Yu-Gi-Oh!", Lotr: "Lord of the Rings" };
-const TCG_GAMES = [
+export const GAME_LABELS: Record<string, string> = {
+  Pokemon: "Pokémon",
+  "YuGiOh!": "Yu-Gi-Oh!",
+  Lotr: "Lord of the Rings",
+};
+export const TCG_GAMES = [
   "Arkham Horror",
   "Digimon",
   "Dragon Ball Super",
@@ -647,7 +669,7 @@ const subcategoryOptions = (values: string[], any: string): SelectOption<string>
   { value: "", label: any, hint: "Ximilar reads it from the card" },
   ...values.map((v) => ({ value: v, label: GAME_LABELS[v] ?? v })).sort((a, b) => a.label.localeCompare(b.label)),
 ];
-const GAME_OPTIONS = subcategoryOptions(TCG_GAMES, "Any game");
+export const GAME_OPTIONS = subcategoryOptions(TCG_GAMES, "Any game");
 const SPORT_OPTIONS = subcategoryOptions(SPORTS, "Any sport");
 
 /** What is already known about every card, so Ximilar skips working it out: faster and more accurate. */
@@ -704,7 +726,7 @@ function KnownAttributes({
         label="Upright"
         checked={options.knownRotation}
         onChange={(v) => onChange({ knownRotation: v })}
-        hint="No card is rotated or upside down."
+        hint="No card is rotated or upside down. Otherwise Ximilar turns each card upright before identifying it."
       />
       {idMode === "tcg" && (
         <div className="grid grid-cols-2 gap-3">

@@ -56,12 +56,25 @@ const settings: SettingsView = {
   workspace: null,
   defaultFolder: "/Users/demo/Cards",
   defaultScanner: "fujitsu:fi-8170:1234",
-  scan: { dpi: 600, color: "color", duplex: true, pageWidthMm: 66, pageHeightMm: 92, multifeed: "off" },
+  scan: {
+    dpi: 600,
+    color: "color",
+    duplex: true,
+    pageWidthMm: 66,
+    pageHeightMm: 92,
+    multifeed: "off",
+    rotation: "none",
+    backFirst: false,
+  },
   defaultIdMode: "auto",
   defaultGrading: "grade",
   defaultPairing: "single",
+  defaultSubcategory: "",
+  defaultSources: ["scanner", "folder"],
+  // The demo starts with the setup, as a first launch does.
+  setupDone: false,
   priceStats: true,
-  concurrency: 4,
+  concurrency: 3,
   syncByDefault: true,
   engine: "ximilar",
   localModel: "lfm2.5-vl-450m",
@@ -680,6 +693,24 @@ function exportPreview(i: ItemDetail, format: string): EbayPreview {
   return { ...p, ebay: null, category: sub, price: p.price == null ? null : Math.ceil(p.price) };
 }
 
+/** Cards analysed per day over the last `days` days: scanning on most weekdays, rarely at weekends. */
+function activity(days: number) {
+  const out = [];
+  const today = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const roll = (Math.sin(i * 12.9898) * 43758.5453) % 1;
+    const weekend = d.getDay() === 0 || d.getDay() === 6;
+    if (Math.abs(roll) < (weekend ? 0.8 : 0.35)) continue;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    out.push({
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      cards: Math.round(Math.abs(roll) * 180) + 5,
+    });
+  }
+  return out;
+}
+
 export function installDemo() {
   seed();
   mockConvertFileSrc("macos");
@@ -839,6 +870,8 @@ export function installDemo() {
           return ebayJobs.get(a.sessionId) ?? null;
         case "ebay_listing_url":
           return `https://sandbox.ebay.com/itm/${a.listingId}`;
+        case "dashboard_activity":
+          return activity(a.days);
         case "test_connection":
           return { ok: true, account: "demo@example.com", error: null, cardsCloud: true, cardsCloudError: null };
         case "list_sessions":
