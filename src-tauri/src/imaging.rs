@@ -72,14 +72,13 @@ pub fn make_derivatives(source: &Path, dir: &Path, stem: &str) -> Result<(String
     std::fs::create_dir_all(dir)?;
     let thumb = dir.join(format!("{stem}_thumb.jpg"));
     let preview = dir.join(format!("{stem}_preview.jpg"));
+    let preview_img = fit_long_edge(&img, PREVIEW_LONG_EDGE);
+    // From the preview: shrinking a full scan to a thumbnail costs as much as making the preview again.
     std::fs::write(
         &thumb,
-        jpeg_bytes(&fit_long_edge(&img, THUMB_LONG_EDGE), 82)?,
+        jpeg_bytes(&fit_long_edge(&preview_img, THUMB_LONG_EDGE), 82)?,
     )?;
-    std::fs::write(
-        &preview,
-        jpeg_bytes(&fit_long_edge(&img, PREVIEW_LONG_EDGE), 90)?,
-    )?;
+    std::fs::write(&preview, jpeg_bytes(&preview_img, 90)?)?;
     Ok((
         thumb.to_string_lossy().into_owned(),
         preview.to_string_lossy().into_owned(),
