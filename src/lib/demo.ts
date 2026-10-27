@@ -1067,6 +1067,15 @@ export function installDemo() {
           return [...items.values()].flat().find((i) => i.id === a.id);
         case "search_cards":
           return searchCards(String(a.query ?? ""), a.filter, a.limit ?? 1000);
+        case "turn_item": {
+          const item = [...items.values()].flat().find((i) => i.id === a.id)!;
+          for (const o of item.recognition.response.records[0]._objects) {
+            const tag = o._tags?.Rotation?.[0];
+            if (tag && tag.name !== "rotation_ok") Object.assign(tag, { found: tag.name, name: "rotation_ok" });
+          }
+          void emit("item-updated", summary(item));
+          return item;
+        }
         case "update_item":
           return updateItem(a.id, a.edit);
         case "review_items":

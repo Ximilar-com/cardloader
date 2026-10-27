@@ -539,6 +539,8 @@ export const api = {
     invoke<CardSearch>("search_cards", { query, filter, limit }),
   /** Saves what the user typed: the card fields and price (once identified), notes and location. */
   updateItem: (id: number, edit: ItemEdit) => invoke<ItemDetail>("update_item", { id, edit }),
+  /** Turns a card's image upright when Ximilar found it upside down (cardloader's copies only). */
+  turnItem: (id: number) => invoke<ItemDetail>("turn_item", { id }),
   /** Accepts the cards' matches, or with `reviewed: false` takes that back. */
   reviewItems: (sessionId: string, itemIds: number[], reviewed = true) =>
     invoke<number>("review_items", { sessionId, itemIds, reviewed }),

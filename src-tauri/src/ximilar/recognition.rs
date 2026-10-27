@@ -444,6 +444,31 @@ pub fn parse(endpoint: Endpoint, resp: &Value) -> Recognition {
 
 /// The front's slab label, read as `cardview::matchOf` reads it: the company and grade its tags name, unless
 /// the label's identification says them.
+/// The user turned the front's image upright: its card's `Rotation` tag (if any, and not on a slab label)
+/// says so from now on, keeping what Ximilar found under `found`. Returns whether a tag changed.
+pub fn mark_upright(resp: &mut Value) -> bool {
+    let mut changed = false;
+    let objects = resp
+        .pointer_mut("/records/0/_objects")
+        .and_then(Value::as_array_mut);
+    for object in objects.into_iter().flatten() {
+        if object["name"] == "Slab Label" {
+            continue;
+        }
+        if let Some(tag) = object
+            .pointer_mut("/_tags/Rotation/0")
+            .and_then(Value::as_object_mut)
+        {
+            if tag.get("name").and_then(Value::as_str) != Some("rotation_ok") {
+                let found = tag.insert("name".into(), json!("rotation_ok"));
+                tag.insert("found".into(), found.unwrap_or(Value::Null));
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
 pub fn slab_label(resp: &Value) -> Option<SlabLabel> {
     let label = objects(&resp["records"][0])
         .into_iter()

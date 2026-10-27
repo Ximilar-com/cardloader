@@ -403,6 +403,12 @@ pub fn update_item(state: S, id: i64, edit: ItemEdit) -> Result<ItemDetail> {
     state.runner.edit_item(id, edit)
 }
 
+/// Turns a card's image upright when Ximilar found it upside down (cardloader's copies, never the user's files).
+#[tauri::command]
+pub fn turn_item(state: S, id: i64) -> Result<ItemDetail> {
+    state.runner.turn_item(id)
+}
+
 /// Accepts the cards' matches, or with `reviewed: false` takes that back.
 #[tauri::command]
 pub fn review_items(

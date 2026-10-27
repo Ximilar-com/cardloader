@@ -31,6 +31,7 @@ export default function DetailPanel({
   onUnaccept,
   onEdit,
   onDelete,
+  onTurn,
   onPrev,
   onNext,
   position,
@@ -51,6 +52,8 @@ export default function DetailPanel({
   /** Saves what the user typed; without it, the card can't be edited. */
   onEdit?: (edit: ItemEdit) => Promise<unknown>;
   onDelete?: () => void;
+  /** Turns the card's image upright (it was upside down). */
+  onTurn?: () => Promise<unknown>;
   onPrev?: () => void;
   onNext?: () => void;
   /** "3 of 120" */
@@ -59,6 +62,10 @@ export default function DetailPanel({
   extra?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
+  const [turning, setTurning] = useState(false);
+  const [turnBusy, setTurnBusy] = useState(false);
+  // Only upside down is certain to be fixed by turning the picture half way.
+  const canTurn = !!onTurn && view.rotation?.tag === "rotated_upside_down";
 
   // Reviewing from the keyboard: A accepts, E edits, 1–9 pick a candidate, Delete deletes, Escape closes.
   useEffect(() => {
@@ -94,14 +101,18 @@ export default function DetailPanel({
             {view.accepted && <AcceptedChip />}
             {view.toReview && <ReviewChip />}
             {view.rotation && (
-              <span
-                className="inline-flex items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+              <button
+                className={clsx(
+                  "inline-flex items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300",
+                  canTurn ? "hover:bg-violet-100 dark:hover:bg-violet-900" : "cursor-default",
+                )}
+                onClick={() => canTurn && setTurning(!turning)}
                 title={`Ximilar found the card turned in the image (${view.rotation.tag}${
                   view.rotation.prob != null ? `, ${Math.round(view.rotation.prob * 100)}%` : ""
-                }) and identified it upright.`}
+                }) and identified it upright.${canTurn ? " Click to turn the image." : ""}`}
               >
                 <RotateCw className="h-3 w-3" /> {view.rotation.label}
-              </span>
+              </button>
             )}
             {view.distance != null && (
               <span className="text-[11px] text-slate-400">distance {view.distance.toFixed(3)}</span>
@@ -141,6 +152,30 @@ export default function DetailPanel({
           <X className="h-4 w-4" />
         </button>
       </div>
+      {turning && canTurn && (
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-violet-50/70 px-4 py-2 text-xs text-violet-900 dark:border-slate-800 dark:bg-violet-950/30 dark:text-violet-200">
+          <span className="flex-1">
+            The card is upside down in the image. Turn it upright for the app and for exports? Images in your own
+            folders stay as they are.
+          </span>
+          <button className="btn px-2 py-0.5 text-xs" onClick={() => setTurning(false)}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary px-2 py-0.5 text-xs"
+            disabled={turnBusy}
+            onClick={() => {
+              setTurnBusy(true);
+              onTurn!().finally(() => {
+                setTurnBusy(false);
+                setTurning(false);
+              });
+            }}
+          >
+            {turnBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />} Turn upright
+          </button>
+        </div>
+      )}
       {(view.toReview && onAccept) || position ? (
         <div
           className={clsx(

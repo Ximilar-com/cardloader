@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::{mpsc, watch, Notify, Semaphore};
 use tokio::task::JoinSet;
@@ -239,6 +239,51 @@ impl Runner {
         self.emit_item(item_id);
         self.emit_session(&before.session_id);
         self.push_corrections(&before.session_id)?;
+        self.db.item(item_id)
+    }
+
+    /// Turns a card's front image upright (Ximilar found it upside down): its thumbnail and preview, which
+    /// the app shows and exports upload, and a scan cardloader made. Images in the user's folders stay as
+    /// they are.
+    pub fn turn_item(&self, item_id: i64) -> Result<ItemDetail> {
+        let item = self.db.item(item_id)?;
+        let s = &item.summary;
+        if s.status == ItemStatus::Recognizing {
+            return Err(Error::msg("wait until the card has been analysed"));
+        }
+        let preview = item
+            .preview_path
+            .clone()
+            .ok_or_else(|| Error::msg("this card has no image"))?;
+        let dir = self.session_dir(&s.session_id);
+        let stem = uuid::Uuid::new_v4().simple().to_string();
+        let preview = PathBuf::from(preview);
+        let thumbs = preview
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or(dir.join("thumbs"));
+        let (thumb, new_preview) = imaging::turned_derivatives(&preview, &thumbs, &stem)?;
+        let front = Path::new(&s.front_path);
+        if s.front_path.is_empty() || !front.starts_with(&dir) {
+            tracing::info!("{} is the user's: not turned", front.display());
+        } else {
+            imaging::rotate_file(front, ScanRotation::UpsideDown)?;
+        }
+        let mut raw = item.recognition.clone().unwrap_or(Value::Null);
+        recognition::mark_upright(&mut raw["response"]);
+        self.db.save_turned(item_id, &thumb, &new_preview, &raw)?;
+        for old in [
+            s.thumb_path.as_deref(),
+            Some(preview.to_string_lossy().as_ref()),
+        ]
+        .into_iter()
+        .flatten()
+        .map(PathBuf::from)
+        .filter(|p| p.starts_with(&dir))
+        {
+            let _ = std::fs::remove_file(old);
+        }
+        self.emit_item(item_id);
         self.db.item(item_id)
     }
 
@@ -2157,6 +2202,105 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Failed);
         assert!(s.error.unwrap().contains("Invalid token"));
         assert_eq!(s.counts.queued, 1, "the card stays queued for the next run");
+    }
+
+    /// An upside-down card is turned upright: new previews, its scan turned, the badge gone. A file of the
+    /// user's own folder would be left alone (the scan here is cardloader's).
+    #[test]
+    fn turning_a_card_upright() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::memory().unwrap();
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("s.json"),
+            Settings::default(),
+            "token",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "T".into(),
+                source_kind: SourceKind::Scanner,
+                source_ref: "fujitsu:fi-8170".into(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        // Red on the left, blue on the right: upside down, red is on the right.
+        let scans = runner.session_dir(&session.id).join("scans");
+        std::fs::create_dir_all(&scans).unwrap();
+        let scan = scans.join("scan_0001.png");
+        RgbImage::from_fn(60, 80, |x, _| {
+            if x < 30 {
+                Rgb([255, 0, 0])
+            } else {
+                Rgb([0, 0, 255])
+            }
+        })
+        .save(&scan)
+        .unwrap();
+        let thumbs = runner.session_dir(&session.id).join("thumbs");
+        let (thumb, preview) = imaging::make_derivatives(&scan, &thumbs, "a").unwrap();
+        let images = ItemImages {
+            thumb: Some(thumb.clone()),
+            preview: Some(preview.clone()),
+            ..Default::default()
+        };
+        let id = db
+            .insert_item(&session.id, &scan.to_string_lossy(), None, &images, None)
+            .unwrap();
+        db.claim_next(&session.id).unwrap();
+        let raw = json!({"response": {"records": [{"_objects": [
+            {"name": "Card", "_tags": {"Rotation": [{"name": "rotated_upside_down", "prob": 0.99}]}}]}]}});
+        db.save_recognition(
+            id,
+            "tcg",
+            &CardFields::default(),
+            None,
+            None,
+            None,
+            None,
+            &raw,
+            1,
+            ItemStatus::Done,
+        )
+        .unwrap();
+        db.set_hosted_images(id, &["https://i.example.com/old.jpg".into()])
+            .unwrap();
+
+        let turned = runner.turn_item(id).unwrap();
+        let new_preview = turned.preview_path.clone().unwrap();
+        assert_ne!(new_preview, preview, "a new file, so no cached copy shows");
+        assert!(!Path::new(&preview).exists() && !Path::new(&thumb).exists());
+        let left = |p: &str| {
+            imaging::open(Path::new(p))
+                .unwrap()
+                .to_rgb8()
+                .get_pixel(2, 40)
+                .0
+        };
+        assert!(left(&new_preview)[2] > 200, "blue on the left now");
+        assert!(left(&turned.summary.thumb_path.clone().unwrap())[2] > 200);
+        assert_eq!(
+            left(&scan.to_string_lossy()),
+            [0, 0, 255],
+            "the scan is turned too"
+        );
+        let tag = &turned.recognition.unwrap()["response"]["records"][0]["_objects"][0]["_tags"]
+            ["Rotation"][0];
+        assert_eq!(
+            (&tag["name"], &tag["found"]),
+            (&json!("rotation_ok"), &json!("rotated_upside_down"))
+        );
+        assert!(
+            turned.hosted_images.is_empty(),
+            "exports upload the upright picture"
+        );
     }
 
     /// Without a connection the cards stay queued and the session pauses, saying why; it doesn't fail them.

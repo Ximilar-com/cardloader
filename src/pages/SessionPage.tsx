@@ -580,6 +580,15 @@ function SessionView({ id }: { id: string }) {
           onUnaccept={() => api.reviewItems(id, [detail.id], false).catch(toastError)}
           onEdit={(edit) => api.updateItem(detail.id, edit).then(setDetail)}
           onDelete={active ? undefined : () => setDeleting([detail.id])}
+          onTurn={() =>
+            api
+              .turnItem(detail.id)
+              .then((d) => {
+                setDetail(d);
+                toast("Turned upright");
+              })
+              .catch(toastError)
+          }
           onClose={() => {
             setSelected(null);
             setDetail(null);

@@ -132,6 +132,11 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   `known_paths` includes, so running the folder again doesn't bring them back.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
+- **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail
+  and preview files (new names: the webview caches by path) from the preview turned 180°, the scan turned in place
+  when it is cardloader's (under the session dir; never the user's folders), the tag rewritten to `rotation_ok`
+  with `found` keeping Ximilar's value (`recognition::mark_upright`), and `hosted_images` cleared so exports
+  upload the upright picture. Cards Cloud's image and live eBay listings keep the old picture.
 - **Offline**: a card whose API call still fails after the retries with a network error, 429 or 5xx goes back to
   the queue and the session pauses with the reason in `sessions.error` (`Runner::pause_with`); Resume clears it.
   The dispatcher waits for cards in flight before a run ends, so a card put back is never stranded.

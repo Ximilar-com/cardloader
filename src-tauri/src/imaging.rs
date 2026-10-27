@@ -68,11 +68,20 @@ pub fn rotate_file(path: &Path, rotation: ScanRotation) -> Result<()> {
 
 /// Writes the thumbnail and preview JPEGs of `source` into `dir` as `<stem>_thumb.jpg` / `<stem>_preview.jpg`.
 pub fn make_derivatives(source: &Path, dir: &Path, stem: &str) -> Result<(String, String)> {
-    let img = open(source)?;
+    write_derivatives(&open(source)?, dir, stem)
+}
+
+/// The thumbnail and preview made again from `preview` turned upside down. New names, so nothing shows a
+/// cached copy of the old ones.
+pub fn turned_derivatives(preview: &Path, dir: &Path, stem: &str) -> Result<(String, String)> {
+    write_derivatives(&open(preview)?.rotate180(), dir, stem)
+}
+
+fn write_derivatives(img: &DynamicImage, dir: &Path, stem: &str) -> Result<(String, String)> {
     std::fs::create_dir_all(dir)?;
     let thumb = dir.join(format!("{stem}_thumb.jpg"));
     let preview = dir.join(format!("{stem}_preview.jpg"));
-    let preview_img = fit_long_edge(&img, PREVIEW_LONG_EDGE);
+    let preview_img = fit_long_edge(img, PREVIEW_LONG_EDGE);
     // From the preview: shrinking a full scan to a thumbnail costs as much as making the preview again.
     std::fs::write(
         &thumb,

@@ -646,6 +646,20 @@ impl Db {
         Ok(())
     }
 
+    /// The card's image was turned upright: new thumbnail and preview, the response says it is upright, and
+    /// pictures hosted for exports are uploaded again.
+    pub fn save_turned(&self, id: i64, thumb: &str, preview: &str, raw: &Value) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET thumb_path = ?2, preview_path = ?3, recognition = ?4, hosted_images = NULL,
+                    updated_at = ?5
+                 WHERE id = ?1",
+                params![id, thumb, preview, raw.to_string(), now()],
+            )
+        })?;
+        Ok(())
+    }
+
     /// Accepts the cards' matches (or takes that back); returns how many changed.
     pub fn set_reviewed(&self, session_id: &str, ids: &[i64], reviewed: bool) -> Result<usize> {
         self.with(|c| {

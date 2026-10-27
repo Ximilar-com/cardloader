@@ -78,6 +78,9 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   filter to cards to review, graded cards or duplicates (×3 shows you have three), with the total value. Tick cards
   to set where they are kept (a box, a binder page). When listing or exporting, **Adjust prices** sets the chosen
   cards to a percentage of the market price, ending in .99, with a minimum.
+- **Upside-down cards.** When Ximilar finds a card upside down in its image, the card shows an **Upside down**
+  badge; click it and **Turn upright** to turn the picture the app shows and exports upload (and the scan, for
+  scanner sessions). Images in your own folders are never changed.
 - **Pause, stop, resume.** You can pause, stop and resume a session, even after the app restarts. Failed cards can
   be retried individually. When the connection drops, the session pauses instead of failing its cards.
 

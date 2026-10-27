@@ -90,6 +90,7 @@ pub fn run() {
             commands::search_cards,
             commands::update_item,
             commands::review_items,
+            commands::turn_item,
             commands::locate_items,
             commands::delete_items,
             commands::list_models,
