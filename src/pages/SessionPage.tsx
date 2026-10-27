@@ -324,7 +324,10 @@ function SessionView({ id }: { id: string }) {
                 </button>
               )}
               {!active && counts.errors > 0 && (
-                <button className="btn" onClick={() => act(() => api.retryItems(id).then(() => api.runSession(id)))}>
+                <button
+                  className="btn"
+                  onClick={() => act(() => api.retryItems(id).then(() => api.runSession(id, false)))}
+                >
                   <RotateCcw className="h-4 w-4" /> Retry {counts.errors} failed
                 </button>
               )}
@@ -461,7 +464,7 @@ function SessionView({ id }: { id: string }) {
                   act(() =>
                     api.retryItems(id, checkedIds).then(() => {
                       setChecked(new Set());
-                      return api.runSession(id);
+                      return api.runSession(id, false);
                     }),
                   )
                 }
@@ -583,7 +586,7 @@ function SessionView({ id }: { id: string }) {
           }}
           onRetry={
             detail.status === "error" && !active
-              ? () => act(() => api.retryItems(id, [detail.id]).then(() => api.runSession(id)))
+              ? () => act(() => api.retryItems(id, [detail.id]).then(() => api.runSession(id, false)))
               : undefined
           }
           ebay={

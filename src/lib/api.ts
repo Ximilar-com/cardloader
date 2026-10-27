@@ -524,7 +524,8 @@ export const api = {
   previewCsv: (path: string) => invoke<CsvPreview>("preview_csv", { path }),
   /** A new session from a CSV; with `reanalyze`, identified rows with an image are analysed again. */
   importCsv: (session: NewSession, reanalyze: boolean) => invoke<Session>("import_csv", { session, reanalyze }),
-  runSession: (id: string) => invoke<void>("run_session", { id }),
+  /** `source: false` analyses only the queued cards (cards to analyse again): no new scan, no new files. */
+  runSession: (id: string, source = true) => invoke<void>("run_session", { id, source }),
   pauseSession: (id: string) => invoke<void>("pause_session", { id }),
   stopSession: (id: string) => invoke<void>("stop_session", { id }),
   retryItems: (id: string, itemIds?: number[]) => invoke<number>("retry_items", { id, itemIds }),

@@ -130,6 +130,8 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
   `edited`; `notes` and `location` stay local (CSV only). Deleted cards' files go into `removed_files`, which
   `known_paths` includes, so running the folder again doesn't bring them back.
+- **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
+  the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Offline**: a card whose API call still fails after the retries with a network error, 429 or 5xx goes back to
   the queue and the session pauses with the reason in `sessions.error` (`Runner::pause_with`); Resume clears it.
   The dispatcher waits for cards in flight before a run ends, so a card put back is never stranded.

@@ -335,9 +335,14 @@ pub fn export_csv(state: S, id: String, path: String) -> Result<usize> {
     Ok(items.len())
 }
 
+/// Runs (or resumes) the session; with `source: false` only its queued cards are analysed — no new scan,
+/// no new files — which is how cards are analysed again.
 #[tauri::command]
-pub fn run_session(state: S, id: String) -> Result<()> {
-    state.runner.start(&id)
+pub fn run_session(state: S, id: String, source: Option<bool>) -> Result<()> {
+    match source {
+        Some(false) => state.runner.analyse_queued(&id),
+        _ => state.runner.start(&id),
+    }
 }
 
 #[tauri::command]

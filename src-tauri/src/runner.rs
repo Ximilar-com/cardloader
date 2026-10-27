@@ -355,6 +355,16 @@ impl Runner {
 
     /// Starts the session, or resumes it when paused.
     pub fn start(self: &Arc<Self>, id: &str) -> Result<()> {
+        self.start_run(id, true)
+    }
+
+    /// Analyses the session's queued cards (e.g. ones to analyse again) without reading its source: no new
+    /// scan, no new files from the folder.
+    pub fn analyse_queued(self: &Arc<Self>, id: &str) -> Result<()> {
+        self.start_run(id, false)
+    }
+
+    fn start_run(self: &Arc<Self>, id: &str, read_source: bool) -> Result<()> {
         let mut runs = self.runs.lock().unwrap();
         if let Some(run) = runs.get(id) {
             run.paused.send_replace(false);
@@ -405,7 +415,7 @@ impl Runner {
             let id = session.id.clone();
             let outcome = runner
                 .clone()
-                .run(session, client, paused_rx, cancel.clone())
+                .run(session, client, read_source, paused_rx, cancel.clone())
                 .await;
             runner.runs.lock().unwrap().remove(&id);
             let (status, error) = match outcome {
@@ -562,6 +572,7 @@ impl Runner {
         self: Arc<Self>,
         session: Session,
         client: Option<XimilarClient>,
+        read_source: bool,
         mut paused: watch::Receiver<bool>,
         cancel: CancellationToken,
     ) -> Result<Option<String>> {
@@ -598,6 +609,9 @@ impl Runner {
             let cancel = cancel.clone();
             let client = client.clone();
             tokio::spawn(async move {
+                if !read_source {
+                    return Ok(());
+                }
                 runner
                     .source(&session, client.as_ref(), unit_tx, cancel)
                     .await
@@ -1679,6 +1693,25 @@ mod tests {
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
         assert_eq!(db.session(&session.id).unwrap().counts.total, 1);
+
+        // Analysing a card again doesn't read the source: a new file stays out (for a scanner: no new scan).
+        RgbImage::from_pixel(630, 880, Rgb([1, 2, 3]))
+            .save(cards.join("c_front.png"))
+            .unwrap();
+        let calls = db.item(first).unwrap().calls;
+        assert_eq!(db.requeue(&session.id, Some(&[first])).unwrap(), 1);
+        runner.analyse_queued(&session.id).unwrap();
+        let started = Instant::now();
+        while runner.is_running(&session.id) {
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "rerun did not finish"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        let s = db.session(&session.id).unwrap();
+        assert_eq!((s.counts.total, s.counts.done), (1, 1), "{s:?}");
+        assert!(db.item(first).unwrap().calls > calls, "analysed again");
     }
 
     /// A session continued from Cards Cloud: the files whose cards are there already are skipped, the rest
