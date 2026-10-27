@@ -33,7 +33,15 @@ pub struct UpdateProgress {
 
 impl From<tauri_plugin_updater::Error> for Error {
     fn from(e: tauri_plugin_updater::Error) -> Self {
-        Error::msg(format!("update: {e}"))
+        match e {
+            // GitHub answered latest.json with an error status: releases before 0.5.0, or one built without the
+            // signing key, don't have it. (Being offline is a different error.)
+            tauri_plugin_updater::Error::ReleaseNotFound => Error::msg(
+                "the latest release on GitHub can't be installed from the app (it has no latest.json); \
+                 download newer versions from the releases page",
+            ),
+            e => Error::msg(format!("update: {e}")),
+        }
     }
 }
 
