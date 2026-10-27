@@ -115,7 +115,9 @@ To build and install from source instead, see [Development](#development) and ru
 
 ## Getting started
 
-1. On first launch, answer the setup questions (or skip them); they set the defaults of new sessions.
+1. On first launch, pick the app's language — English, 日本語, Español, 한국어, Français, Português, Deutsch or
+   Italiano (change it later in **Settings → Language**) — then answer the setup questions (or skip them); they set
+   the defaults of new sessions. The translations are machine-made; corrections from native speakers are welcome.
 2. Open **Settings**, paste your Ximilar API token and click **Test connection**. You can find the token in the
    [Ximilar App](https://app.ximilar.com). Collectibles recognition needs the Business plan or a trial;
    Cards Cloud sync needs the Cards Cloud service on your account. The token is stored in the system keychain.
@@ -350,7 +352,7 @@ All commands run in the repository root. `npm run dev` on its own serves the UI 
 ### Layout
 
 ```
-src/                      React UI (pages/, components/, lib/api.ts = typed Rust commands)
+src/                      React UI (pages/, components/, lib/api.ts = typed Rust commands, i18n/ = languages)
 src-tauri/src/
   commands.rs             everything the UI can call
   runner.rs               session runner: ingest → recognise → grade (async) → events

@@ -67,6 +67,8 @@ pub struct Settings {
     pub default_sources: Vec<SourceKind>,
     /// The first-run setup was finished or skipped.
     pub setup_done: bool,
+    /// The app's language ("en", "ja", …); anything unknown reads as English.
+    pub language: String,
     pub price_stats: bool,
     pub concurrency: u32,
     pub sync_by_default: bool,
@@ -181,6 +183,7 @@ impl Default for Settings {
             default_condition_mode: "ebay_tcg".into(),
             default_sources: vec![SourceKind::Folder],
             setup_done: false,
+            language: "en".into(),
             price_stats: true,
             concurrency: MAX_CONCURRENCY,
             sync_by_default: false,

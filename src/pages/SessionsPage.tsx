@@ -28,12 +28,14 @@ import {
   type Session,
   type SourceKind,
 } from "../lib/api";
+import { rich, useT } from "../i18n";
 import { basename, dateTime, price } from "../lib/format";
 import Select, { type SelectOption } from "../components/Select";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
 
 export default function SessionsPage() {
+  const t = useT();
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") === "remote" ? "remote" : "local";
   const [creating, setCreating] = useState<SourceKind | null>(null);
@@ -45,11 +47,11 @@ export default function SessionsPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-4 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
-        <h1 className="text-lg font-semibold">Sessions</h1>
+        <h1 className="text-lg font-semibold">{t("sessions.title")}</h1>
         <div className="flex rounded-md bg-slate-100 p-0.5 dark:bg-slate-900">
           {(
             [
-              ["local", "Local", HardDrive],
+              ["local", t("sessions.tabLocal"), HardDrive],
               ["remote", "Cards Cloud", Cloud],
             ] as const
           ).map(([key, label, Icon]) => (
@@ -69,15 +71,11 @@ export default function SessionsPage() {
           ))}
         </div>
         <div className="flex-1" />
-        <button
-          className="btn"
-          onClick={() => setCreating("csv")}
-          title="A new session from a CSV of cards or image paths"
-        >
-          <FileUp className="h-4 w-4" /> Import CSV
+        <button className="btn" onClick={() => setCreating("csv")} title={t("sessions.importCsvTitle")}>
+          <FileUp className="h-4 w-4" /> {t("sessions.importCsv")}
         </button>
         <button className="btn btn-primary" onClick={() => setCreating(source)}>
-          <Plus className="h-4 w-4" /> New session
+          <Plus className="h-4 w-4" /> {t("sessions.newSession")}
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">{tab === "local" ? <LocalSessions /> : <RemoteSessions />}</div>
@@ -86,16 +84,16 @@ export default function SessionsPage() {
   );
 }
 
-const STATUS_FILTERS: SelectOption<string>[] = [
-  { value: "", label: "All statuses" },
-  { value: "active", label: "Running or paused" },
-  { value: "draft", label: "Draft" },
-  { value: "completed", label: "Completed" },
-  { value: "stopped", label: "Stopped" },
-  { value: "failed", label: "Failed" },
-];
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+function statusFilters(t: ReturnType<typeof useT>): SelectOption<string>[] {
+  return [
+    { value: "", label: t("sessions.filter.all") },
+    { value: "active", label: t("sessions.filter.active") },
+    { value: "draft", label: t("status.session.draft") },
+    { value: "completed", label: t("status.session.completed") },
+    { value: "stopped", label: t("status.session.stopped") },
+    { value: "failed", label: t("status.session.failed") },
+  ];
+}
 
 function matchesStatus(s: Session, filter: string) {
   if (!filter) return true;
@@ -104,6 +102,7 @@ function matchesStatus(s: Session, filter: string) {
 }
 
 function LocalSessions() {
+  const t = useT();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -155,12 +154,7 @@ function LocalSessions() {
     );
   if (!sessions) return null;
   if (sessions.length === 0)
-    return (
-      <Empty
-        title="No sessions yet"
-        text="Create a session to analyse a folder of card images or a stack of cards in your scanner."
-      />
-    );
+    return <Empty title={t("sessions.local.emptyTitle")} text={t("sessions.local.emptyText")} />;
 
   const picked = shown.filter((s) => checked.has(s.id));
   const allChecked = shown.length > 0 && picked.length === shown.length;
@@ -177,27 +171,32 @@ function LocalSessions() {
       <div className="flex shrink-0 items-center gap-2 px-6 py-3">
         {picked.length > 0 ? (
           <>
-            <span className="text-sm font-medium">{picked.length} selected</span>
+            <span className="text-sm font-medium">{t("sessions.local.selected", { count: picked.length })}</span>
             <button className="btn btn-ghost text-red-600 dark:text-red-400" onClick={() => actions.remove(picked)}>
-              <Trash2 className="h-4 w-4" /> Delete
+              <Trash2 className="h-4 w-4" /> {t("common.delete")}
             </button>
             <button className="btn btn-ghost" onClick={() => setChecked(new Set())}>
-              Clear
+              {t("sessions.local.clear")}
             </button>
           </>
         ) : (
           <>
-            <SearchBox value={query} onChange={setQuery} placeholder="Search sessions" />
+            <SearchBox value={query} onChange={setQuery} placeholder={t("sessions.local.search")} />
             <div className="w-48">
-              <Select value={status} onChange={setStatus} options={STATUS_FILTERS} aria-label="Status" />
+              <Select
+                value={status}
+                onChange={setStatus}
+                options={statusFilters(t)}
+                aria-label={t("sessions.local.status")}
+              />
             </div>
           </>
         )}
         <span className="flex-1" />
         <span className="text-xs text-slate-500">
           {shown.length === sessions.length
-            ? plural(sessions.length, "session")
-            : `${shown.length} of ${sessions.length}`}
+            ? t("sessions.count", { count: sessions.length })
+            : t("sessions.shownOf", { shown: shown.length, total: sessions.length })}
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -210,15 +209,15 @@ function LocalSessions() {
                   className="h-4 w-4 accent-[var(--color-accent)]"
                   checked={allChecked}
                   onChange={() => setChecked(allChecked ? new Set() : new Set(shown.map((s) => s.id)))}
-                  aria-label="Select all"
+                  aria-label={t("sessions.local.selectAll")}
                 />
               </th>
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Source</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 text-right font-medium">Cards</th>
-              <th className="px-3 py-2 text-right font-medium">Value</th>
-              <th className="px-3 py-2 font-medium">Created</th>
+              <th className="px-3 py-2 font-medium">{t("sessions.local.col.name")}</th>
+              <th className="px-3 py-2 font-medium">{t("sessions.local.col.source")}</th>
+              <th className="px-3 py-2 font-medium">{t("sessions.local.col.status")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("sessions.local.col.cards")}</th>
+              <th className="px-3 py-2 text-right font-medium">{t("sessions.local.col.value")}</th>
+              <th className="px-3 py-2 font-medium">{t("sessions.local.col.created")}</th>
               <th className="px-3 py-2 font-medium">Cards Cloud</th>
               <th className="w-12 pr-4" />
             </tr>
@@ -242,7 +241,7 @@ function LocalSessions() {
                       className="h-4 w-4 accent-[var(--color-accent)]"
                       checked={checked.has(s.id)}
                       onChange={() => toggle(s.id)}
-                      aria-label={`Select ${s.name}`}
+                      aria-label={t("sessions.local.selectSession", { name: s.name })}
                     />
                   </td>
                   <td className="max-w-72 truncate px-3 py-2.5 font-medium" title={s.name}>
@@ -268,21 +267,21 @@ function LocalSessions() {
                   <td className="px-3 py-2.5 text-slate-500">
                     {s.remoteSessionId ? (
                       <span className="flex items-center gap-1 text-xs whitespace-nowrap">
-                        <Cloud className="h-3.5 w-3.5" /> {s.counts.synced} synced
+                        <Cloud className="h-3.5 w-3.5" /> {t("sessions.local.synced", { count: s.counts.synced })}
                       </span>
                     ) : (
                       "—"
                     )}
                   </td>
                   <td className="pr-4 text-right" onClick={(e) => e.stopPropagation()}>
-                    <Menu items={actions.menu(s, { open })} label={`Actions for ${s.name}`} />
+                    <Menu items={actions.menu(s, { open })} label={t("sessions.local.actionsFor", { name: s.name })} />
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-        {shown.length === 0 && <p className="p-10 text-center text-sm text-slate-500">No sessions match.</p>}
+        {shown.length === 0 && <p className="p-10 text-center text-sm text-slate-500">{t("sessions.noMatch")}</p>}
       </div>
       {actions.node}
     </div>
@@ -313,6 +312,7 @@ function SearchBox({
 }
 
 function RemoteSessions() {
+  const t = useT();
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ results: RemoteSession[]; count: number; next: string | null } | null>(null);
@@ -329,11 +329,11 @@ function RemoteSessions() {
 
   // Searching asks the server, a moment after the last keystroke.
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setSearch(query);
       setPage(1);
     }, 350);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [query]);
 
   useEffect(() => {
@@ -362,37 +362,34 @@ function RemoteSessions() {
       <div className="space-y-3 p-6">
         <ErrorNote>{error}</ErrorNote>
         <p className="text-sm text-slate-500">
-          Remote sessions live in Ximilar Cards Cloud. Check your API token in{" "}
-          <Link to="/settings" className="text-accent underline">
-            Settings
-          </Link>
-          ; the account needs the Cards Cloud service.
+          {rich(t("sessions.remote.help"), {
+            link: (s) => (
+              <Link to="/settings" className="text-accent underline">
+                {s}
+              </Link>
+            ),
+          })}
         </p>
       </div>
     );
-  if (!data) return <div className="p-6 text-slate-500">{loading ? "Loading…" : null}</div>;
+  if (!data) return <div className="p-6 text-slate-500">{loading ? t("common.loading") : null}</div>;
   if (data.results.length === 0 && !search)
-    return (
-      <Empty
-        title="No sessions in Cards Cloud yet"
-        text="Turn on “Sync to Ximilar Cards Cloud” on a session to upload it."
-      />
-    );
+    return <Empty title={t("sessions.remote.emptyTitle")} text={t("sessions.remote.emptyText")} />;
 
   return (
     <div>
       <div className="flex items-center gap-2 px-6 py-3">
-        <SearchBox value={query} onChange={setQuery} placeholder="Search Cards Cloud" />
+        <SearchBox value={query} onChange={setQuery} placeholder={t("sessions.remote.search")} />
       </div>
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-white text-left text-xs text-slate-500 uppercase dark:bg-slate-950">
           <tr className="border-b border-slate-200 dark:border-slate-800">
-            <th className="px-6 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Client</th>
-            <th className="px-3 py-2 text-right font-medium">Cards</th>
-            <th className="px-3 py-2 text-right font-medium">Value</th>
-            <th className="px-3 py-2 font-medium">Started</th>
+            <th className="px-6 py-2 font-medium">{t("sessions.remote.col.name")}</th>
+            <th className="px-3 py-2 font-medium">{t("sessions.remote.col.status")}</th>
+            <th className="px-3 py-2 font-medium">{t("sessions.remote.col.client")}</th>
+            <th className="px-3 py-2 text-right font-medium">{t("sessions.remote.col.cards")}</th>
+            <th className="px-3 py-2 text-right font-medium">{t("sessions.remote.col.value")}</th>
+            <th className="px-3 py-2 font-medium">{t("sessions.remote.col.started")}</th>
             <th className="w-12 pr-4" />
           </tr>
         </thead>
@@ -403,7 +400,7 @@ function RemoteSessions() {
               onClick={() => navigate(`/remote/${s.id}`)}
               className="cursor-pointer border-b border-slate-100 hover:bg-slate-50 dark:border-slate-900 dark:hover:bg-slate-900"
             >
-              <td className="px-6 py-2.5 font-medium">{s.name || "Untitled"}</td>
+              <td className="px-6 py-2.5 font-medium">{s.name || t("sessions.remote.untitled")}</td>
               <td className="px-3 py-2.5">
                 <StatusChip status={s.status} />
               </td>
@@ -414,26 +411,26 @@ function RemoteSessions() {
               <td className="pr-4 text-right" onClick={(e) => e.stopPropagation()}>
                 <Menu
                   items={actions.menu(s, { open: () => navigate(`/remote/${s.id}`) })}
-                  label={`Actions for ${s.name || "Untitled"}`}
+                  label={t("sessions.local.actionsFor", { name: s.name || t("sessions.remote.untitled") })}
                 />
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      {data.results.length === 0 && <p className="p-10 text-center text-sm text-slate-500">No sessions match.</p>}
+      {data.results.length === 0 && <p className="p-10 text-center text-sm text-slate-500">{t("sessions.noMatch")}</p>}
       <div className="flex items-center justify-between px-6 py-3 text-sm text-slate-500">
-        <span>{plural(data.count, "session")}</span>
+        <span>{t("sessions.count", { count: data.count })}</span>
         {actions.node}
         <div className="flex gap-2">
           <button className="btn btn-ghost" onClick={load} disabled={loading}>
             <RefreshCw className={clsx("h-4 w-4", loading && "animate-spin")} />
           </button>
           <button className="btn" disabled={page <= 1} onClick={() => (setLoading(true), setPage(page - 1))}>
-            Previous
+            {t("sessions.remote.previous")}
           </button>
           <button className="btn" disabled={!data.next} onClick={() => (setLoading(true), setPage(page + 1))}>
-            Next
+            {t("sessions.remote.next")}
           </button>
         </div>
       </div>

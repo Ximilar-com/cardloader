@@ -1,0 +1,67 @@
+import type { Messages } from "..";
+import type en from "../en/dashboard";
+
+const messages: Messages<typeof en> = {
+  title: "Start",
+  newSession: "Neue Sitzung",
+  lastWeek: "Letzte 7 Tage",
+  defaultsTitle: "Standards für neue Sitzungen",
+  runSetupAgain: "Einrichtung wiederholen",
+  activity: "Aktivität",
+  lastSessions: "Letzte Sitzungen",
+  allSessions: "Alle Sitzungen",
+  week: {
+    cardsAnalysed: "Karten analysiert",
+    dayCards: { one: "{date}: {count} Karte", other: "{date}: {count} Karten" },
+    today: "Heute",
+  },
+  heatmap: {
+    activeDays: {
+      one: "Karten wurden im letzten Jahr an {count} Tag analysiert.",
+      other: "Karten wurden im letzten Jahr an {count} Tagen analysiert.",
+    },
+    dayCards: { one: "{date}: {count} Karte", other: "{date}: {count} Karten" },
+    dayNone: "{date}: nichts gescannt",
+    noScanning: "Nichts gescannt",
+    fewer: "Weniger",
+    moreCards: "Mehr Karten",
+  },
+  totals: {
+    cards: "Karten",
+    inSessions: { one: "in {count} Sitzung", other: "in {count} Sitzungen" },
+    totalValue: "Gesamtwert",
+    totalValueSub: "Marktpreise bei der Analyse",
+    toReview: "Zu prüfen",
+    toReviewSub: "noch nicht übernommen",
+    apiCalls: "API-Aufrufe",
+    apiCallsSub: "letzte 7 Tage",
+  },
+  attention: {
+    title: "Braucht Aufmerksamkeit",
+    noToken: "Füge deinen Ximilar-API-Token hinzu, um Karten zu analysieren.",
+    openSettings: "Einstellungen öffnen",
+    analysing: "wird analysiert, {done} von {total}",
+    paused: "pausiert",
+    toReview: { one: "{count} Karte zu prüfen", other: "{count} Karten zu prüfen" },
+    failed: "{count} fehlgeschlagen",
+    syncFailed: "Upload in Cards Cloud fehlgeschlagen",
+    ebayStopped: "eBay-Auftrag gestoppt",
+    resume: "Fortsetzen",
+    review: "Prüfen",
+    open: "Öffnen",
+  },
+  defaults: {
+    identifyAs: "Erkennen als",
+    game: "Spiel",
+    anyGame: "Jedes Spiel",
+    grading: "Grading",
+    prices: "Preise",
+    cardsFrom: "Karten aus",
+    identifyWith: "Erkennen mit",
+    localModel: "Lokales KI-Modell",
+    change: "In den Einstellungen ändern",
+  },
+  noSessions: "Noch keine Sitzungen.",
+  sessionCards: { one: "{done} / {count} Karte", other: "{done} / {count} Karten" },
+};
+export default messages;

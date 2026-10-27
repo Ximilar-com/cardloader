@@ -75,6 +75,7 @@ const settings: SettingsView = {
   defaultSources: ["scanner", "folder"],
   // The demo starts with the setup, as a first launch does.
   setupDone: false,
+  language: "en",
   priceStats: true,
   concurrency: 3,
   syncByDefault: true,

@@ -20,17 +20,13 @@ import {
   type ItemSummary,
 } from "../lib/api";
 import { rowFromItem, sortRows, viewFromItem, type Sort, type SortKey } from "../lib/cardview";
+import { rich, useT } from "../i18n";
 import { price } from "../lib/format";
 
-const FILTERS: [CardFilter, string][] = [
-  ["all", "All"],
-  ["review", "To review"],
-  ["graded", "Graded"],
-  ["duplicates", "Duplicates"],
-  ["agent", "By AI"],
-];
+const FILTERS: CardFilter[] = ["all", "review", "graded", "duplicates", "agent"];
 
 export default function CardsPage() {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CardFilter>("all");
   const [result, setResult] = useState<CardSearch | null>(null);
@@ -42,7 +38,7 @@ export default function CardsPage() {
   const [locating, setLocating] = useState<ItemSummary[] | null>(null);
 
   useEffect(() => {
-    const t = setTimeout(
+    const timer = setTimeout(
       () =>
         api
           .searchCards(query, filter)
@@ -53,7 +49,7 @@ export default function CardsPage() {
           .catch((e) => setError(errorText(e))),
       query ? 250 : 0,
     );
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [query, filter]);
 
   // Edits, picks and accepts from here or elsewhere: patch the card, keep its session and copies.
@@ -108,11 +104,12 @@ export default function CardsPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-slate-200 px-6 pt-4 pb-3 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <h1 className="flex-1 text-lg font-semibold">Cards</h1>
+            <h1 className="flex-1 text-lg font-semibold">{t("cards.title")}</h1>
             {result && (
               <span className="text-sm text-slate-500">
-                <b className="text-slate-800 tabular-nums dark:text-slate-100">{result.total.toLocaleString()}</b> card
-                {result.total === 1 ? "" : "s"}
+                {rich(t("cards.total", { count: result.total }), {
+                  b: (s) => <b className="text-slate-800 tabular-nums dark:text-slate-100">{s}</b>,
+                })}
                 {result.value > 0 && (
                   <>
                     {" · "}
@@ -122,25 +119,23 @@ export default function CardsPage() {
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Every identified card of your sessions on this computer. Search by name, set, number, location or notes.
-          </p>
+          <p className="mt-0.5 text-xs text-slate-500">{t("cards.intro")}</p>
         </header>
 
         {checked.size > 0 ? (
           <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
-            <span className="font-medium">{checked.size} selected</span>
+            <span className="font-medium">{t("cards.selected", { count: checked.size })}</span>
             <span className="flex-1" />
             {rows.some((r) => (!r.reviewed || r.byAgent) && checked.has(r.key)) && (
               <button
                 className="btn px-2 py-1 text-xs"
                 onClick={() =>
                   perSession(checkedCards, (s, ids) => api.reviewItems(s, ids))
-                    .then((n) => toast(`Accepted ${n} match${n === 1 ? "" : "es"}`))
+                    .then((n) => toast(t("cards.accepted", { count: n })))
                     .catch(toastError)
                 }
               >
-                <Check className="h-3.5 w-3.5" /> Accept
+                <Check className="h-3.5 w-3.5" /> {t("cards.accept")}
               </button>
             )}
             {rows.some((r) => r.accepted && checked.has(r.key)) && (
@@ -148,39 +143,39 @@ export default function CardsPage() {
                 className="btn px-2 py-1 text-xs"
                 onClick={() =>
                   perSession(checkedCards, (s, ids) => api.reviewItems(s, ids, false))
-                    .then((n) => toast(`Unaccepted ${n} match${n === 1 ? "" : "es"}`))
+                    .then((n) => toast(t("cards.unaccepted", { count: n })))
                     .catch(toastError)
                 }
-                title="Take the accepts back"
+                title={t("cards.unacceptTitle")}
               >
-                <Undo2 className="h-3.5 w-3.5" /> Unaccept
+                <Undo2 className="h-3.5 w-3.5" /> {t("cards.unaccept")}
               </button>
             )}
             <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedCards)}>
-              <MapPin className="h-3.5 w-3.5" /> Set location…
+              <MapPin className="h-3.5 w-3.5" /> {t("cards.setLocation")}
             </button>
             <button
               className="btn px-2 py-1 text-xs"
               onClick={() => turnUpright(checkedCards.map((c) => c.id))}
-              title="Turn the cards Ximilar found upside down, front and back"
+              title={t("cards.turnUprightTitle")}
             >
-              <RotateCw className="h-3.5 w-3.5" /> Turn upright
+              <RotateCw className="h-3.5 w-3.5" /> {t("cards.turnUpright")}
             </button>
             <button
               className="btn btn-ghost px-1.5"
               onClick={() => setChecked(new Set())}
-              aria-label="Clear the selection"
+              aria-label={t("cards.clearSelection")}
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         ) : (
           <div className="flex items-center gap-1.5 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
-            {FILTERS.map(([key, label]) => (
+            {FILTERS.map((key) => (
               <Chip key={key} on={filter === key} onClick={() => setFilter(key)}>
                 {key === "review" && <CircleQuestionMark className="h-3.5 w-3.5" />}
                 {key === "agent" && <Bot className="h-3.5 w-3.5" />}
-                {label}
+                {t(`cards.filter.${key}`)}
               </Chip>
             ))}
             <span className="flex-1" />
@@ -188,11 +183,11 @@ export default function CardsPage() {
               <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
                 className="input w-64 py-1 pl-7 text-sm"
-                placeholder="Name, set, number, location…"
+                placeholder={t("cards.searchPlaceholder")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-                aria-label="Search cards"
+                aria-label={t("cards.search")}
                 autoFocus
               />
             </label>
@@ -206,7 +201,7 @@ export default function CardsPage() {
         )}
         {result && result.total > result.cards.length && (
           <p className="border-b border-slate-200 bg-slate-50 px-4 py-1.5 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-            Showing the newest {result.cards.length.toLocaleString()} — search or filter to find the others.
+            {t("cards.showingNewest", { count: result.cards.length })}
           </p>
         )}
 
@@ -236,12 +231,12 @@ export default function CardsPage() {
             result && (
               <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-500">
                 {query || filter !== "all" ? (
-                  "No cards match."
+                  t("cards.noMatch")
                 ) : (
                   <>
-                    No identified cards yet.
+                    {t("cards.empty")}
                     <Link to="/sessions" className="btn">
-                      Go to sessions
+                      {t("cards.goToSessions")}
                     </Link>
                   </>
                 )}
@@ -255,7 +250,7 @@ export default function CardsPage() {
         <DetailPanel
           key={selected}
           view={viewFromItem(detail)}
-          position={at >= 0 ? `Card ${at + 1} of ${rows.length}` : undefined}
+          position={at >= 0 ? t("cards.position", { at: at + 1, count: rows.length }) : undefined}
           onPrev={step(-1)}
           onNext={step(1)}
           onClose={() => {
@@ -275,7 +270,7 @@ export default function CardsPage() {
               .turnItem(detail.id)
               .then((d) => {
                 setDetail(d);
-                toast("Turned upright");
+                toast(t("cards.turned"));
               })
               .catch(toastError)
           }
@@ -293,7 +288,8 @@ export default function CardsPage() {
               to={`/sessions/${detail.sessionId}`}
               className="flex items-center gap-1 text-xs font-medium text-accent hover:underline"
             >
-              <ExternalLink className="h-3.5 w-3.5" /> In session “{byId.get(selected)?.sessionName}”
+              <ExternalLink className="h-3.5 w-3.5" />{" "}
+              {t("cards.inSession", { name: byId.get(selected)?.sessionName ?? "" })}
             </Link>
           }
         />
@@ -301,15 +297,15 @@ export default function CardsPage() {
 
       {locating && (
         <RenameDialog
-          title={`Location of ${locating.length} card${locating.length === 1 ? "" : "s"}`}
+          title={t("cards.location.title", { count: locating.length })}
           initial=""
-          hint="Where they are kept, e.g. “Box 4” or “Binder 2, page 7”. It is searchable and goes into the CSV export."
-          confirm="Set location"
+          hint={t("cards.location.hint")}
+          confirm={t("cards.location.confirm")}
           onClose={() => setLocating(null)}
           onSave={(location) =>
             perSession(locating, (s, ids) => api.locateItems(s, ids, location)).then((n) => {
               setChecked(new Set());
-              toast(`${n} card${n === 1 ? "" : "s"} now at ${location.trim()}`);
+              toast(t("cards.location.done", { count: n, location: location.trim() }));
             })
           }
         />

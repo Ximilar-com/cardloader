@@ -239,6 +239,8 @@ export interface Settings {
   defaultSources: SourceKind[];
   /** The first-run setup was finished or skipped. */
   setupDone: boolean;
+  /** The app's language (i18n/languages.ts); anything unknown reads as English. */
+  language: string;
   priceStats: boolean;
   concurrency: number;
   syncByDefault: boolean;

@@ -16,10 +16,11 @@ import {
   type Session,
   type SettingsView,
 } from "../lib/api";
+import { t, useT } from "../i18n";
 import { price } from "../lib/format";
 import Modal, { ErrorNote } from "./Modal";
 import { OpenSettings } from "./NewSessionDialog";
-import PricedCards, { CONDITIONS, defaultNote, parsePrice } from "./PricedCards";
+import PricedCards, { conditions, defaultNote, parsePrice } from "./PricedCards";
 import Select from "./Select";
 
 /** Listings know their policies and where cards ship from. */
@@ -27,12 +28,14 @@ export function ebayReady(e: EbaySettings): boolean {
   return !!(e.fulfillmentPolicyId && e.paymentPolicyId && e.returnPolicyId && e.locationKey);
 }
 
-export const EBAY_STATUS_LABELS: Record<EbayStatus, string> = {
-  draft: "Draft",
-  listed: "Listed",
-  sold: "Sold",
-  ended: "Ended",
-};
+export function ebayStatusLabels(): Record<EbayStatus, string> {
+  return {
+    draft: t("ebay.status.draft"),
+    listed: t("ebay.status.listed"),
+    sold: t("ebay.status.sold"),
+    ended: t("ebay.status.ended"),
+  };
+}
 
 const BADGE_STYLES: Record<EbayStatus | "error", string> = {
   draft: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
@@ -44,13 +47,14 @@ const BADGE_STYLES: Record<EbayStatus | "error", string> = {
 
 /** The card's eBay state in a few letters; the title says the rest. */
 export function EbayBadge({ listing }: { listing?: EbayListing | null }) {
+  const t = useT();
   if (!listing) return null;
   const key = listing.error && listing.status !== "sold" ? "error" : (listing.status ?? "error");
-  const what = listing.status ? `eBay: ${EBAY_STATUS_LABELS[listing.status].toLowerCase()}` : "eBay";
+  const what = listing.status ? t(`ebay.badge.${listing.status}`) : "eBay";
   const title = [what, listing.price != null && price(listing.price), listing.error].filter(Boolean).join(" · ");
   return (
     <span className={clsx("rounded px-1 py-0.5 text-[10px] font-semibold", BADGE_STYLES[key])} title={title}>
-      {listing.status === "sold" ? "Sold" : "eBay"}
+      {listing.status === "sold" ? t("ebay.status.sold") : "eBay"}
     </span>
   );
 }
@@ -68,6 +72,7 @@ export function EbaySection({
   onPublish: () => void;
   onRemove: () => void;
 }) {
+  const t = useT();
   const [url, setUrl] = useState<{ id: string; url: string } | null>(null);
   const id = listing.listingId;
 
@@ -86,7 +91,9 @@ export function EbaySection({
       <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">eBay</h3>
       <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-900">
         <div className="flex items-center gap-2">
-          <span className="font-medium">{listing.status ? EBAY_STATUS_LABELS[listing.status] : "Not on eBay"}</span>
+          <span className="font-medium">
+            {listing.status ? ebayStatusLabels()[listing.status] : t("ebay.section.notOnEbay")}
+          </span>
           {listing.price != null && <span className="text-slate-500 tabular-nums">{price(listing.price)}</span>}
           <span className="flex-1" />
           {link && (
@@ -94,24 +101,23 @@ export function EbaySection({
               className="flex items-center gap-1 text-xs text-accent hover:underline"
               onClick={() => openUrl(link)}
             >
-              Listing {id} <ExternalLink className="h-3 w-3" />
+              {t("ebay.section.listing", { id: id ?? "" })} <ExternalLink className="h-3 w-3" />
             </button>
           )}
         </div>
-        {listing.status === "draft" && (
-          <p className="text-xs text-slate-500">An unpublished listing: publish it, or edit it on eBay.</p>
-        )}
+        {listing.status === "draft" && <p className="text-xs text-slate-500">{t("ebay.section.draftNote")}</p>}
         {listing.error && <p className="selectable text-xs text-red-600 dark:text-red-400">{listing.error}</p>}
         {listing.status !== "sold" && (
           <div className="flex gap-2">
             {listing.status === "draft" && (
               <button className="btn px-2 py-0.5 text-xs" disabled={busy} onClick={onPublish}>
-                <Send className="h-3 w-3" /> Publish
+                <Send className="h-3 w-3" /> {t("ebay.section.publish")}
               </button>
             )}
             {(listing.status === "draft" || listing.status === "listed" || listing.status === "ended") && (
               <button className="btn px-2 py-0.5 text-xs" disabled={busy} onClick={onRemove}>
-                <Trash2 className="h-3 w-3" /> {listing.status === "listed" ? "End listing" : "Remove from eBay"}
+                <Trash2 className="h-3 w-3" />{" "}
+                {listing.status === "listed" ? t("ebay.section.endListing") : t("ebay.section.remove")}
               </button>
             )}
           </div>
@@ -123,6 +129,7 @@ export function EbaySection({
 
 /** Turns a session's identified cards into eBay drafts at the prices shown. */
 export function EbayListDialog({ session, onClose }: { session: Session; onClose: () => void }) {
+  const t = useT();
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [cards, setCards] = useState<EbayPreview[] | null>(null);
   const [chosen, setChosen] = useState<Set<number>>(new Set());
@@ -154,9 +161,9 @@ export function EbayListDialog({ session, onClose }: { session: Session; onClose
   const missing = !settings
     ? null
     : !settings.ebayConnected
-      ? "Connect your eBay account first."
+      ? t("ebay.list.connectFirst")
       : !ebayReady(settings.ebay)
-        ? "Choose your shipping, payment and return policies and where cards ship from first."
+        ? t("ebay.list.policiesFirst")
         : null;
   const submit = () => {
     setBusy(true);
@@ -173,24 +180,26 @@ export function EbayListDialog({ session, onClose }: { session: Session; onClose
 
   return (
     <Modal
-      title="List on eBay"
+      title={t("ebay.list.title")}
       width="max-w-3xl"
       onClose={onClose}
       footer={
         <>
           <span className="mr-auto self-center text-sm text-slate-500">
-            {picked.length} card{picked.length === 1 ? "" : "s"} · {price(total)}
-            {unpriced > 0 && <span className="text-red-600"> · {unpriced} without a price</span>}
+            {t("ebay.list.total", { cards: t("common.cards", { count: picked.length }), total: price(total) })}
+            {unpriced > 0 && (
+              <span className="text-red-600"> · {t("ebay.list.withoutPrice", { count: unpriced })}</span>
+            )}
           </span>
           <button className="btn" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className="btn btn-primary"
             disabled={busy || !!missing || !settings || picked.length === 0 || unpriced > 0}
             onClick={submit}
           >
-            {busy ? "Starting…" : `Create ${picked.length} draft${picked.length === 1 ? "" : "s"}`}
+            {busy ? t("ebay.list.starting") : t("ebay.list.createDrafts", { count: picked.length })}
           </button>
         </>
       }
@@ -205,28 +214,26 @@ export function EbayListDialog({ session, onClose }: { session: Session; onClose
           </ErrorNote>
         )}
         <p className="text-sm text-slate-500">
-          Each card becomes an unpublished listing (a draft) on eBay
-          {settings?.ebay.sandbox ? "’s sandbox" : ""}, with its pictures, at a fixed price. Check the drafts, then
-          publish them from the session — or on eBay. Prices come from Ximilar where it has one.
+          {settings?.ebay.sandbox ? t("ebay.list.introSandbox") : t("ebay.list.intro")}
         </p>
         <div className="flex items-end gap-4">
           <div className="w-72">
-            <div className="label">Condition of ungraded cards</div>
+            <div className="label">{t("ebay.list.condition")}</div>
             <Select
               value={condition}
-              options={CONDITIONS}
+              options={conditions()}
               onChange={setCondition}
               disabled={!ungraded}
-              aria-label="Condition of ungraded cards"
+              aria-label={t("ebay.list.condition")}
             />
           </div>
-          <p className="pb-2 text-xs text-slate-500">Cards in a graded slab are listed with their grader and grade.</p>
+          <p className="pb-2 text-xs text-slate-500">{t("ebay.list.gradedNote")}</p>
         </div>
         <ErrorNote>{error}</ErrorNote>
         {!cards ? (
-          <p className="text-sm text-slate-500">Loading cards…</p>
+          <p className="text-sm text-slate-500">{t("ebay.list.loadingCards")}</p>
         ) : cards.length === 0 ? (
-          <p className="text-sm text-slate-500">No identified cards in this session yet.</p>
+          <p className="text-sm text-slate-500">{t("ebay.list.noCards")}</p>
         ) : (
           <PricedCards
             cards={cards}
@@ -252,8 +259,9 @@ function listable(c: EbayPreview): boolean {
 function ebayNote(c: EbayPreview): ReactNode {
   const note = defaultNote(c);
   if (c.problem) return note;
-  if (c.ebay?.status === "sold") return "Sold on eBay";
-  if (c.ebay?.status === "listed") return <>Live on eBay — a new price applies to the listing · {note}</>;
-  if (c.ebay?.status === "draft") return <>A draft on eBay already — listing it again updates it · {note}</>;
+  // Without a problem the note is plain text.
+  if (c.ebay?.status === "sold") return t("ebay.note.sold");
+  if (c.ebay?.status === "listed") return t("ebay.note.live", { note: String(note) });
+  if (c.ebay?.status === "draft") return t("ebay.note.draft", { note: String(note) });
   return note;
 }

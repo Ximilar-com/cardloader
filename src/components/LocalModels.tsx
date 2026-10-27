@@ -4,10 +4,10 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import { Cpu, Download, ExternalLink, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { rich, t as translate, useT } from "../i18n";
 import { api, errorText, onModelUpdated, type ModelStatus } from "../lib/api";
 import { bytes, duration } from "../lib/format";
 import { ErrorNote } from "./Modal";
-import { Check } from "./NewSessionDialog";
 import Select, { Badge, type SelectOption } from "./Select";
 
 /** The models and their download state, updated as downloads progress. */
@@ -66,7 +66,7 @@ export function modelOption(m: ModelStatus): SelectOption<string> {
     ),
     badge:
       m.state === "ready" ? (
-        <Badge tone="green">Downloaded</Badge>
+        <Badge tone="green">{translate("models.picker.downloaded")}</Badge>
       ) : m.state === "downloading" ? (
         <Badge tone="sky">{m.size ? Math.floor((m.downloaded / m.size) * 100) : 0}%</Badge>
       ) : undefined,
@@ -83,13 +83,19 @@ export function ModelPicker({
   value: string;
   onChange: (id: string) => void;
 }) {
+  const t = useT();
   const selected = models.find((m) => m.id === value) ?? models[0];
   if (!selected) return null;
   return (
     <div className="space-y-3">
       <div>
-        <div className="label">Model</div>
-        <Select value={selected.id} options={models.map(modelOption)} onChange={onChange} aria-label="Model" />
+        <div className="label">{t("models.picker.model")}</div>
+        <Select
+          value={selected.id}
+          options={models.map(modelOption)}
+          onChange={onChange}
+          aria-label={t("models.picker.model")}
+        />
       </div>
       {/* Keyed: a license accepted for one model isn't accepted for the next. */}
       <ModelCard key={selected.id} model={selected} />
@@ -99,6 +105,7 @@ export function ModelPicker({
 
 /** One model: what it is, and downloading or deleting it. */
 function ModelCard({ model }: { model: ModelStatus }) {
+  const t = useT();
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const speed = useSpeed(model);
@@ -122,7 +129,7 @@ function ModelCard({ model }: { model: ModelStatus }) {
               {model.tier}
             </span>
             <span className="text-xs text-slate-500">
-              {bytes(model.size)} download · ~{bytes(model.memoryMb * 1e6)} memory
+              {t("models.card.sizes", { size: bytes(model.size), memory: bytes(model.memoryMb * 1e6) })}
             </span>
           </div>
           <p className="mt-0.5 text-sm text-slate-500">{model.description}</p>
@@ -130,15 +137,13 @@ function ModelCard({ model }: { model: ModelStatus }) {
             className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline"
             onClick={() => openUrl(model.homepage)}
           >
-            Model page <ExternalLink className="h-3 w-3" />
+            {t("models.card.modelPage")} <ExternalLink className="h-3 w-3" />
           </button>
         </div>
       </div>
 
       {!model.supported ? (
-        <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">
-          This build of cardloader was made without local model support.
-        </p>
+        <p className="mt-3 text-sm text-amber-700 dark:text-amber-400">{t("models.card.unsupported")}</p>
       ) : model.state === "downloading" ? (
         <div className="mt-3 space-y-1.5">
           <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
@@ -149,47 +154,67 @@ function ModelCard({ model }: { model: ModelStatus }) {
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-500">
             <span className="tabular-nums">
-              {bytes(model.downloaded)} of {bytes(model.size)} ({Math.floor(pct)}%)
+              {t("models.card.progress", {
+                done: bytes(model.downloaded),
+                size: bytes(model.size),
+                percent: Math.floor(pct),
+              })}
             </span>
             {speed && <span className="tabular-nums">{bytes(speed)}/s</span>}
-            {left != null && <span>~{duration(left)} left</span>}
+            {left != null && <span>{t("models.card.left", { time: duration(left) })}</span>}
             <span className="flex-1" />
             <button className="btn px-2 py-0.5 text-xs" onClick={() => act(() => api.cancelModelDownload(model.id))}>
-              <X className="h-3 w-3" /> Cancel
+              <X className="h-3 w-3" /> {t("common.cancel")}
             </button>
           </div>
         </div>
       ) : model.state === "ready" ? (
         <div className="mt-3 flex items-center gap-3 text-xs text-slate-500">
-          <span>Downloaded · runs on this computer, no internet needed</span>
+          <span>{t("models.card.ready")}</span>
           <span className="flex-1" />
           <button className="btn px-2 py-0.5 text-xs" onClick={() => act(() => api.deleteModel(model.id))}>
-            <Trash2 className="h-3 w-3" /> Delete
+            <Trash2 className="h-3 w-3" /> {t("common.delete")}
           </button>
         </div>
       ) : (
         <div className="mt-3 space-y-2">
-          <div className="flex flex-wrap items-center gap-x-1 text-sm">
-            <Check label="I accept the" checked={accepted} onChange={setAccepted} />
-            <button className="text-accent hover:underline" onClick={() => openUrl(model.licenseUrl)}>
-              {model.licenseName}
-            </button>
-          </div>
-          <p className="text-xs text-slate-500">
-            The model is made by Liquid AI and downloaded from Hugging Face; it is not part of cardloader. Its license
-            allows commercial use only below a revenue threshold — read it before accepting.
-          </p>
+          <label className="flex cursor-pointer items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-[var(--color-accent)]"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+            />
+            <span>
+              {rich(t("models.card.accept", { license: model.licenseName }), {
+                // A link inside the label: opening the license doesn't tick the box.
+                license: (s) => (
+                  <button
+                    className="text-accent hover:underline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void openUrl(model.licenseUrl);
+                    }}
+                  >
+                    {s}
+                  </button>
+                ),
+              })}
+            </span>
+          </label>
+          <p className="text-xs text-slate-500">{t("models.card.licenseNote")}</p>
           <div className="flex items-center gap-3">
             <button
               className="btn btn-primary"
               disabled={!accepted}
               onClick={() => act(() => api.downloadModel(model.id))}
             >
-              <Download className="h-4 w-4" /> {model.downloaded > 0 ? "Resume download" : "Download"}
+              <Download className="h-4 w-4" />{" "}
+              {model.downloaded > 0 ? t("models.card.resume") : t("models.card.download")}
             </button>
             {model.downloaded > 0 && (
               <span className="text-xs text-slate-500">
-                {bytes(model.downloaded)} of {bytes(model.size)} already downloaded
+                {t("models.card.partial", { done: bytes(model.downloaded), size: bytes(model.size) })}
               </span>
             )}
           </div>

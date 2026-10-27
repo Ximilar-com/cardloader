@@ -1,4 +1,5 @@
-// The first-run setup: five questions whose answers become the defaults of new sessions (lib/setup.ts).
+// The first-run setup: the app's language, then five questions whose answers become the defaults of new sessions
+// (lib/setup.ts).
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
@@ -23,6 +24,8 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { create } from "zustand";
+import { rich, useI18n, useT } from "../i18n";
+import { LANGUAGES } from "../i18n/languages";
 import { api, errorText, type SettingsView, type SourceKind } from "../lib/api";
 import { answersFromSettings, answersToSettings, type Goal, type Interest, type SetupAnswers } from "../lib/setup";
 import { ModelPicker, useModels } from "./LocalModels";
@@ -43,17 +46,19 @@ export const useSetupWizard = create<{
   done: () => set((s) => ({ settings: null, finished: s.finished + 1 })),
 }));
 
-type Step = "interests" | "games" | "goals" | "sources" | "engine";
+type Step = "language" | "interests" | "games" | "goals" | "sources" | "engine";
 
 export default function SetupWizard({ settings }: { settings: SettingsView }) {
   const done = useSetupWizard((s) => s.done);
+  const t = useT();
+  const { language, setLanguage } = useI18n();
   // A first run starts blank; a rerun starts from the current defaults.
   const [answers, setAnswers] = useState<SetupAnswers>(() =>
     settings.setupDone
       ? answersFromSettings(settings)
       : { interests: [], games: [], goals: [], sources: [], engine: settings.engine },
   );
-  const [step, setStep] = useState<Step>("interests");
+  const [step, setStep] = useState<Step>("language");
   const [token, setToken] = useState("");
   const [localModel, setLocalModel] = useState(settings.localModel);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +66,14 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
   const models = useModels();
 
   const tcgOnly = answers.interests.length === 1 && answers.interests[0] === "tcg";
-  const steps: Step[] = ["interests", ...(tcgOnly ? (["games"] as const) : []), "goals", "sources", "engine"];
+  const steps: Step[] = [
+    "language",
+    "interests",
+    ...(tcgOnly ? (["games"] as const) : []),
+    "goals",
+    "sources",
+    "engine",
+  ];
   const index = steps.indexOf(step);
   const last = index === steps.length - 1;
   const missing =
@@ -85,8 +97,8 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
       setBusy(false);
     }
   };
-  const finish = () => save(answersToSettings(answers, { ...settings, localModel }));
-  const skip = () => save({ ...settings, setupDone: true });
+  const finish = () => save(answersToSettings(answers, { ...settings, localModel, language }));
+  const skip = () => save({ ...settings, language, setupDone: true });
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-slate-50 dark:bg-slate-950">
@@ -95,13 +107,11 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
           <Logo className="h-7 w-7" />
         </span>
         <div className="flex-1">
-          <div className="font-semibold">Set up Cardloader</div>
-          <div className="text-xs text-slate-500">
-            Step {index + 1} of {steps.length} · you can change everything later in Settings
-          </div>
+          <div className="font-semibold">{t("wizard.title")}</div>
+          <div className="text-xs text-slate-500">{t("wizard.progress", { step: index + 1, steps: steps.length })}</div>
         </div>
         <button className="btn btn-ghost" onClick={skip} disabled={busy}>
-          Skip
+          {t("common.skip")}
         </button>
       </header>
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-8 pb-8">
@@ -114,13 +124,31 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
           ))}
         </div>
 
+        {step === "language" && (
+          <Question title={t("wizard.language.title")} text={t("wizard.language.text")}>
+            <div className="grid grid-cols-4 gap-2">
+              {LANGUAGES.map(({ code, name, english, Flag }) => (
+                <Tile
+                  key={code}
+                  media={<Flag className="h-5 w-7 shrink-0 rounded-sm shadow-sm ring-1 ring-black/10" />}
+                  label={name}
+                  hint={english === name ? undefined : english}
+                  compact
+                  selected={language === code}
+                  onClick={() => setLanguage(code)}
+                />
+              ))}
+            </div>
+          </Question>
+        )}
+
         {step === "interests" && (
-          <Question title="What will you scan?" text="Pick everything you collect.">
+          <Question title={t("wizard.interests.title")} text={t("wizard.interests.text")}>
             <Tiles>
               {(
                 [
-                  ["tcg", "Trading card games", "Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana…", Layers],
-                  ["sport", "Sports cards", "Baseball, basketball, football, hockey, soccer…", Trophy],
+                  ["tcg", t("wizard.interests.tcg"), t("wizard.interests.tcgHint"), Layers],
+                  ["sport", t("wizard.interests.sport"), t("wizard.interests.sportHint"), Trophy],
                 ] as [Interest, string, string, LucideIcon][]
               ).map(([value, label, hint, icon]) => (
                 <Tile
@@ -137,10 +165,7 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
         )}
 
         {step === "games" && (
-          <Question
-            title="Which games?"
-            text="Pick one and every new session is set to it, so Ximilar matches only that game. Pick several, or none, to choose per session."
-          >
+          <Question title={t("wizard.games.title")} text={t("wizard.games.text")}>
             <div className="grid grid-cols-3 gap-2">
               {TCG_GAMES.map((game) => (
                 <Tile
@@ -156,14 +181,20 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
         )}
 
         {step === "goals" && (
-          <Question title="What do you want to find out?" text="Pick everything you need.">
+          <Question title={t("wizard.goals.title")} text={t("wizard.goals.text")}>
             <Tiles>
-              <Tile icon={Search} label="Identification" hint="Name, set and number of every card" selected locked />
+              <Tile
+                icon={Search}
+                label={t("wizard.goals.identification")}
+                hint={t("wizard.goals.identificationHint")}
+                selected
+                locked
+              />
               {(
                 [
-                  ["grading", "Grading", "A full grade: corners, edges, surface and centering", BadgeCheck],
-                  ["condition", "Condition", "A quick condition, e.g. Near Mint, for listings", Gauge],
-                  ["prices", "Prices", "Market prices of each card", DollarSign],
+                  ["grading", t("wizard.goals.grading"), t("wizard.goals.gradingHint"), BadgeCheck],
+                  ["condition", t("wizard.goals.condition"), t("wizard.goals.conditionHint"), Gauge],
+                  ["prices", t("wizard.goals.prices"), t("wizard.goals.pricesHint"), DollarSign],
                 ] as [Goal, string, string, LucideIcon][]
               ).map(([value, label, hint, icon]) => (
                 <Tile
@@ -180,17 +211,14 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
         )}
 
         {step === "sources" && (
-          <Question
-            title="How will you bring in cards?"
-            text="Pick all you use. The first of them opens with New session."
-          >
+          <Question title={t("wizard.sources.title")} text={t("wizard.sources.text")}>
             <Tiles>
               {(
                 [
-                  ["scanner", "Scanner", "A document scanner with a feeder, e.g. RICOH fi-8170", ScanLine],
-                  ["folder", "Folder of images", "Photos or scans already on this computer", FolderOpen],
-                  ["watch_folder", "Watch folder", "Cards are analysed as new images arrive in a folder", Eye],
-                  ["csv", "CSV file", "A list of cards or image paths", FileSpreadsheet],
+                  ["scanner", t("wizard.sources.scanner"), t("wizard.sources.scannerHint"), ScanLine],
+                  ["folder", t("wizard.sources.folder"), t("wizard.sources.folderHint"), FolderOpen],
+                  ["watch_folder", t("wizard.sources.watchFolder"), t("wizard.sources.watchFolderHint"), Eye],
+                  ["csv", t("wizard.sources.csv"), t("wizard.sources.csvHint"), FileSpreadsheet],
                 ] as [SourceKind, string, string, LucideIcon][]
               ).map(([value, label, hint, icon]) => (
                 <Tile
@@ -207,48 +235,53 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
         )}
 
         {step === "engine" && (
-          <Question title="What should identify the cards?">
+          <Question title={t("wizard.engine.title")}>
             <Tiles>
               <Tile
                 icon={Sparkles}
-                label="Ximilar API"
-                hint="Precise identification, prices and grading. Needs an API token and internet."
+                label={t("wizard.engine.ximilar")}
+                hint={t("wizard.engine.ximilarHint")}
                 selected={answers.engine === "ximilar"}
                 onClick={() => setAnswers((a) => ({ ...a, engine: "ximilar" }))}
               />
               <Tile
                 icon={Cpu}
-                label="Local AI model"
-                hint="Runs on this computer, offline and free. Reads name, number and set and estimates condition; less precise."
+                label={t("wizard.engine.local")}
+                hint={t("wizard.engine.localHint")}
                 selected={answers.engine === "local"}
                 onClick={() => setAnswers((a) => ({ ...a, engine: "local" }))}
               />
             </Tiles>
             {answers.engine === "ximilar" ? (
               <div className="mt-6">
-                <label className="label">API token</label>
+                <label className="label">{t("wizard.engine.token")}</label>
                 <input
                   className="input"
                   type="password"
                   value={token}
-                  placeholder={settings.tokenSet ? "Saved already, leave empty to keep it" : "Paste your token"}
+                  placeholder={settings.tokenSet ? t("wizard.engine.tokenSaved") : t("wizard.engine.tokenPaste")}
                   onChange={(e) => setToken(e.target.value)}
                 />
                 <p className="mt-1.5 text-xs text-slate-500">
-                  Find it in the{" "}
-                  <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
-                    Ximilar App
-                  </button>{" "}
-                  under your profile. You can add it later in Settings.
+                  {rich(t("wizard.engine.tokenHelp"), {
+                    link: (text) => (
+                      <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
+                        {text}
+                      </button>
+                    ),
+                  })}
                 </p>
               </div>
             ) : (
               <div className="mt-6 space-y-3">
                 {answers.goals.length > 0 && (
                   <p className="text-sm text-amber-700 dark:text-amber-400">
-                    {answers.goals.includes("prices") && "Prices need the Ximilar API. "}
-                    {answers.goals.some((g) => g !== "prices") &&
-                      "The local model’s grades and conditions are rough estimates of a small model, not a grader’s."}
+                    {[
+                      answers.goals.includes("prices") && t("wizard.engine.pricesNeedApi"),
+                      answers.goals.some((g) => g !== "prices") && t("wizard.engine.roughGrades"),
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                   </p>
                 )}
                 {models && <ModelPicker models={models} value={localModel} onChange={setLocalModel} />}
@@ -261,15 +294,15 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
           <ErrorNote>{error}</ErrorNote>
           <div className="mt-3 flex items-center justify-between">
             <button className="btn" onClick={() => setStep(steps[index - 1])} disabled={index === 0 || busy}>
-              <ArrowLeft className="h-4 w-4" /> Back
+              <ArrowLeft className="h-4 w-4" /> {t("common.back")}
             </button>
             {last ? (
               <button className="btn btn-primary" onClick={finish} disabled={busy}>
-                Finish <CheckCircle2 className="h-4 w-4" />
+                {t("common.finish")} <CheckCircle2 className="h-4 w-4" />
               </button>
             ) : (
               <button className="btn btn-primary" onClick={() => setStep(steps[index + 1])} disabled={missing}>
-                Next <ArrowRight className="h-4 w-4" />
+                {t("common.next")} <ArrowRight className="h-4 w-4" />
               </button>
             )}
           </div>
@@ -295,6 +328,7 @@ function Tiles({ children }: { children: ReactNode }) {
 
 function Tile({
   icon: Icon,
+  media,
   label,
   hint,
   selected,
@@ -303,6 +337,8 @@ function Tile({
   onClick,
 }: {
   icon?: LucideIcon;
+  /** Shown in place of an icon, e.g. a flag. */
+  media?: ReactNode;
   label: string;
   hint?: string;
   selected: boolean;
@@ -310,6 +346,7 @@ function Tile({
   compact?: boolean;
   onClick?: () => void;
 }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -325,6 +362,7 @@ function Tile({
         locked && "cursor-default opacity-80",
       )}
     >
+      {media && <span className="mt-0.5 flex">{media}</span>}
       {Icon && (
         <span
           className={clsx(
@@ -338,7 +376,7 @@ function Tile({
       <span className="min-w-0 flex-1">
         <span className={clsx("block font-medium", compact && "text-sm")}>{label}</span>
         {hint && <span className="mt-0.5 block text-sm text-slate-500">{hint}</span>}
-        {locked && <span className="mt-0.5 block text-xs text-slate-400">Always included</span>}
+        {locked && <span className="mt-0.5 block text-xs text-slate-400">{t("wizard.alwaysIncluded")}</span>}
       </span>
       {selected ? (
         <CheckCircle2 className="h-5 w-5 shrink-0 text-accent" />

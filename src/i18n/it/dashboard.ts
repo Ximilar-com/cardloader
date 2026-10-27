@@ -1,0 +1,67 @@
+import type { Messages } from "..";
+import type en from "../en/dashboard";
+
+const messages: Messages<typeof en> = {
+  title: "Home",
+  newSession: "Nuova sessione",
+  lastWeek: "Ultimi 7 giorni",
+  defaultsTitle: "Predefiniti per le nuove sessioni",
+  runSetupAgain: "Ripeti la configurazione",
+  activity: "Attività",
+  lastSessions: "Ultime sessioni",
+  allSessions: "Tutte le sessioni",
+  week: {
+    cardsAnalysed: "carte analizzate",
+    dayCards: { one: "{date}: {count} carta", other: "{date}: {count} carte" },
+    today: "Oggi",
+  },
+  heatmap: {
+    activeDays: {
+      one: "Carte analizzate in {count} giorno nell’ultimo anno.",
+      other: "Carte analizzate in {count} giorni nell’ultimo anno.",
+    },
+    dayCards: { one: "{date}: {count} carta", other: "{date}: {count} carte" },
+    dayNone: "{date}: nessuna scansione",
+    noScanning: "Nessuna scansione",
+    fewer: "Meno",
+    moreCards: "Più carte",
+  },
+  totals: {
+    cards: "Carte",
+    inSessions: { one: "in {count} sessione", other: "in {count} sessioni" },
+    totalValue: "Valore totale",
+    totalValueSub: "prezzi di mercato al momento dell’analisi",
+    toReview: "Da rivedere",
+    toReviewSub: "non ancora accettate",
+    apiCalls: "Chiamate API",
+    apiCallsSub: "ultimi 7 giorni",
+  },
+  attention: {
+    title: "Richiede attenzione",
+    noToken: "Aggiungi il tuo token API di Ximilar per analizzare le carte.",
+    openSettings: "Apri Impostazioni",
+    analysing: "analisi in corso, {done} di {total}",
+    paused: "in pausa",
+    toReview: { one: "{count} carta da rivedere", other: "{count} carte da rivedere" },
+    failed: "{count} non riuscite",
+    syncFailed: "Caricamento su Cards Cloud non riuscito",
+    ebayStopped: "Attività eBay interrotta",
+    resume: "Riprendi",
+    review: "Rivedi",
+    open: "Apri",
+  },
+  defaults: {
+    identifyAs: "Identifica come",
+    game: "Gioco",
+    anyGame: "Qualsiasi gioco",
+    grading: "Gradazione",
+    prices: "Prezzi",
+    cardsFrom: "Carte da",
+    identifyWith: "Identifica con",
+    localModel: "Modello IA locale",
+    change: "Modifica in Impostazioni",
+  },
+  noSessions: "Ancora nessuna sessione.",
+  sessionCards: { one: "{done} / {count} carta", other: "{done} / {count} carte" },
+};
+export default messages;

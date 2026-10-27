@@ -28,41 +28,17 @@ import {
   type SessionOptions,
   type SourceKind,
 } from "../lib/api";
-import { basename, defaultSessionName, GRADING_LABELS, ID_MODE_LABELS } from "../lib/format";
+import { locale, rich, t, useT } from "../i18n";
+import { basename, defaultSessionName, engineLabels, gradingLabels, idModeLabels, sourceLabels } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
 import Select, { optionsOf, type SelectOption } from "./Select";
 
-const SOURCES: {
-  kind: SourceKind;
-  label: string;
-  icon: typeof FolderOpen;
-  text: string;
-}[] = [
-  {
-    kind: "folder",
-    label: "Folder",
-    icon: FolderOpen,
-    text: "Analyse the images in a folder",
-  },
-  {
-    kind: "watch_folder",
-    label: "Watch folder",
-    icon: Eye,
-    text: "Analyse images as another app saves them",
-  },
-  {
-    kind: "scanner",
-    label: "Scanner",
-    icon: ScanLine,
-    text: "Scan a stack of cards (e.g. fi-8170)",
-  },
-  {
-    kind: "csv",
-    label: "CSV file",
-    icon: FileSpreadsheet,
-    text: "Import cards or image paths from a spreadsheet",
-  },
+const SOURCES: { kind: SourceKind; icon: typeof FolderOpen }[] = [
+  { kind: "folder", icon: FolderOpen },
+  { kind: "watch_folder", icon: Eye },
+  { kind: "scanner", icon: ScanLine },
+  { kind: "csv", icon: FileSpreadsheet },
 ];
 
 /**
@@ -82,9 +58,12 @@ export default function NewSessionDialog({
   onSaved?: (session: Session) => void;
   initialKind?: SourceKind;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const editing = mode === "edit" && !!from;
-  const [name, setName] = useState(() => (!from ? defaultSessionName() : editing ? from.name : `${from.name} (copy)`));
+  const [name, setName] = useState(() =>
+    !from ? defaultSessionName() : editing ? from.name : t("newSession.copyName", { name: from.name }),
+  );
   const [kind, setKind] = useState<SourceKind>(from?.sourceKind ?? initialKind);
   const [folder, setFolder] = useState(
     from && ["folder", "watch_folder"].includes(from.sourceKind) ? from.sourceRef : "",
@@ -286,16 +265,22 @@ export default function NewSessionDialog({
 
   return (
     <Modal
-      title={editing ? "Session settings" : mode === "duplicate" ? "Duplicate session" : "New session"}
+      title={t(
+        editing
+          ? "newSession.title.edit"
+          : mode === "duplicate"
+            ? "newSession.title.duplicate"
+            : "newSession.title.new",
+      )}
       onClose={onClose}
       footer={
         editing ? (
           <>
             <button className="btn" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button className="btn btn-primary" onClick={save} disabled={busy || !options}>
-              Save
+              {t("common.save")}
             </button>
           </>
         ) : (
@@ -305,15 +290,15 @@ export default function NewSessionDialog({
               onClick={() => create(false)}
               disabled={busy || !options || csvBlocked || sourceMissing}
             >
-              {kind === "csv" ? (busy ? "Importing…" : "Import") : "Create"}
+              {kind === "csv" ? (busy ? t("newSession.importing") : t("newSession.import")) : t("newSession.create")}
             </button>
             <button
               className="btn btn-primary"
               onClick={() => create(true)}
               disabled={busy || !options || !canRun || csvBlocked || sourceMissing}
-              title={kind === "csv" ? "Import, then analyse the images and upload as set below" : undefined}
+              title={kind === "csv" ? t("newSession.importAndRunTitle") : undefined}
             >
-              {kind === "csv" ? "Import & run" : "Create & run"}
+              {kind === "csv" ? t("newSession.importAndRun") : t("newSession.createAndRun")}
             </button>
           </>
         )
@@ -323,7 +308,7 @@ export default function NewSessionDialog({
         {needsToken && !tokenSet && (
           <ErrorNote>
             <div className="flex items-center gap-3">
-              <span className="flex-1">Set your Ximilar API token in Settings before running a session.</span>
+              <span className="flex-1">{t("newSession.needsToken")}</span>
               <OpenSettings section="ximilar" onOpen={onClose} />
             </div>
           </ErrorNote>
@@ -331,26 +316,25 @@ export default function NewSessionDialog({
         {local && models && !model && (
           <ErrorNote>
             <div className="flex items-center gap-3">
-              <span className="flex-1">Download a local model in Settings before running this session.</span>
+              <span className="flex-1">{t("newSession.needsModel")}</span>
               <OpenSettings section="models" onOpen={onClose} />
             </div>
           </ErrorNote>
         )}
         {editing && (
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-            Changes apply to the cards analysed from now on. Cards already analysed keep their results; use{" "}
-            <b>Duplicate</b> to analyse the same source again with other settings.
+            {rich(t("newSession.editNote"), { b: (s) => <b>{s}</b> })}
           </p>
         )}
         <div>
-          <label className="label">Name</label>
+          <label className="label">{t("newSession.name")}</label>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
 
         <div>
-          <label className="label">Source</label>
+          <label className="label">{t("newSession.source")}</label>
           <div className="grid grid-cols-4 gap-2">
-            {SOURCES.map(({ kind: k, label, icon: Icon, text }) => (
+            {SOURCES.map(({ kind: k, icon: Icon }) => (
               <button
                 key={k}
                 onClick={() => chooseSource(k)}
@@ -363,8 +347,8 @@ export default function NewSessionDialog({
                 )}
               >
                 <Icon className="h-5 w-5 text-accent" />
-                <span className="text-sm font-medium">{label}</span>
-                <span className="text-xs text-slate-500">{text}</span>
+                <span className="text-sm font-medium">{sourceLabels()[k]}</span>
+                <span className="text-xs text-slate-500">{t(`newSession.sources.${k}`)}</span>
               </button>
             ))}
           </div>
@@ -372,7 +356,7 @@ export default function NewSessionDialog({
 
         {kind === "csv" ? (
           <div className="space-y-2">
-            <label className="label">CSV file</label>
+            <label className="label">{t("newSession.csv.label")}</label>
             <div className="flex gap-2">
               <input
                 className={clsx("input", needsCsv && MISSING)}
@@ -383,21 +367,16 @@ export default function NewSessionDialog({
               />
               {!editing && (
                 <button className={clsx("btn", needsCsv && "btn-primary")} onClick={pickCsv}>
-                  <FileSpreadsheet className="h-4 w-4" /> Browse
+                  <FileSpreadsheet className="h-4 w-4" /> {t("newSession.browse")}
                 </button>
               )}
             </div>
-            {!csvPath && !editing && (
-              <p className="text-xs text-slate-500">
-                One card per row. Rows with a card name (and set, number, price, grade…) are imported as identified
-                cards; rows with only an image path are analysed. A cardloader CSV export imports back as it was.
-              </p>
-            )}
+            {!csvPath && !editing && <p className="text-xs text-slate-500">{t("newSession.csv.help")}</p>}
             {csv?.error && <ErrorNote>{csv.error}</ErrorNote>}
             {csv?.preview && !editing && <CsvSummary preview={csv.preview} />}
             {csv?.preview && csv.preview.cardsWithImages > 0 && !editing && (
               <Check
-                label={`Analyse the images of the ${csv.preview.cardsWithImages} identified rows again`}
+                label={t("newSession.csv.reanalyze", { count: csv.preview.cardsWithImages })}
                 checked={reanalyze}
                 onChange={setReanalyze}
               />
@@ -405,7 +384,7 @@ export default function NewSessionDialog({
           </div>
         ) : kind !== "scanner" ? (
           <div>
-            <label className="label">Folder</label>
+            <label className="label">{t("newSession.folder.label")}</label>
             <div className="flex gap-2">
               <input
                 className={clsx("input", needsFolder && MISSING)}
@@ -416,15 +395,13 @@ export default function NewSessionDialog({
               />
               {!editing && (
                 <button className={clsx("btn", needsFolder && "btn-primary")} onClick={pickFolder}>
-                  <FolderOpen className="h-4 w-4" /> Browse
+                  <FolderOpen className="h-4 w-4" /> {t("newSession.browse")}
                 </button>
               )}
             </div>
             {needsFolder ? (
               <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                {kind === "watch_folder"
-                  ? "Choose the folder your scanning app saves images into."
-                  : "Choose the folder with your card images."}
+                {kind === "watch_folder" ? t("newSession.folder.chooseWatch") : t("newSession.folder.choose")}
               </p>
             ) : (
               imageCount != null && (
@@ -434,11 +411,12 @@ export default function NewSessionDialog({
                     imageCount === 0 && kind === "folder" ? "text-amber-700 dark:text-amber-400" : "text-slate-500",
                   )}
                 >
-                  {imageCount === 0 && kind === "folder"
-                    ? "No images in this folder (JPEG, PNG, WebP, TIFF or BMP)."
-                    : `${imageCount} image${imageCount === 1 ? "" : "s"} found`}
+                  {kind === "watch_folder"
+                    ? t("newSession.folder.foundWatching", { count: imageCount })
+                    : imageCount === 0
+                      ? t("newSession.folder.noImages")
+                      : t("newSession.folder.found", { count: imageCount })}
                   {imageCount > 0 && options && kind === "folder" && ` · ${costOf(options, imageCount)}`}
-                  {kind === "watch_folder" && " — new images will be picked up while the session runs"}
                 </p>
               )
             )}
@@ -447,20 +425,22 @@ export default function NewSessionDialog({
           <div className="space-y-3">
             {support && !support.available && <ErrorNote>{support.hint}</ErrorNote>}
             <div>
-              <label className="label">Scanner</label>
+              <label className="label">{t("newSession.scanner.label")}</label>
               <div className="flex gap-2">
                 <Select
                   value={device}
                   onChange={setDevice}
                   disabled={editing}
-                  aria-label="Scanner"
+                  aria-label={t("newSession.scanner.label")}
                   options={
                     devices?.length
                       ? devices.map((d) => ({ value: d.id, label: d.name || d.id, icon: ScanLine }))
                       : [
                           {
                             value: device,
-                            label: device || (scanning ? "Searching…" : "No scanner found"),
+                            label:
+                              device ||
+                              (scanning ? t("newSession.scanner.searching") : t("newSession.scanner.noneFound")),
                             icon: ScanLine,
                           },
                         ]
@@ -474,17 +454,19 @@ export default function NewSessionDialog({
             {options && (
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="label">Resolution</label>
+                  <label className="label">{t("newSession.scanner.resolution")}</label>
                   <Select
                     value={grades ? String(options.scan.dpi) : "300"}
                     onChange={(v) => set("scan", { ...options.scan, dpi: Number(v) })}
-                    options={DPI_OPTIONS}
+                    options={dpiOptions()}
                     disabled={!grades}
                   />
-                  {!grades && <p className="mt-1 text-xs text-slate-500">300 dpi when not grading.</p>}
+                  {!grades && (
+                    <p className="mt-1 text-xs text-slate-500">{t("newSession.scanner.dpiWhenNotGrading")}</p>
+                  )}
                 </div>
                 <div>
-                  <label className="label">Sides</label>
+                  <label className="label">{t("newSession.scanner.sides")}</label>
                   <Select
                     value={options.scan.duplex ? "duplex" : "front"}
                     onChange={(v) => {
@@ -496,22 +478,20 @@ export default function NewSessionDialog({
                       });
                     }}
                     options={[
-                      { value: "duplex", label: "Front + back" },
-                      { value: "front", label: "Front only" },
+                      { value: "duplex", label: t("newSession.scanner.duplex") },
+                      { value: "front", label: t("newSession.scanner.frontOnly") },
                     ]}
                   />
                 </div>
                 <div>
-                  <label className="label">Multifeed detection</label>
+                  <label className="label">{t("newSession.scanner.multifeed")}</label>
                   <Select
                     value={options.scan.multifeed}
                     onChange={(v) => set("scan", { ...options.scan, multifeed: v })}
-                    options={MULTIFEED_OPTIONS}
+                    options={multifeedOptions()}
                   />
                 </div>
-                <p className="col-span-3 -mt-1 text-xs text-slate-500">
-                  These are your Scanner settings: changing them here changes them for every scanner session.
-                </p>
+                <p className="col-span-3 -mt-1 text-xs text-slate-500">{t("newSession.scanner.shared")}</p>
               </div>
             )}
           </div>
@@ -520,59 +500,58 @@ export default function NewSessionDialog({
         {options && (
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Identify with</label>
-              <Select value={options.engine} onChange={(v) => set("engine", v)} options={ENGINE_OPTIONS} />
+              <label className="label">{t("newSession.identifyWith")}</label>
+              <Select value={options.engine} onChange={(v) => set("engine", v)} options={engineOptions()} />
             </div>
             {local ? (
               <div>
-                <label className="label">Model</label>
+                <label className="label">{t("newSession.model")}</label>
                 <Select
                   value={model?.id ?? ""}
                   onChange={(v) => set("localModel", v)}
-                  placeholder="No model downloaded"
+                  placeholder={t("newSession.noModel")}
                   options={(models ?? []).map((m) =>
                     m.state === "ready"
                       ? modelOption(m)
-                      : { ...modelOption(m), disabled: true, hint: "not downloaded" },
+                      : { ...modelOption(m), disabled: true, hint: t("newSession.notDownloaded") },
                   )}
                 />
               </div>
             ) : (
               <div />
             )}
-            {local && (
-              <p className="col-span-2 -mt-2 text-xs text-slate-500">
-                Runs on this computer: reads the name, collector number and year printed on each card, and estimates
-                grades and condition. No prices or other candidates.
-              </p>
-            )}
+            {local && <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>}
             <div className={local ? "hidden" : undefined}>
-              <label className="label">Identify as</label>
-              <Select value={idMode} onChange={setIdMode} options={optionsOf(ID_MODE_LABELS)} />
+              <label className="label">{t("newSession.identifyAs")}</label>
+              <Select value={idMode} onChange={setIdMode} options={optionsOf(idModeLabels())} />
             </div>
             <div>
-              <label className="label">Grading</label>
-              <Select value={options.grading} onChange={(v) => set("grading", v)} options={optionsOf(GRADING_LABELS)} />
+              <label className="label">{t("newSession.grading")}</label>
+              <Select
+                value={options.grading}
+                onChange={(v) => set("grading", v)}
+                options={optionsOf(gradingLabels())}
+              />
             </div>
             {kind !== "csv" && (
               <div>
-                <label className="label">Images per card</label>
+                <label className="label">{t("newSession.imagesPerCard")}</label>
                 <Select
                   value={options.pairing}
                   onChange={(pairing) =>
                     setOptions({ ...options, pairing, bothSides: pairing === "front_back" && options.bothSides })
                   }
-                  options={PAIRING_OPTIONS}
+                  options={pairingOptions()}
                 />
               </div>
             )}
             {options.grading === "condition" || (local && options.grading === "grade") ? (
               <div>
-                <label className="label">Condition scale</label>
+                <label className="label">{t("newSession.conditionScale")}</label>
                 <Select
                   value={conditionScale(options.conditionMode, local)}
                   onChange={(v) => set("conditionMode", v)}
-                  options={local ? LOCAL_CONDITION_OPTIONS : CONDITION_OPTIONS}
+                  options={local ? localConditionOptions() : conditionOptions()}
                 />
               </div>
             ) : (
@@ -580,8 +559,12 @@ export default function NewSessionDialog({
             )}
             {!local && (
               <>
-                <Check label="Price statistics" checked={options.priceStats} onChange={(v) => set("priceStats", v)} />
-                <Check label="Read graded slab labels" checked={options.slab} onChange={(v) => set("slab", v)} />
+                <Check
+                  label={t("newSession.priceStats")}
+                  checked={options.priceStats}
+                  onChange={(v) => set("priceStats", v)}
+                />
+                <Check label={t("newSession.readSlabs")} checked={options.slab} onChange={(v) => set("slab", v)} />
                 <MoreOptions initiallyOpen={usesMoreOptions(options)}>
                   <KnownAttributes
                     options={options}
@@ -598,7 +581,7 @@ export default function NewSessionDialog({
               </>
             )}
             <Check
-              label="Sync to Ximilar Cards Cloud"
+              label={t("newSession.syncRemote")}
               checked={options.syncRemote || !!remoteSession.trim()}
               disabled={!!remoteSession.trim()}
               onChange={(v) => set("syncRemote", v)}
@@ -626,22 +609,17 @@ const CATEGORY_OF: Partial<Record<IdMode, string>> = {
   slab: "Slab Label",
 };
 
-const TYPE_NOUN: Partial<Record<IdMode, string>> = {
-  tcg: "a trading card",
-  sport: "a sports card",
-  comics: "a comic",
-  slab: "a graded slab",
-};
-
-const ALPHABET_OPTIONS: SelectOption<string>[] = [
-  { value: "", label: "Detect", hint: "Ximilar reads it from the card" },
-  { value: "latin", label: "Latin", hint: "English, European languages" },
-  { value: "japanese", label: "Japanese" },
-  { value: "chinese", label: "Chinese" },
-  { value: "korean", label: "Korean" },
-  { value: "russian", label: "Russian" },
-  { value: "thai", label: "Thai" },
-];
+function alphabetOptions(): SelectOption<string>[] {
+  return [
+    { value: "", label: t("newSession.alphabets.detect"), hint: t("newSession.subcategory.readFromCard") },
+    { value: "latin", label: t("newSession.alphabets.latin"), hint: t("newSession.alphabets.latinHint") },
+    { value: "japanese", label: t("newSession.alphabets.japanese") },
+    { value: "chinese", label: t("newSession.alphabets.chinese") },
+    { value: "korean", label: t("newSession.alphabets.korean") },
+    { value: "russian", label: t("newSession.alphabets.russian") },
+    { value: "thai", label: t("newSession.alphabets.thai") },
+  ];
+}
 
 // Subcategory values as Ximilar's collectibles taxonomy spells them (mirrors recognition::TCG_GAMES / SPORTS).
 export const GAME_LABELS: Record<string, string> = {
@@ -678,11 +656,13 @@ export const TCG_GAMES = [
 const SPORTS = ["Baseball", "Basketball", "Football", "Hockey", "MMA", "Soccer"];
 
 const subcategoryOptions = (values: string[], any: string): SelectOption<string>[] => [
-  { value: "", label: any, hint: "Ximilar reads it from the card" },
-  ...values.map((v) => ({ value: v, label: GAME_LABELS[v] ?? v })).sort((a, b) => a.label.localeCompare(b.label)),
+  { value: "", label: any, hint: t("newSession.subcategory.readFromCard") },
+  ...values
+    .map((v) => ({ value: v, label: GAME_LABELS[v] ?? v }))
+    .sort((a, b) => a.label.localeCompare(b.label, locale())),
 ];
-export const GAME_OPTIONS = subcategoryOptions(TCG_GAMES, "Any game");
-const SPORT_OPTIONS = subcategoryOptions(SPORTS, "Any sport");
+export const gameOptions = () => subcategoryOptions(TCG_GAMES, t("newSession.subcategory.anyGame"));
+const sportOptions = () => subcategoryOptions(SPORTS, t("newSession.subcategory.anySport"));
 
 /** What is already known about every card, so Ximilar skips working it out: faster and more accurate. */
 function KnownAttributes({
@@ -694,95 +674,82 @@ function KnownAttributes({
   idMode: IdMode;
   onChange: (patch: Partial<SessionOptions>) => void;
 }) {
+  const t = useT();
   const category = CATEGORY_OF[idMode];
   return (
     <div className="col-span-2 space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
       <div>
         <div className="flex items-center gap-1.5 text-sm font-medium">
-          <Zap className="h-4 w-4 text-accent" /> Faster and more accurate
+          <Zap className="h-4 w-4 text-accent" /> {t("newSession.known.title")}
         </div>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Tell Ximilar what you already know about the cards, so it skips working it out. Check only what is true of
-          every image: a wrong value makes matches worse.
-        </p>
+        <p className="mt-0.5 text-xs text-slate-500">{t("newSession.known.intro")}</p>
       </div>
       <Hinted
-        label="Skip detection"
+        label={t("newSession.known.skipDetection")}
         checked={options.skipDetection}
         onChange={(v) => onChange({ skipDetection: v })}
-        hint="For images already cropped to the card: each image is sent as the card itself, so Ximilar doesn’t look for it in the picture."
-        warning={
-          options.skipDetection && options.slab
-            ? "Slab labels are found by detection, so they may not be read."
-            : undefined
-        }
+        hint={t("newSession.known.skipDetectionHint")}
+        warning={options.skipDetection && options.slab ? t("newSession.known.skipDetectionSlab") : undefined}
       />
       <Hinted
-        label={category ? `Every card is ${TYPE_NOUN[idMode]}` : "Card type"}
+        label={
+          category && idMode !== "auto" ? t(`newSession.known.everyCard.${idMode}`) : t("newSession.known.cardType")
+        }
         checked={!!category && options.knownCategory}
         disabled={!category}
         onChange={(v) => onChange({ knownCategory: v })}
-        hint={
-          category
-            ? `Sends Category “${category}”.`
-            : "Choose a type in “Identify as” first; Auto-detect leaves it to Ximilar."
-        }
+        hint={category ? t("newSession.known.sendsCategory", { category }) : t("newSession.known.chooseTypeFirst")}
       />
       <Hinted
-        label="Front side"
+        label={t("newSession.known.frontSide")}
         checked={options.knownSide}
         onChange={(v) => onChange({ knownSide: v })}
-        hint="The images show the front (backs sent with “front and the back” are marked as the back)."
+        hint={t("newSession.known.frontSideHint")}
       />
       <Hinted
-        label="Upright"
+        label={t("newSession.known.upright")}
         checked={options.knownRotation}
         onChange={(v) => onChange({ knownRotation: v })}
-        hint="No card is rotated or upside down. Otherwise Ximilar turns each card upright before identifying it."
+        hint={t("newSession.known.uprightHint")}
       />
       {idMode === "tcg" && (
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <div className="label">Game</div>
+            <div className="label">{t("newSession.known.game")}</div>
             <Select
               value={TCG_GAMES.includes(options.subcategory) ? options.subcategory : ""}
               onChange={(subcategory) => onChange({ subcategory })}
-              options={GAME_OPTIONS}
-              aria-label="Game"
+              options={gameOptions()}
+              aria-label={t("newSession.known.game")}
             />
           </div>
           <div>
-            <div className="label">Alphabet</div>
+            <div className="label">{t("newSession.known.alphabet")}</div>
             <Select
               value={options.alphabet}
               onChange={(alphabet) => onChange({ alphabet })}
-              options={ALPHABET_OPTIONS}
-              aria-label="Alphabet"
+              options={alphabetOptions()}
+              aria-label={t("newSession.known.alphabet")}
             />
           </div>
           <p className="col-span-2 -mt-1 text-xs text-slate-500">
-            The game narrows the search to its cards; the alphabet (e.g. Japanese for Japanese prints) keeps cards from
-            matching another language’s version.
+            {t("newSession.known.gameNote")}
             {TCG_GAMES.includes(options.subcategory) && !options.alphabet && (
-              <span className="text-amber-700 dark:text-amber-400">
-                {" "}
-                With a game set, Ximilar no longer reads the alphabet and assumes Latin: choose it for prints in other
-                scripts.
-              </span>
+              <span className="text-amber-700 dark:text-amber-400"> {t("newSession.known.gameNoAlphabet")}</span>
             )}
           </p>
         </div>
       )}
       {idMode === "sport" && (
         <div>
-          <div className="label">Sport</div>
+          <div className="label">{t("newSession.known.sport")}</div>
           <Select
             value={SPORTS.includes(options.subcategory) ? options.subcategory : ""}
             onChange={(subcategory) => onChange({ subcategory })}
-            options={SPORT_OPTIONS}
-            aria-label="Sport"
+            options={sportOptions()}
+            aria-label={t("newSession.known.sport")}
           />
-          <p className="mt-1 text-xs text-slate-500">Narrows the search to that sport’s cards.</p>
+          <p className="mt-1 text-xs text-slate-500">{t("newSession.known.sportNote")}</p>
         </div>
       )}
     </div>
@@ -818,23 +785,19 @@ function Hinted({
 
 /** Known attributes, front and back, Magic AI and a custom endpoint: folded away unless one is in use. */
 function MoreOptions({ initiallyOpen, children }: { initiallyOpen: boolean; children: ReactNode }) {
+  const t = useT();
   const [open, setOpen] = useState(initiallyOpen);
   return (
     <div className="col-span-2 space-y-3">
       <button
         type="button"
-        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+        className="flex max-w-full items-center gap-1 text-left text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <ChevronRight className={clsx("h-4 w-4 transition-transform", open && "rotate-90")} />
-        More options
-        {!open && (
-          <span className="font-normal text-slate-400">
-            {" "}
-            — what you know about the cards, front and back, Magic AI, custom endpoint
-          </span>
-        )}
+        <ChevronRight className={clsx("h-4 w-4 shrink-0 transition-transform", open && "rotate-90")} />
+        <span className="shrink-0">{t("newSession.more.label")}</span>
+        {!open && <span className="min-w-0 truncate font-normal text-slate-400">{t("newSession.more.summary")}</span>}
       </button>
       {open && <div className="grid grid-cols-2 gap-4">{children}</div>}
     </div>
@@ -862,9 +825,9 @@ function costOf(o: SessionOptions, images: number): string {
   const local = o.engine === "local";
   const sync = o.syncRemote ? cards + 1 : 0;
   const calls = (local ? 0 : cards * (1 + (o.grading !== "off" ? 1 : 0))) + sync;
-  if (!calls) return "identified on this computer, no API calls";
-  const n = `about ${calls.toLocaleString()} API call${calls === 1 ? "" : "s"}`;
-  return local ? `${n} for Cards Cloud` : `${n}${o.magicAi ? " (Magic AI may add more)" : ""}`;
+  if (!calls) return t("newSession.cost.local");
+  if (local) return t("newSession.cost.callsCloud", { count: calls });
+  return t(o.magicAi ? "newSession.cost.callsMagicAi" : "newSession.cost.calls", { count: calls });
 }
 
 /** Front + back identification, magic AI and a custom endpoint: mostly for sports cards. */
@@ -882,52 +845,47 @@ function BothSides({
   const custom = options.customEndpoint.trim() !== "";
   const readsBacks = custom || idMode === "sport" || idMode === "auto";
   const sport = idMode === "sport" || idMode === "auto";
+  const t = useT();
   return (
     <div className="col-span-2 space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
       <div className="space-y-1">
         <Check
-          label="Identify from the front and the back"
+          label={t("newSession.bothSides.label")}
           checked={options.bothSides}
           // The back has to be paired with its front first.
           onChange={(v) => onChange({ bothSides: v, ...(v && !csv ? { pairing: "front_back" } : {}) })}
         />
         <p className="pl-6 text-xs text-slate-500">
-          {csv ? (
-            "Uses the back image column of the CSV."
-          ) : (
-            <>
-              Images named <code>card_F.jpg</code> and <code>card_B.jpg</code> (or front/back) are paired by name,
-              otherwise consecutive images.
-            </>
-          )}{" "}
-          The back goes to recognition with its front — this helps sports cards, whose backs carry the player, year and
-          number.
+          {csv
+            ? t("newSession.bothSides.csv")
+            : rich(t("newSession.bothSides.paired"), { code: (s) => <code>{s}</code> })}{" "}
+          {t("newSession.bothSides.why")}
           {options.bothSides && !readsBacks && (
             <span className="text-amber-700 dark:text-amber-400">
               {" "}
-              {ID_MODE_LABELS[idMode]} identification reads the front only: their backs all look alike.
+              {t("newSession.bothSides.frontOnly", { type: idModeLabels()[idMode] })}
             </span>
           )}
         </p>
       </div>
       <div className="space-y-1">
-        <Check label="Magic AI for sports cards" checked={options.magicAi} onChange={(v) => onChange({ magicAi: v })} />
+        <Check
+          label={t("newSession.bothSides.magicAi")}
+          checked={options.magicAi}
+          onChange={(v) => onChange({ magicAi: v })}
+        />
         <p className="pl-6 text-xs text-slate-500">
-          When a sports card isn’t in Ximilar’s database, an AI model identifies it from its images instead. Extra API
-          credits are used only when it runs.
+          {t("newSession.bothSides.magicAiHint")}
           {options.magicAi && !sport && (
-            <span className="text-amber-700 dark:text-amber-400"> Applies to sports cards only.</span>
+            <span className="text-amber-700 dark:text-amber-400"> {t("newSession.bothSides.magicAiSportOnly")}</span>
           )}
         </p>
       </div>
       {idMode === "auto" && !custom && (options.bothSides || options.magicAi) && (
-        <p className="text-xs text-slate-500">
-          Auto-detect identifies a card in one call; a sports card is then sent to Sports ID as well for these options
-          (one more call).
-        </p>
+        <p className="text-xs text-slate-500">{t("newSession.bothSides.autoNote")}</p>
       )}
       <div>
-        <label className="label">Custom endpoint (optional)</label>
+        <label className="label">{t("newSession.bothSides.customEndpoint")}</label>
         <input
           className="input font-mono text-xs"
           value={options.customEndpoint}
@@ -936,9 +894,9 @@ function BothSides({
           spellCheck={false}
         />
         <p className="mt-1 text-xs text-slate-500">
-          A recognition endpoint Ximilar set up for you. It gets the same request as the standard one (front and back
-          when chosen above), and its answers are read as{" "}
-          {idMode === "auto" ? "the detected card type" : `“${ID_MODE_LABELS[idMode]}”`}.
+          {idMode === "auto"
+            ? t("newSession.bothSides.customEndpointHintAuto")
+            : t("newSession.bothSides.customEndpointHint", { type: idModeLabels()[idMode] })}
         </p>
       </div>
     </div>
@@ -947,46 +905,64 @@ function BothSides({
 
 const MISSING = "border-amber-400 ring-2 ring-amber-400/25 dark:border-amber-500";
 
-export const ENGINE_OPTIONS: SelectOption<Engine>[] = [
-  { value: "ximilar", label: "Ximilar API", icon: Cloud },
-  { value: "local", label: "Local model", icon: Cpu },
-];
+// Functions, not constants: the labels follow the app's language.
 
-export const DPI_OPTIONS: SelectOption<string>[] = [
-  { value: "300", label: "300 dpi", hint: "identification" },
-  { value: "600", label: "600 dpi", hint: "grading" },
-];
+export function engineOptions(): SelectOption<Engine>[] {
+  const labels = engineLabels();
+  return [
+    { value: "ximilar", label: labels.ximilar, icon: Cloud },
+    { value: "local", label: labels.local, icon: Cpu },
+  ];
+}
+
+export function dpiOptions(): SelectOption<string>[] {
+  return [
+    { value: "300", label: "300 dpi", hint: t("newSession.options.dpiIdentification") },
+    { value: "600", label: "600 dpi", hint: t("newSession.options.dpiGrading") },
+  ];
+}
 
 /** Condition scales; the local model knows all but Ximilar's own (`local::grade::SCALES`). */
-export const CONDITION_OPTIONS: SelectOption<string>[] = [
-  { value: "tcgplayer", label: "TCGplayer" },
-  { value: "cardmarket", label: "Cardmarket" },
-  { value: "ebay_tcg", label: "eBay", hint: "trading cards" },
-  { value: "ebay_sport", label: "eBay", hint: "sports cards" },
-  { value: "ximilar", label: "Ximilar", hint: "API only" },
-];
-export const LOCAL_CONDITION_OPTIONS = CONDITION_OPTIONS.filter((o) => o.value !== "ximilar");
+export function conditionOptions(): SelectOption<string>[] {
+  return [
+    { value: "tcgplayer", label: "TCGplayer" },
+    { value: "cardmarket", label: "Cardmarket" },
+    { value: "ebay_tcg", label: "eBay", hint: t("newSession.options.tradingCards") },
+    { value: "ebay_sport", label: "eBay", hint: t("newSession.options.sportsCards") },
+    { value: "ximilar", label: "Ximilar", hint: t("newSession.options.apiOnly") },
+  ];
+}
+export function localConditionOptions(): SelectOption<string>[] {
+  return conditionOptions().filter((o) => o.value !== "ximilar");
+}
+
+const CONDITION_SCALES = ["tcgplayer", "cardmarket", "ebay_tcg", "ebay_sport", "ximilar"];
 
 /** The scale shown for a session's mode, as the backend reads it (`local::grade::scale`). */
 export function conditionScale(mode: string, local: boolean): string {
   if (mode === "ebay") return local ? "ebay_sport" : "ebay_tcg";
-  if (local && !LOCAL_CONDITION_OPTIONS.some((o) => o.value === mode)) return "tcgplayer";
-  return CONDITION_OPTIONS.some((o) => o.value === mode) ? mode : "ebay_tcg";
+  if (local && (mode === "ximilar" || !CONDITION_SCALES.includes(mode))) return "tcgplayer";
+  return CONDITION_SCALES.includes(mode) ? mode : "ebay_tcg";
 }
 
-export const MULTIFEED_OPTIONS: SelectOption<"off" | "default">[] = [
-  { value: "off", label: "Off", hint: "recommended for cards" },
-  { value: "default", label: "Driver default" },
-];
+export function multifeedOptions(): SelectOption<"off" | "default">[] {
+  return [
+    { value: "off", label: t("common.off"), hint: t("newSession.options.multifeedOffHint") },
+    { value: "default", label: t("newSession.options.multifeedDefault") },
+  ];
+}
 
-export const PAIRING_OPTIONS: SelectOption<Pairing>[] = [
-  { value: "single", label: "One image per card" },
-  { value: "front_back", label: "Front + back pairs" },
-];
+export function pairingOptions(): SelectOption<Pairing>[] {
+  return [
+    { value: "single", label: t("newSession.options.single") },
+    { value: "front_back", label: t("newSession.options.frontBack") },
+  ];
+}
 
 /** Opens Settings at one of its tabs. */
 export function OpenSettings({ section, onOpen }: { section: string; onOpen: () => void }) {
   const navigate = useNavigate();
+  const t = useT();
   return (
     <button
       className="btn shrink-0 py-1 text-xs"
@@ -995,7 +971,7 @@ export function OpenSettings({ section, onOpen }: { section: string; onOpen: () 
         navigate("/settings", { state: { section } });
       }}
     >
-      <Settings className="h-3.5 w-3.5" /> Open Settings
+      <Settings className="h-3.5 w-3.5" /> {t("newSession.openSettings")}
     </button>
   );
 }
@@ -1014,73 +990,80 @@ function ContinueRemote({
   onFound: (name: string) => void;
   folder: boolean;
 }) {
+  const t = useT();
   const id = value.match(UUID)?.pop()?.toLowerCase() ?? null;
   const [found, setFound] = useState<{ id: string; text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     if (!id) return;
     let alive = true;
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       api
         .getRemoteSession(id)
         .then(({ session: r }) => {
           if (!alive) return;
-          const n = r.identification_count;
-          setFound({ id, ok: true, text: `“${r.name || "Untitled"}” · ${n} card${n === 1 ? "" : "s"}` });
+          const name = r.name || t("newSession.remote.untitled");
+          setFound({ id, ok: true, text: t("newSession.remote.found", { name, count: r.identification_count }) });
           if (r.name) onFound(r.name);
         })
         .catch((e) => alive && setFound({ id, ok: false, text: errorText(e) }));
     }, 300);
     return () => {
       alive = false;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
     // onFound is a new function each render; the lookup depends on the ID only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const shown = found?.id === id ? found : null;
-  const skips = folder ? "; images it has already (matched by file name) are skipped" : "";
   return (
     <div className="col-span-2">
-      <label className="label">Continue a Cards Cloud session (optional)</label>
+      <label className="label">{t("newSession.remote.label")}</label>
       <input
         className="input font-mono text-xs"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Session ID or link"
+        placeholder={t("newSession.remote.placeholder")}
         spellCheck={false}
       />
       <p className={clsx("mt-1 text-xs", shown && !shown.ok ? "text-red-600" : "text-slate-500")}>
         {value.trim() && !id
-          ? "Paste the session’s ID or its link from the Ximilar App."
+          ? t("newSession.remote.paste")
           : shown
             ? shown.ok
-              ? `${shown.text}. New cards are added to it${skips}.`
+              ? t(folder ? "newSession.remote.addedSkips" : "newSession.remote.added", { found: shown.text })
               : shown.text
             : id
-              ? "Looking it up…"
-              : `Adds the cards to a session started earlier, e.g. on another computer${skips}.`}
+              ? t("newSession.remote.lookingUp")
+              : t(folder ? "newSession.remote.hintSkips" : "newSession.remote.hint")}
       </p>
     </div>
   );
 }
 
 function CsvSummary({ preview: p }: { preview: CsvPreview }) {
-  const n = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  const t = useT();
+  const counts = {
+    rows: t("newSession.csv.rows", { count: p.rows }),
+    cards: t("newSession.csv.identifiedCards", { count: p.cards }),
+    images: t("newSession.csv.images", { count: p.images }),
+    skipped: p.skipped,
+  };
   return (
     <div className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
       <p>
-        <b>{n(p.rows, "row")}</b>: {n(p.cards, "identified card")} to import, {n(p.images, "image")} to analyse
-        {p.skipped > 0 && `, ${p.skipped} empty skipped`}.
+        {rich(t(p.skipped > 0 ? "newSession.csv.summarySkipped" : "newSession.csv.summary", counts), {
+          b: (s) => <b>{s}</b>,
+        })}
         {p.missingImages > 0 && (
           <span className="text-amber-700 dark:text-amber-400">
             {" "}
-            {n(p.missingImages, "row")} point to missing images.
+            {t("newSession.csv.missingImages", { count: p.missingImages })}
           </span>
         )}
       </p>
-      <p className="mt-1 text-slate-500">Columns: {p.columns.join(", ")}</p>
+      <p className="mt-1 text-slate-500">{t("newSession.csv.columns", { columns: p.columns.join(", ") })}</p>
     </div>
   );
 }

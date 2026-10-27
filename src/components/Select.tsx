@@ -4,6 +4,7 @@
 import clsx from "clsx";
 import { Check, ChevronDown, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useT } from "../i18n";
 
 export interface SelectOption<T extends string> {
   value: T;
@@ -25,7 +26,7 @@ export default function Select<T extends string>({
   options,
   onChange,
   disabled,
-  placeholder = "Select…",
+  placeholder,
   className,
   "aria-label": ariaLabel,
 }: {
@@ -37,6 +38,7 @@ export default function Select<T extends string>({
   className?: string;
   "aria-label"?: string;
 }) {
+  const t = useT();
   const [at, setAt] = useState<{ left: number; width: number; top?: number; bottom?: number } | null>(null);
   const [active, setActive] = useState(0);
   const button = useRef<HTMLButtonElement>(null);
@@ -49,8 +51,8 @@ export default function Select<T extends string>({
   useEffect(() => {
     if (!at) return;
     const close = (e: Event) => {
-      const t = e.target as Node;
-      if (!list.current?.contains(t) && !button.current?.contains(t)) setAt(null);
+      const target = e.target as Node;
+      if (!list.current?.contains(target) && !button.current?.contains(target)) setAt(null);
     };
     const onResize = () => setAt(null);
     window.addEventListener("mousedown", close);
@@ -134,7 +136,11 @@ export default function Select<T extends string>({
         aria-controls={open ? id : undefined}
         aria-label={ariaLabel}
       >
-        {selected ? <Line option={selected} /> : <span className="flex-1 text-slate-400">{placeholder}</span>}
+        {selected ? (
+          <Line option={selected} />
+        ) : (
+          <span className="flex-1 text-slate-400">{placeholder ?? t("common.select")}</span>
+        )}
         <ChevronDown className={clsx("h-4 w-4 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
       </button>
       {at && (
@@ -181,8 +187,9 @@ function Line<T extends string>({ option: o }: { option: SelectOption<T> }) {
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
       {Icon && <Icon className="h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400" />}
-      <span className="truncate">{o.label}</span>
-      {o.hint && <span className="shrink-0 truncate text-xs text-slate-400">{o.hint}</span>}
+      {/* The label keeps its room; a hint that doesn't fit is cut first (long languages). */}
+      <span className="max-w-full shrink-0 truncate">{o.label}</span>
+      {o.hint && <span className="min-w-0 truncate text-xs text-slate-400">{o.hint}</span>}
       {o.badge && (
         <>
           <span className="flex-1" />
@@ -213,7 +220,7 @@ export function Badge({ tone = "slate", children }: { tone?: "slate" | "green" |
   );
 }
 
-/** Options from a `{ value: label }` record, e.g. ID_MODE_LABELS. */
+/** Options from a `{ value: label }` record, e.g. idModeLabels(). */
 export function optionsOf<T extends string>(labels: Record<T, string>): SelectOption<T>[] {
   return (Object.entries(labels) as [T, string][]).map(([value, label]) => ({ value, label }));
 }

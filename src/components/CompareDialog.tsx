@@ -4,7 +4,9 @@
 import clsx from "clsx";
 import { CheckCircle2, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useT } from "../i18n";
 import { api, errorText, onCompareProgress, type CompareReport, type CompareRow, type Session } from "../lib/api";
+import { decimal } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
 import Select from "./Select";
@@ -17,6 +19,7 @@ interface Result {
 }
 
 export default function CompareDialog({ session, onClose }: { session: Session; onClose: () => void }) {
+  const t = useT();
   const models = useModels();
   const ready = models?.filter((m) => m.state === "ready") ?? [];
   const [picked, setPicked] = useState<string | null>(null);
@@ -29,31 +32,30 @@ export default function CompareDialog({ session, onClose }: { session: Session; 
 
   return (
     <Modal
-      title="Compare with a local model"
+      title={t("models.compare.title")}
       onClose={onClose}
       footer={
         <button className="btn" onClick={onClose}>
-          {running ? "Stop" : "Close"}
+          {running ? t("models.compare.stop") : t("common.close")}
         </button>
       }
     >
       <div className="space-y-4">
         <p className="text-sm text-slate-600 dark:text-slate-300">
-          A local model reads each card Ximilar identified in “{session.name}”, and the two answers are compared.
-          Nothing in the session changes. Run it with several models to see which suits your cards.
+          {t("models.compare.intro", { name: session.name })}
         </p>
         {models && ready.length === 0 ? (
-          <ErrorNote>Download a local model in Settings first.</ErrorNote>
+          <ErrorNote>{t("models.compare.downloadFirst")}</ErrorNote>
         ) : (
           <div className="flex items-end gap-2">
             <div className="flex-1">
-              <label className="label">Model</label>
+              <label className="label">{t("models.compare.model")}</label>
               <Select
                 value={model ?? ""}
                 onChange={setPicked}
                 disabled={running}
                 options={ready.map(modelOption)}
-                aria-label="Model"
+                aria-label={t("models.compare.model")}
               />
             </div>
             <button
@@ -61,7 +63,7 @@ export default function CompareDialog({ session, onClose }: { session: Session; 
               disabled={!model || running}
               onClick={() => model && setRun((r) => ({ model, n: (r?.n ?? 0) + 1 }))}
             >
-              {results.length ? "Compare again" : "Compare"}
+              {results.length ? t("models.compare.compareAgain") : t("models.compare.compare")}
             </button>
           </div>
         )}
@@ -69,10 +71,10 @@ export default function CompareDialog({ session, onClose }: { session: Session; 
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-slate-500">
               <tr>
-                <th className="py-1 font-medium">Model</th>
-                <th className="py-1 text-right font-medium">Same name</th>
-                <th className="py-1 text-right font-medium">Same number</th>
-                <th className="py-1 text-right font-medium">Per card</th>
+                <th className="py-1 font-medium">{t("models.compare.model")}</th>
+                <th className="py-1 text-right font-medium">{t("models.compare.sameName")}</th>
+                <th className="py-1 text-right font-medium">{t("models.compare.sameNumber")}</th>
+                <th className="py-1 text-right font-medium">{t("models.compare.perCard")}</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -114,6 +116,7 @@ function CompareRun({
   onRunning: (running: boolean) => void;
   onDone: (r: Result) => void;
 }) {
+  const t = useT();
   const [rows, setRows] = useState<CompareRow[]>([]);
   const [total, setTotal] = useState<number | null>(null);
   const [report, setReport] = useState<CompareReport | null>(null);
@@ -137,7 +140,7 @@ function CompareRun({
           model,
           names: pct(r.names, r.cards),
           numbers: pct(r.numbers, r.withNumber),
-          seconds: `${r.secondsPerCard.toFixed(1)} s`,
+          seconds: `${decimal(r.secondsPerCard, 1)} s`,
         });
       })
       .catch((e) => alive && setError(errorText(e)))
@@ -170,22 +173,28 @@ function CompareRun({
             />
           </div>
           <p className="text-xs text-slate-500 tabular-nums">
-            {total == null ? "Loading the model…" : `${rows.length} of ${total} cards`}
+            {total == null
+              ? t("models.compare.loadingModel")
+              : t("models.compare.progress", { done: rows.length, count: total })}
           </p>
         </div>
       )}
       {done.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          <Stat label="Same name" value={pct(names, done.length)} sub={`${names} of ${done.length}`} />
           <Stat
-            label="Same number"
-            value={withNumber != null ? pct(numbers, withNumber) : "…"}
-            sub={withNumber != null ? `${numbers} of ${withNumber} with a number` : undefined}
+            label={t("models.compare.sameName")}
+            value={pct(names, done.length)}
+            sub={t("models.compare.of", { n: names, total: done.length })}
           />
           <Stat
-            label="Per card"
-            value={`${(done.reduce((a, r) => a + r.seconds, 0) / done.length).toFixed(1)} s`}
-            sub="on this computer"
+            label={t("models.compare.sameNumber")}
+            value={withNumber != null ? pct(numbers, withNumber) : "…"}
+            sub={withNumber != null ? t("models.compare.ofWithNumber", { n: numbers, total: withNumber }) : undefined}
+          />
+          <Stat
+            label={t("models.compare.perCard")}
+            value={`${decimal(done.reduce((a, r) => a + r.seconds, 0) / done.length, 1)} s`}
+            sub={t("models.compare.onThisComputer")}
           />
         </div>
       )}
@@ -196,9 +205,9 @@ function CompareRun({
               <tr>
                 <th className="px-3 py-1.5 font-medium">#</th>
                 <th className="px-3 py-1.5 font-medium">Ximilar</th>
-                <th className="px-3 py-1.5 font-medium">Local model</th>
-                <th className="px-3 py-1.5 font-medium">Name</th>
-                <th className="px-3 py-1.5 font-medium">No.</th>
+                <th className="px-3 py-1.5 font-medium">{t("models.compare.localModel")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("models.compare.name")}</th>
+                <th className="px-3 py-1.5 font-medium">{t("models.compare.number")}</th>
               </tr>
             </thead>
             <tbody className="selectable">
@@ -212,7 +221,7 @@ function CompareRun({
                     className={clsx("max-w-56 truncate px-3 py-1.5", r.error && "text-red-600")}
                     title={r.error ?? r.local}
                   >
-                    {r.error ?? (r.local || <span className="text-slate-400">nothing read</span>)}
+                    {r.error ?? (r.local || <span className="text-slate-400">{t("models.compare.nothingRead")}</span>)}
                   </td>
                   <td className="px-3 py-1.5">
                     <Mark ok={r.nameMatches} />
@@ -226,18 +235,17 @@ function CompareRun({
           </table>
         </div>
       )}
-      {report && report.cards === 0 && (
-        <p className="text-sm text-slate-500">This session has no cards identified by Ximilar to compare with.</p>
-      )}
+      {report && report.cards === 0 && <p className="text-sm text-slate-500">{t("models.compare.noCards")}</p>}
     </div>
   );
 }
 
 function Mark({ ok }: { ok: boolean }) {
+  const t = useT();
   return ok ? (
-    <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label="same" />
+    <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label={t("models.compare.same")} />
   ) : (
-    <XCircle className="h-4 w-4 text-slate-300 dark:text-slate-600" aria-label="different" />
+    <XCircle className="h-4 w-4 text-slate-300 dark:text-slate-600" aria-label={t("models.compare.different")} />
   );
 }
 

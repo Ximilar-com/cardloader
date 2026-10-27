@@ -1,6 +1,7 @@
 // One short message at a time in the corner, from anywhere: `toast("Exported 12 cards")`.
 
 import { useEffect, useSyncExternalStore } from "react";
+import { t } from "../i18n";
 import { api, errorText } from "../lib/api";
 
 interface Notice {
@@ -29,8 +30,10 @@ export function turnUpright(ids: number[]) {
     .then(({ turned, skipped }) =>
       toast(
         turned === 0
-          ? "None of these cards is upside down"
-          : `Turned ${turned} card${turned === 1 ? "" : "s"} upright${skipped ? ` · ${skipped} weren’t upside down` : ""}`,
+          ? t("sidebar.toast.noneUpsideDown")
+          : skipped
+            ? t("sidebar.toast.turnedSkipped", { count: turned, skipped })
+            : t("sidebar.toast.turned", { count: turned }),
       ),
     )
     .catch(toastError);
@@ -49,8 +52,8 @@ export default function Toaster() {
   const notice = useSyncExternalStore(subscribe, () => current);
   useEffect(() => {
     if (!notice) return;
-    const t = setTimeout(() => current?.id === notice.id && set(null), notice.error ? 8000 : 4000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => current?.id === notice.id && set(null), notice.error ? 8000 : 4000);
+    return () => clearTimeout(timer);
   }, [notice]);
   if (!notice) return null;
   return (

@@ -3,6 +3,7 @@ mod db;
 mod ebay;
 mod error;
 mod export;
+mod i18n;
 mod imaging;
 mod local;
 mod market;

@@ -65,6 +65,8 @@ src/
   lib/cardview.ts one Row/CardView shape for local items and Cards Cloud rows
   lib/demo.ts     mockIPC answers for `npm run dev` outside Tauri
   lib/setup.ts    first-run setup answers ↔ the default settings they become (only the settings are stored)
+  i18n/           the app's languages: index.ts (`t`, `useT`, `rich`, plurals, `locale()`), languages.ts (codes,
+                  native names, flags), en/<area>.ts (the English source) and one folder per language mirroring it
   pages/          DashboardPage (home: totals, needs attention, 7-day bars, activity heatmap, last sessions,
                   defaults), SessionsPage (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, CardsPage
                   (identified cards of all sessions: `search_cards`), SettingsPage
@@ -92,6 +94,14 @@ them.
 - New Tauri plugin APIs need a permission in `src-tauri/capabilities/default.json`.
 - Match the surrounding style: Rust via `cargo fmt`, frontend via Prettier (`.prettierrc.json`, width 120). Comments
   explain why, not what. User-facing text is plain and short.
+- **UI text is translated** (en, ja, es, ko, fr, pt, de, it; `settings.language`). Never write English into
+  components: add the key to `src/i18n/en/<area>.ts` and the same key to every other language's `<area>.ts`
+  (`Messages<typeof en>` makes `tsc` fail on a missing one; `i18n.test.ts` checks placeholders and tags). Components
+  call `const t = useT()`; never call `t` at module level (labels and options are functions, e.g.
+  `idModeLabels()`), since the language is read at render. Whole sentences with `{placeholders}`, plurals as
+  `{ one, other }` objects, links inside a sentence as `<link>…</link>` with `rich`. Stay English: Rust errors,
+  export files and their values, marketplace condition names, MCP texts, card data, brand and game names. The OS
+  notification is the backend's only translated text (`src-tauri/src/i18n.rs`).
 - Use `components/Select` (icons, hints, badges; fixed-positioned so dialogs don't clip it), not a native `<select>`.
 - ESLint runs `react-hooks` v7: no synchronous `setState` in effects (derive state, use keyed remounts, or set it in
   async callbacks).

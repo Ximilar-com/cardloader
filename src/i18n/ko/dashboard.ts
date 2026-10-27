@@ -1,0 +1,66 @@
+import type { Messages } from "..";
+import type en from "../en/dashboard";
+
+const messages: Messages<typeof en> = {
+  title: "홈",
+  newSession: "새 세션",
+  lastWeek: "최근 7일",
+  defaultsTitle: "새 세션 기본값",
+  runSetupAgain: "설정 마법사 다시 실행",
+  activity: "활동",
+  lastSessions: "최근 세션",
+  allSessions: "모든 세션",
+  week: {
+    cardsAnalysed: "장 분석됨",
+    dayCards: { other: "{date}: 카드 {count}장" },
+    today: "오늘",
+  },
+  heatmap: {
+    activeDays: {
+      other: "지난 1년 동안 {count}일 카드를 분석했습니다.",
+    },
+    dayCards: { other: "{date}: 카드 {count}장" },
+    dayNone: "{date}: 스캔 없음",
+    noScanning: "스캔 없음",
+    fewer: "적음",
+    moreCards: "많음",
+  },
+  totals: {
+    cards: "카드",
+    inSessions: { other: "세션 {count}개" },
+    totalValue: "총 가치",
+    totalValueSub: "분석 시점의 시세",
+    toReview: "검토 필요",
+    toReviewSub: "아직 승인되지 않음",
+    apiCalls: "API 호출",
+    apiCallsSub: "최근 7일",
+  },
+  attention: {
+    title: "확인 필요",
+    noToken: "카드를 분석하려면 Ximilar API 토큰을 추가하세요.",
+    openSettings: "설정 열기",
+    analysing: "분석 중, {total}장 중 {done}장",
+    paused: "일시 중지됨",
+    toReview: { other: "검토할 카드 {count}장" },
+    failed: "{count}장 실패",
+    syncFailed: "Cards Cloud 업로드 실패",
+    ebayStopped: "eBay 작업 중지됨",
+    resume: "재개",
+    review: "검토",
+    open: "열기",
+  },
+  defaults: {
+    identifyAs: "식별 유형",
+    game: "게임",
+    anyGame: "모든 게임",
+    grading: "그레이딩",
+    prices: "가격",
+    cardsFrom: "카드 출처",
+    identifyWith: "식별 방법",
+    localModel: "로컬 AI 모델",
+    change: "설정에서 변경",
+  },
+  noSessions: "아직 세션이 없습니다.",
+  sessionCards: { other: "{done} / {count}장" },
+};
+export default messages;

@@ -17,9 +17,10 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { t, useT } from "../i18n";
 import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
-import { basename, grade, price } from "../lib/format";
+import { basename, decimal, grade, price } from "../lib/format";
 import { ErrorNote } from "./Modal";
 import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
@@ -62,6 +63,7 @@ export default function DetailPanel({
   /** Shown under the image, e.g. a link to the card's session. */
   extra?: ReactNode;
 }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [turning, setTurning] = useState(false);
   const [turnBusy, setTurnBusy] = useState(false);
@@ -110,21 +112,29 @@ export default function DetailPanel({
                   canTurn ? "hover:bg-violet-100 dark:hover:bg-violet-900" : "cursor-default",
                 )}
                 onClick={() => canTurn && setTurning(!turning)}
-                title={`Ximilar found the card turned in the image (${view.rotation.tag}${
-                  view.rotation.prob != null ? `, ${Math.round(view.rotation.prob * 100)}%` : ""
-                }) and identified it upright.${canTurn ? " Click to turn the image." : ""}`}
+                title={
+                  (view.rotation.prob != null
+                    ? t("detail.rotationTitleProb", {
+                        tag: view.rotation.tag,
+                        prob: Math.round(view.rotation.prob * 100),
+                      })
+                    : t("detail.rotationTitle", { tag: view.rotation.tag })) +
+                  (canTurn ? ` ${t("detail.rotationClick")}` : "")
+                }
               >
                 <RotateCw className="h-3 w-3" /> {view.rotation.label}
               </button>
             )}
             {view.distance != null && (
-              <span className="text-[11px] text-slate-400">distance {view.distance.toFixed(3)}</span>
+              <span className="text-[11px] text-slate-400">
+                {t("detail.distance", { value: decimal(view.distance, 3) })}
+              </span>
             )}
             {view.via && <span className="text-[11px] text-slate-400">{view.via}</span>}
             {view.local && (
               <span className="text-[11px] text-slate-400">
                 {view.local.model}
-                {view.local.seconds != null && ` · ${view.local.seconds.toFixed(1)} s`}
+                {view.local.seconds != null && ` · ${decimal(view.local.seconds, 1)} s`}
               </span>
             )}
           </div>
@@ -135,8 +145,8 @@ export default function DetailPanel({
               className="btn btn-ghost px-1.5"
               onClick={onPrev}
               disabled={!onPrev}
-              title="Previous card (K or ↑)"
-              aria-label="Previous card"
+              title={t("detail.previousTitle")}
+              aria-label={t("detail.previous")}
             >
               <ChevronUp className="h-4 w-4" />
             </button>
@@ -144,25 +154,27 @@ export default function DetailPanel({
               className="btn btn-ghost px-1.5"
               onClick={onNext}
               disabled={!onNext}
-              title="Next card (J or ↓)"
-              aria-label="Next card"
+              title={t("detail.nextTitle")}
+              aria-label={t("detail.next")}
             >
               <ChevronDown className="h-4 w-4" />
             </button>
           </div>
         )}
-        <button className="btn btn-ghost px-1.5" onClick={onClose} aria-label="Close detail" title="Close (Esc)">
+        <button
+          className="btn btn-ghost px-1.5"
+          onClick={onClose}
+          aria-label={t("detail.close")}
+          title={t("detail.closeTitle")}
+        >
           <X className="h-4 w-4" />
         </button>
       </div>
       {turning && canTurn && (
         <div className="flex items-center gap-2 border-b border-slate-200 bg-violet-50/70 px-4 py-2 text-xs text-violet-900 dark:border-slate-800 dark:bg-violet-950/30 dark:text-violet-200">
-          <span className="flex-1">
-            The card is upside down in the image. Turn it upright, with its back, for the app and for exports? Images in
-            your own folders stay as they are.
-          </span>
+          <span className="flex-1">{t("detail.turn.text")}</span>
           <button className="btn px-2 py-0.5 text-xs" onClick={() => setTurning(false)}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             className="btn btn-primary px-2 py-0.5 text-xs"
@@ -175,7 +187,8 @@ export default function DetailPanel({
               });
             }}
           >
-            {turnBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />} Turn upright
+            {turnBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}{" "}
+            {t("detail.turn.confirm")}
           </button>
         </div>
       )}
@@ -193,7 +206,7 @@ export default function DetailPanel({
               <span className="selectable flex flex-1 items-start gap-1.5 text-indigo-800 dark:text-indigo-300">
                 <Bot className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={2.25} />
                 <span>
-                  {view.picked || view.edited ? "An AI agent corrected this card" : "An AI agent accepted this match"}
+                  {view.picked || view.edited ? t("detail.review.agentCorrected") : t("detail.review.agentAccepted")}
                   {view.reviewNote && (
                     <span className="text-indigo-700/80 dark:text-indigo-300/80">: {view.reviewNote}</span>
                   )}
@@ -204,14 +217,18 @@ export default function DetailPanel({
                 <button
                   className="btn btn-primary px-2 py-0.5 text-xs"
                   onClick={onAccept}
-                  title="You checked it: the review becomes yours (A)"
+                  title={t("detail.review.confirmTitle")}
                 >
-                  <Check className="h-3 w-3" /> Confirm
+                  <Check className="h-3 w-3" /> {t("detail.review.confirm")}
                 </button>
               )}
               {onUnaccept && view.accepted && (
-                <button className="btn px-2 py-0.5 text-xs" onClick={onUnaccept} title="Take the accept back">
-                  Unaccept
+                <button
+                  className="btn px-2 py-0.5 text-xs"
+                  onClick={onUnaccept}
+                  title={t("detail.review.unacceptTitle")}
+                >
+                  {t("detail.review.unaccept")}
                 </button>
               )}
             </>
@@ -220,22 +237,31 @@ export default function DetailPanel({
               <span className="flex flex-1 items-center gap-1.5 text-orange-800 dark:text-orange-300">
                 <CircleQuestionMark className="h-4 w-4 shrink-0 text-orange-500" strokeWidth={2.5} />
                 {view.confidence === "low" || view.confidence === "medium"
-                  ? "Unsure match — accept it or pick another candidate below."
-                  : "Check the match — accept it, or pick another candidate below."}
+                  ? t("detail.review.unsure")
+                  : t("detail.review.check")}
               </span>
-              <button className="btn btn-primary px-2 py-0.5 text-xs" onClick={onAccept} title="Accept the match (A)">
-                <Check className="h-3 w-3" /> Accept
+              <button
+                className="btn btn-primary px-2 py-0.5 text-xs"
+                onClick={onAccept}
+                title={t("detail.review.acceptTitle")}
+              >
+                <Check className="h-3 w-3" /> {t("detail.review.accept")}
               </button>
             </>
           ) : view.accepted ? (
             <>
               <span className="flex flex-1 items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
                 <CircleCheck className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
-                You accepted this match{position && ` · ${position}`}
+                {t("detail.review.accepted")}
+                {position && ` · ${position}`}
               </span>
               {onUnaccept && (
-                <button className="btn px-2 py-0.5 text-xs" onClick={onUnaccept} title="Take the accept back (A)">
-                  Unaccept
+                <button
+                  className="btn px-2 py-0.5 text-xs"
+                  onClick={onUnaccept}
+                  title={t("detail.review.unacceptKeyTitle")}
+                >
+                  {t("detail.review.unaccept")}
                 </button>
               )}
             </>
@@ -251,7 +277,7 @@ export default function DetailPanel({
             <span className="flex-1">{view.error}</span>
             {onRetry && (
               <button className="btn px-2 py-0.5 text-xs" onClick={onRetry}>
-                <RotateCcw className="h-3 w-3" /> Retry
+                <RotateCcw className="h-3 w-3" /> {t("common.retry")}
               </button>
             )}
           </div>
@@ -261,14 +287,14 @@ export default function DetailPanel({
 
         {(view.price != null || view.grade != null || view.condition) && (
           <div className="grid grid-cols-2 gap-2">
-            <Stat label="Market price" value={price(view.price)} />
+            <Stat label={t("detail.marketPrice")} value={price(view.price)} />
             <Stat
               label={
                 view.gradingEndpoint === "centering"
-                  ? "Centering"
+                  ? t("detail.centering")
                   : view.gradingEndpoint === "condition"
-                    ? "Condition"
-                    : "Grade"
+                    ? t("detail.condition")
+                    : t("detail.grade")
               }
               value={view.grade != null ? grade(view.grade) : (view.condition ?? "—")}
               sub={view.grade != null ? (view.condition ?? undefined) : undefined}
@@ -289,16 +315,16 @@ export default function DetailPanel({
         ) : (
           (view.fields.length > 0 || view.edit?.notes || view.edit?.location || onEdit) && (
             <Section
-              title="Card"
+              title={t("detail.card.title")}
               action={
                 onEdit &&
                 view.edit && (
                   <button
                     className="btn btn-ghost px-1.5 py-0.5 text-xs"
                     onClick={() => setEditing(true)}
-                    title="Edit (E)"
+                    title={t("detail.card.editTitle")}
                   >
-                    <Pencil className="h-3 w-3" /> Edit
+                    <Pencil className="h-3 w-3" /> {t("detail.card.edit")}
                   </button>
                 )
               }
@@ -307,23 +333,23 @@ export default function DetailPanel({
                 {view.fields.map(([k, v]) => (
                   <Field key={k} label={k} value={v} />
                 ))}
-                <Field label="Location" value={view.edit?.location} />
-                <Field label="Notes" value={view.edit?.notes} />
+                <Field label={t("detail.card.location")} value={view.edit?.location} />
+                <Field label={t("detail.card.notes")} value={view.edit?.notes} />
               </dl>
             </Section>
           )
         )}
 
         {view.slab && Object.keys(view.slab).length > 0 && (
-          <Section title="Slab label">
+          <Section title={t("detail.slab.title")}>
             <dl className="selectable grid grid-cols-[100px_1fr] gap-x-3 gap-y-1.5 text-sm">
-              <Field label="Company" value={view.slab.company} />
+              <Field label={t("detail.slab.company")} value={view.slab.company} />
               <Field
-                label="Grade"
+                label={t("detail.slab.grade")}
                 value={[view.slab.grade ?? view.slab.tagGrade, view.slab.verbal_grade].filter(Boolean).join(" · ")}
               />
-              <Field label="Certificate" value={view.slab.certificate_number} />
-              <Field label="Label" value={view.slab.name} />
+              <Field label={t("detail.slab.certificate")} value={view.slab.certificate_number} />
+              <Field label={t("detail.slab.label")} value={view.slab.name} />
             </dl>
           </Section>
         )}
@@ -333,15 +359,15 @@ export default function DetailPanel({
         <Grading view={view} />
 
         {view.priceStats.length > 0 && (
-          <Section title="Price statistics (USD)">
+          <Section title={t("detail.prices.title")}>
             <table className="w-full text-xs">
               <thead className="text-slate-500">
                 <tr>
-                  <th className="py-1 text-left font-medium">Type</th>
-                  <th className="py-1 text-right font-medium">Median</th>
-                  <th className="py-1 text-right font-medium">Min</th>
-                  <th className="py-1 text-right font-medium">Max</th>
-                  <th className="py-1 text-right font-medium">Latest</th>
+                  <th className="py-1 text-left font-medium">{t("detail.prices.type")}</th>
+                  <th className="py-1 text-right font-medium">{t("detail.prices.median")}</th>
+                  <th className="py-1 text-right font-medium">{t("detail.prices.min")}</th>
+                  <th className="py-1 text-right font-medium">{t("detail.prices.max")}</th>
+                  <th className="py-1 text-right font-medium">{t("detail.prices.latest")}</th>
                 </tr>
               </thead>
               <tbody className="selectable tabular-nums">
@@ -363,7 +389,7 @@ export default function DetailPanel({
         )}
 
         {Object.keys(view.links).length > 0 && (
-          <Section title="Links">
+          <Section title={t("detail.links")}>
             <div className="flex flex-wrap gap-1.5">
               {Object.entries(view.links).map(([name, url]) => (
                 <button key={name} className="btn px-2 py-1 text-xs" onClick={() => openUrl(url)}>
@@ -377,7 +403,7 @@ export default function DetailPanel({
         {view.alternatives.length > 0 && <Candidates list={view.alternatives} onPick={onPick} />}
 
         <details className="text-xs">
-          <summary className="cursor-pointer font-medium text-slate-500">Raw response</summary>
+          <summary className="cursor-pointer font-medium text-slate-500">{t("detail.raw")}</summary>
           <pre className="selectable mt-2 max-h-96 overflow-auto rounded bg-slate-50 p-2 text-[11px] dark:bg-slate-900">
             {JSON.stringify(view.raw, null, 2)}
           </pre>
@@ -388,7 +414,7 @@ export default function DetailPanel({
             className="btn btn-ghost w-full justify-center text-xs text-red-600 dark:text-red-400"
             onClick={onDelete}
           >
-            <Trash2 className="h-3.5 w-3.5" /> Delete this card
+            <Trash2 className="h-3.5 w-3.5" /> {t("detail.deleteCard")}
           </button>
         )}
       </div>
@@ -397,6 +423,7 @@ export default function DetailPanel({
 }
 
 function Images({ images }: { images: CardView["images"] }) {
+  const t = useT();
   const [active, setActive] = useState(0);
   const img = images[Math.min(active, images.length - 1)];
   if (!img) return null;
@@ -409,10 +436,10 @@ function Images({ images }: { images: CardView["images"] }) {
             alt={img.label}
             className={clsx("max-h-full max-w-full rounded object-contain shadow", img.path && "cursor-zoom-in")}
             onDoubleClick={() => img.path && openPath(img.path)}
-            title={img.path ? "Double-click to open the original" : undefined}
+            title={img.path ? t("detail.images.openOriginal") : undefined}
           />
         ) : (
-          <span className="text-sm text-slate-400">No image</span>
+          <span className="text-sm text-slate-400">{t("detail.images.none")}</span>
         )}
       </div>
       {images.length > 1 && (
@@ -437,10 +464,11 @@ function Images({ images }: { images: CardView["images"] }) {
 
 /** The scanned files the card was read from: name, folder, and a way to find them. */
 function Files({ images }: { images: CardView["images"] }) {
+  const t = useT();
   const files = images.filter((im) => im.path);
   if (!files.length) return null;
   return (
-    <Section title="Files">
+    <Section title={t("detail.files.title")}>
       <dl className="grid grid-cols-[100px_1fr_auto] items-start gap-x-3 gap-y-1.5 text-sm">
         {files.map(({ label, path }) => (
           <div key={label} className="contents">
@@ -452,8 +480,8 @@ function Files({ images }: { images: CardView["images"] }) {
             <button
               className="btn btn-ghost px-1.5 py-0.5"
               onClick={() => revealItemInDir(path!)}
-              title="Show in folder"
-              aria-label={`Show the ${label.toLowerCase()} file in its folder`}
+              title={t("detail.files.showInFolder")}
+              aria-label={t("detail.files.showLabel", { label })}
             >
               <FolderOpen className="h-3.5 w-3.5" />
             </button>
@@ -471,7 +499,17 @@ function folderOf(path: string): string {
 
 const SUBGRADES = ["corners", "edges", "surface", "centering"] as const;
 
+function subgradeLabels(): Record<(typeof SUBGRADES)[number], string> {
+  return {
+    corners: t("detail.grading.corners"),
+    edges: t("detail.grading.edges"),
+    surface: t("detail.grading.surface"),
+    centering: t("detail.grading.centering"),
+  };
+}
+
 function Grading({ view }: { view: CardView }) {
+  const t = useT();
   if (!view.gradingEndpoint) return null;
   const records = view.gradingRecords;
   const grades: Json = records.find((r: Json) => r?.grades)?.grades ?? {};
@@ -480,13 +518,19 @@ function Grading({ view }: { view: CardView }) {
   const condition = records[0]?._objects?.[0]?.Condition?.[0];
 
   return (
-    <Section title={`Grading · ${view.gradingEndpoint === "imported" ? "from CSV" : view.gradingEndpoint}`}>
+    <Section
+      title={t("detail.grading.title", {
+        endpoint: view.gradingEndpoint === "imported" ? t("detail.grading.fromCsv") : view.gradingEndpoint,
+      })}
+    >
       {condition && (
         <p className="text-sm">
           <span className="font-semibold">{condition.label}</span>
           <span className="text-slate-500">
             {" "}
-            ({condition.mode} scale{condition.value != null ? `, ${Number(condition.value).toFixed(2)}` : ""})
+            {condition.value != null
+              ? t("detail.grading.scaleValue", { mode: condition.mode, value: decimal(Number(condition.value), 2) })
+              : t("detail.grading.scale", { mode: condition.mode })}
           </span>
         </p>
       )}
@@ -494,7 +538,7 @@ function Grading({ view }: { view: CardView }) {
         <div className="space-y-1.5">
           {SUBGRADES.filter((k) => grades[k] != null).map((k) => (
             <div key={k} className="flex items-center gap-2 text-sm">
-              <span className="w-20 text-slate-500 capitalize">{k}</span>
+              <span className="w-20 text-slate-500">{subgradeLabels()[k]}</span>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
                 <div className="h-full rounded-full bg-violet-500" style={{ width: `${(grades[k] / 10) * 100}%` }} />
               </div>
@@ -505,12 +549,16 @@ function Grading({ view }: { view: CardView }) {
       )}
       {sides.length > 1 && (
         <p className="mt-2 text-xs text-slate-500">
-          {sides.map((r: Json, i: number) => `${i === 0 ? "Front" : "Back"} ${grade(r.grades.final)}`).join(" · ")}
+          {sides
+            .map(
+              (r: Json, i: number) => `${i === 0 ? t("common.front") : t("common.back_side")} ${grade(r.grades.final)}`,
+            )
+            .join(" · ")}
         </p>
       )}
       {centering && (
         <p className="mt-2 text-xs text-slate-500">
-          Centering L/R {centering["left/right"]} · T/B {centering["top/bottom"]}
+          {t("detail.grading.centeringValues", { lr: centering["left/right"], tb: centering["top/bottom"] })}
         </p>
       )}
       {view.gradingImages.length > 0 && (
@@ -520,7 +568,7 @@ function Grading({ view }: { view: CardView }) {
               key={g.path ?? g.src}
               onClick={() => g.path && openPath(g.path)}
               className="overflow-hidden rounded border border-slate-200 dark:border-slate-800"
-              title={`${g.label} — click to open`}
+              title={t("detail.grading.openImage", { label: g.label })}
             >
               <img src={g.src} alt={g.label} className="h-32 w-full bg-slate-100 object-contain dark:bg-slate-900" />
             </button>
@@ -532,6 +580,7 @@ function Grading({ view }: { view: CardView }) {
 }
 
 function Candidates({ list, onPick }: { list: Candidate[]; onPick?: (index: number) => Promise<unknown> }) {
+  const t = useT();
   const [busy, setBusy] = useState<number | null>(null);
   const showPrice = list.some((c) => c.price != null);
   const pick = (index: number) => {
@@ -540,12 +589,15 @@ function Candidates({ list, onPick }: { list: Candidate[]; onPick?: (index: numb
     onPick(index).finally(() => setBusy(null));
   };
   return (
-    <Section title={`Other candidates (${list.length})`}>
+    <Section title={t("detail.candidates.title", { count: list.length })}>
       <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
         {list.map((c, i) => (
           <div key={`${c.index}:${c.fullName}`} className="flex items-center gap-2.5 px-2.5 py-1.5 text-sm">
             {onPick && i < 9 && (
-              <kbd className="w-4 shrink-0 text-center text-[11px] text-slate-400" title={`Press ${i + 1} to select`}>
+              <kbd
+                className="w-4 shrink-0 text-center text-[11px] text-slate-400"
+                title={t("detail.candidates.press", { n: i + 1 })}
+              >
                 {i + 1}
               </kbd>
             )}
@@ -555,7 +607,7 @@ function Candidates({ list, onPick }: { list: Candidate[]; onPick?: (index: numb
             </div>
             <div
               className="flex shrink-0 flex-col items-end gap-0.5"
-              title={c.distance != null ? `distance ${c.distance.toFixed(3)}` : undefined}
+              title={c.distance != null ? t("detail.distance", { value: decimal(c.distance, 3) }) : undefined}
             >
               {showPrice && <span className="text-xs tabular-nums">{price(c.price)}</span>}
               <ConfidenceChip value={c.confidence} />
@@ -565,10 +617,10 @@ function Candidates({ list, onPick }: { list: Candidate[]; onPick?: (index: numb
                 className="btn px-2 py-0.5 text-xs"
                 disabled={busy != null}
                 onClick={() => pick(c.index)}
-                title="Use this card as the match"
+                title={t("detail.candidates.selectTitle")}
               >
                 {busy === c.index ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                Select
+                {t("detail.candidates.select")}
               </button>
             )}
           </div>
@@ -590,13 +642,15 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   );
 }
 
-const EDIT_FIELDS: [keyof ItemEdit, string][] = [
-  ["name", "Name"],
-  ["setName", "Set"],
-  ["setCode", "Set code"],
-  ["cardNumber", "Number"],
-  ["year", "Year"],
-];
+function editFields(): [keyof ItemEdit, string][] {
+  return [
+    ["name", t("detail.edit.name")],
+    ["setName", t("detail.edit.setName")],
+    ["setCode", t("detail.edit.setCode")],
+    ["cardNumber", t("detail.edit.cardNumber")],
+    ["year", t("detail.edit.year")],
+  ];
+}
 
 /** The card's fields, price, location and notes as a form; Enter saves, Escape cancels. */
 function EditForm({
@@ -611,6 +665,7 @@ function EditForm({
   onSave: (edit: ItemEdit) => Promise<unknown>;
   onCancel: () => void;
 }) {
+  const t = useT();
   const [edit, setEdit] = useState(initial);
   const [priceText, setPriceText] = useState(initial.price != null ? String(initial.price) : "");
   const [busy, setBusy] = useState(false);
@@ -620,8 +675,7 @@ function EditForm({
   const submit = () => {
     const text = priceText.trim().replace(",", ".").replace(/^\$/, "");
     const value = text === "" ? null : Number(text);
-    if (value != null && (!Number.isFinite(value) || value < 0))
-      return setError("The price must be a positive number.");
+    if (value != null && (!Number.isFinite(value) || value < 0)) return setError(t("detail.edit.priceInvalid"));
     setBusy(true);
     setError(null);
     onSave({ ...edit, price: value }).catch((e) => {
@@ -644,7 +698,7 @@ function EditForm({
   );
 
   return (
-    <Section title="Edit card">
+    <Section title={t("detail.edit.title")}>
       <form
         className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 text-sm"
         onSubmit={(e) => {
@@ -658,26 +712,24 @@ function EditForm({
           }
         }}
       >
-        {EDIT_FIELDS.map(([k, label], i) =>
+        {editFields().map(([k, label], i) =>
           input(label, String(edit[k] ?? ""), (v) => set(k, v), !identified, identified && i === 0),
         )}
-        {input("Price $", priceText, setPriceText, !identified)}
-        {input("Location", edit.location, (v) => set("location", v), false, !identified)}
+        {input(t("detail.edit.price"), priceText, setPriceText, !identified)}
+        {input(t("detail.edit.location"), edit.location, (v) => set("location", v), false, !identified)}
         <label className="contents">
-          <span className="pt-1.5 text-slate-500">Notes</span>
+          <span className="pt-1.5 text-slate-500">{t("detail.edit.notes")}</span>
           <textarea className="input min-h-14 py-1" value={edit.notes} onChange={(e) => set("notes", e.target.value)} />
         </label>
         <div className="col-span-2 mt-1 space-y-2">
-          {!identified && (
-            <p className="text-xs text-slate-500">The card fields can be edited once it is identified.</p>
-          )}
+          {!identified && <p className="text-xs text-slate-500">{t("detail.edit.notIdentified")}</p>}
           <ErrorNote>{error}</ErrorNote>
           <div className="flex justify-end gap-2">
             <button type="button" className="btn" onClick={onCancel}>
-              Cancel
+              {t("common.cancel")}
             </button>
             <button type="submit" className="btn btn-primary" disabled={busy}>
-              Save
+              {t("common.save")}
             </button>
           </div>
         </div>

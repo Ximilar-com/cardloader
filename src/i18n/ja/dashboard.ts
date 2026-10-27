@@ -1,0 +1,66 @@
+import type { Messages } from "..";
+import type en from "../en/dashboard";
+
+const messages: Messages<typeof en> = {
+  title: "ホーム",
+  newSession: "新しいセッション",
+  lastWeek: "過去7日間",
+  defaultsTitle: "新しいセッションの既定値",
+  runSetupAgain: "セットアップをやり直す",
+  activity: "アクティビティ",
+  lastSessions: "最近のセッション",
+  allSessions: "すべてのセッション",
+  week: {
+    cardsAnalysed: "枚を解析",
+    dayCards: { other: "{date}：{count}枚" },
+    today: "今日",
+  },
+  heatmap: {
+    activeDays: {
+      other: "過去1年間で{count}日、カードを解析しました。",
+    },
+    dayCards: { other: "{date}：{count}枚" },
+    dayNone: "{date}：スキャンなし",
+    noScanning: "スキャンなし",
+    fewer: "少ない",
+    moreCards: "多い",
+  },
+  totals: {
+    cards: "カード",
+    inSessions: { other: "{count}件のセッション" },
+    totalValue: "合計金額",
+    totalValueSub: "解析時の相場",
+    toReview: "要確認",
+    toReviewSub: "未承認",
+    apiCalls: "API呼び出し",
+    apiCallsSub: "過去7日間",
+  },
+  attention: {
+    title: "要対応",
+    noToken: "カードを解析するにはXimilar APIトークンを追加してください。",
+    openSettings: "設定を開く",
+    analysing: "解析中、{done}/{total}",
+    paused: "一時停止中",
+    toReview: { other: "要確認のカード{count}枚" },
+    failed: "{count}件失敗",
+    syncFailed: "Cards Cloudへのアップロードに失敗しました",
+    ebayStopped: "eBayジョブが停止しました",
+    resume: "再開",
+    review: "確認",
+    open: "開く",
+  },
+  defaults: {
+    identifyAs: "識別の種類",
+    game: "ゲーム",
+    anyGame: "すべてのゲーム",
+    grading: "グレーディング",
+    prices: "価格",
+    cardsFrom: "カードの取り込み元",
+    identifyWith: "識別方法",
+    localModel: "ローカルAIモデル",
+    change: "設定で変更",
+  },
+  noSessions: "セッションはまだありません。",
+  sessionCards: { other: "{done}/{count}枚" },
+};
+export default messages;

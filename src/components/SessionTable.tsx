@@ -2,6 +2,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import clsx from "clsx";
 import { ArrowDown, ArrowUp, Cloud, ImageOff } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useT } from "../i18n";
 import type { SlabLabel } from "../lib/api";
 import type { Row, Sort, SortKey } from "../lib/cardview";
 import { grade, price } from "../lib/format";
@@ -50,6 +51,7 @@ export default function SessionTable({
   sort?: Sort | null;
   onSort?: (key: SortKey) => void;
 }) {
+  const t = useT();
   const wordy = useMemo(() => showSlab || rows.some((r) => r.grade == null && r.condition), [showSlab, rows]);
   const checks = !!onCheck;
   const columns = { gridTemplateColumns: gridColumns(showSlab, wordy, checks) };
@@ -96,7 +98,7 @@ export default function SessionTable({
             className="h-4 w-4 accent-[var(--color-accent)]"
             checked={allChecked}
             onChange={() => onCheckAll?.()}
-            aria-label="Select all"
+            aria-label={t("sessions.table.selectAll")}
           />
         )}
         <span />
@@ -104,22 +106,22 @@ export default function SessionTable({
           #
         </Header>
         <Header k="name" sort={sort} onSort={onSort}>
-          Card
+          {t("sessions.table.card")}
         </Header>
         <Header k="set" sort={sort} onSort={onSort}>
-          Set · No.
+          {t("sessions.table.setNo")}
         </Header>
         <Header k="confidence" sort={sort} onSort={onSort}>
-          Match
+          {t("sessions.table.match")}
         </Header>
         <Header k="price" sort={sort} onSort={onSort} right>
-          Price
+          {t("sessions.table.price")}
         </Header>
         <Header k="grade" sort={sort} onSort={onSort} right>
-          Grade
+          {t("sessions.table.grade")}
         </Header>
-        {showSlab && <span className="pl-2">Slab</span>}
-        <span>{showStatus ? "Status" : ""}</span>
+        {showSlab && <span className="pl-2">{t("sessions.table.slab")}</span>}
+        <span>{showStatus ? t("sessions.table.status") : ""}</span>
       </div>
       <div ref={parent} className="min-h-0 flex-1 overflow-y-auto">
         <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
@@ -158,7 +160,7 @@ export default function SessionTable({
                       onCheck?.(r.key, e.shiftKey);
                     }}
                     onChange={() => {}}
-                    aria-label={`Select card ${r.seq}`}
+                    aria-label={t("sessions.table.selectCard", { seq: r.seq })}
                   />
                 )}
                 <Thumb src={r.thumb} />
@@ -168,7 +170,7 @@ export default function SessionTable({
                     <span className="truncate">
                       {r.name ||
                         (r.status === "done" ? (
-                          <span className="text-slate-400">No match</span>
+                          <span className="text-slate-400">{t("status.noMatch")}</span>
                         ) : (
                           <span className="text-slate-400">—</span>
                         ))}
@@ -176,7 +178,7 @@ export default function SessionTable({
                     {r.copies != null && r.copies > 1 && (
                       <span
                         className="shrink-0 rounded bg-slate-100 px-1 text-[11px] text-slate-600 tabular-nums dark:bg-slate-800 dark:text-slate-300"
-                        title={`You have ${r.copies} of this card (same name, set and number)`}
+                        title={t("sessions.table.copies", { count: r.copies })}
                       >
                         ×{r.copies}
                       </span>
@@ -223,7 +225,7 @@ export default function SessionTable({
                 {showSlab && <SlabCell slab={r.slab} />}
                 <span className="flex items-center gap-1.5">
                   {r.status && <StatusChip status={r.status} />}
-                  {r.synced && <Cloud className="h-3.5 w-3.5 text-slate-400" aria-label="Synced" />}
+                  {r.synced && <Cloud className="h-3.5 w-3.5 text-slate-400" aria-label={t("sessions.table.synced")} />}
                   <EbayBadge listing={r.ebay} />
                 </span>
               </div>
@@ -248,6 +250,7 @@ function Header({
   right?: boolean;
   children: ReactNode;
 }) {
+  const t = useT();
   if (!onSort) return <span className={clsx(right && "text-right")}>{children}</span>;
   const active = sort?.key === k;
   const Arrow = sort?.desc ? ArrowDown : ArrowUp;
@@ -259,7 +262,7 @@ function Header({
         active && "text-slate-800 dark:text-slate-200",
       )}
       onClick={() => onSort(k)}
-      title="Sort"
+      title={t("sessions.table.sort")}
     >
       {children}
       {active && <Arrow className="h-3 w-3" />}
@@ -268,15 +271,20 @@ function Header({
 }
 
 function SlabCell({ slab }: { slab?: SlabLabel | null }) {
+  const t = useT();
   if (!slab) return <span className="pl-2 text-slate-400">—</span>;
   return (
     <span
       className="min-w-0 pl-2"
-      title={[slab.company, slab.grade, slab.certificate && `certificate ${slab.certificate}`]
+      title={[
+        slab.company,
+        slab.grade,
+        slab.certificate && t("sessions.table.certificate", { number: slab.certificate }),
+      ]
         .filter(Boolean)
         .join(" · ")}
     >
-      <span className="block truncate font-medium">{slab.company || "Slab"}</span>
+      <span className="block truncate font-medium">{slab.company || t("sessions.table.slab")}</span>
       {slab.grade && <span className="block truncate text-xs text-slate-400 tabular-nums">{slab.grade}</span>}
     </span>
   );

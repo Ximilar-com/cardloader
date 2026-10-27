@@ -27,7 +27,8 @@ import {
   type SettingsView,
   type SourceKind,
 } from "../lib/api";
-import { GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS, dateTime, price } from "../lib/format";
+import { locale, useT } from "../i18n";
+import { dateTime, engineLabels, gradingLabels, idModeLabels, price, sourceLabels } from "../lib/format";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
 /** 53 weeks: the heatmap's columns. */
@@ -43,9 +44,15 @@ function daysBack(n: number, from = new Date()): Date {
   return new Date(from.getFullYear(), from.getMonth(), from.getDate() - n);
 }
 
-const plural = (n: number, word: string) => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
+/** Short weekday names for the heatmap's rows (Sunday first), every other one blank as space allows. */
+function weekdayRows(): string[] {
+  const format = new Intl.DateTimeFormat(locale(), { weekday: "short" });
+  // 2024-01-07 was a Sunday.
+  return Array.from({ length: 7 }, (_, i) => (i % 2 === 1 ? format.format(new Date(2024, 0, 7 + i)) : ""));
+}
 
 export default function DashboardPage() {
+  const t = useT();
   const show = useSetupWizard((s) => s.show);
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [cards, setCards] = useState<Map<string, number> | null>(null);
@@ -86,17 +93,17 @@ export default function DashboardPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-3 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
-        <h1 className="flex-1 text-lg font-semibold">Home</h1>
+        <h1 className="flex-1 text-lg font-semibold">{t("dashboard.title")}</h1>
         {sources.slice(1).map((kind) => {
           const Icon = SOURCE_ICONS[kind];
           return (
             <button key={kind} className="btn" onClick={() => setCreating(kind)}>
-              <Icon className="h-4 w-4" /> {SOURCE_LABELS[kind]}
+              <Icon className="h-4 w-4" /> {sourceLabels()[kind]}
             </button>
           );
         })}
         <button className="btn btn-primary" onClick={() => setCreating(sources[0])}>
-          <Plus className="h-4 w-4" /> New session
+          <Plus className="h-4 w-4" /> {t("dashboard.newSession")}
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -105,13 +112,13 @@ export default function DashboardPage() {
           {sessions && <Totals sessions={sessions} calls={calls} />}
           {settings && sessions && <Attention settings={settings} sessions={sessions} onResume={resume} />}
           <div className="grid grid-cols-[3fr_2fr] gap-5">
-            <Card title="Last 7 days">{cards && <WeekBars cards={cards} />}</Card>
+            <Card title={t("dashboard.lastWeek")}>{cards && <WeekBars cards={cards} />}</Card>
             <Card
-              title="Defaults for new sessions"
+              title={t("dashboard.defaultsTitle")}
               action={
                 settings && (
                   <button className="btn btn-ghost px-2 py-1 text-xs" onClick={() => show(settings)}>
-                    <Wand2 className="h-3.5 w-3.5" /> Run setup again
+                    <Wand2 className="h-3.5 w-3.5" /> {t("dashboard.runSetupAgain")}
                   </button>
                 )
               }
@@ -119,15 +126,15 @@ export default function DashboardPage() {
               {settings && <Defaults settings={settings} />}
             </Card>
           </div>
-          <Card title="Activity">{cards && <Heatmap cards={cards} />}</Card>
+          <Card title={t("dashboard.activity")}>{cards && <Heatmap cards={cards} />}</Card>
           <Card
-            title="Last sessions"
+            title={t("dashboard.lastSessions")}
             action={
               <Link
                 to="/sessions"
                 className="flex items-center gap-0.5 text-xs font-medium text-accent hover:underline"
               >
-                All sessions <ChevronRight className="h-3.5 w-3.5" />
+                {t("dashboard.allSessions")} <ChevronRight className="h-3.5 w-3.5" />
               </Link>
             }
           >
@@ -154,6 +161,7 @@ function Card({ title, action, children }: { title: string; action?: ReactNode; 
 
 /** Cards analysed on each of the last 7 days, today last. */
 function WeekBars({ cards }: { cards: Map<string, number> }) {
+  const t = useT();
   const [hover, setHover] = useState<number | null>(null);
   const days = Array.from({ length: 7 }, (_, i) => {
     const date = daysBack(6 - i);
@@ -166,8 +174,8 @@ function WeekBars({ cards }: { cards: Map<string, number> }) {
   return (
     <div>
       <div className="mb-4">
-        <span className="text-3xl font-semibold tabular-nums">{total.toLocaleString()}</span>
-        <span className="ml-2 text-sm text-slate-500">cards analysed</span>
+        <span className="text-3xl font-semibold tabular-nums">{total.toLocaleString(locale())}</span>
+        <span className="ml-2 text-sm text-slate-500">{t("dashboard.week.cardsAnalysed")}</span>
       </div>
       <div className="relative flex gap-2 border-b border-slate-200 dark:border-slate-700" style={{ height: PLOT }}>
         {days.map((d, i) => (
@@ -182,8 +190,10 @@ function WeekBars({ cards }: { cards: Map<string, number> }) {
                 className="pointer-events-none absolute z-10 rounded-md bg-slate-900 px-2 py-1 text-xs whitespace-nowrap text-white shadow-lg dark:bg-slate-100 dark:text-slate-900"
                 style={{ bottom: Math.max(4, (d.n / max) * (PLOT - 8)) + 6 }}
               >
-                {d.date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}:{" "}
-                {plural(d.n, "card")}
+                {t("dashboard.week.dayCards", {
+                  count: d.n,
+                  date: d.date.toLocaleDateString(locale(), { weekday: "short", month: "short", day: "numeric" }),
+                })}
               </div>
             )}
             {d.n > 0 && (
@@ -198,7 +208,7 @@ function WeekBars({ cards }: { cards: Map<string, number> }) {
       <div className="mt-1.5 flex gap-2">
         {days.map((d, i) => (
           <div key={i} className={clsx("flex-1 text-center text-xs", i === 6 ? "font-medium" : "text-slate-500")}>
-            {i === 6 ? "Today" : d.date.toLocaleDateString(undefined, { weekday: "short" })}
+            {i === 6 ? t("dashboard.week.today") : d.date.toLocaleDateString(locale(), { weekday: "short" })}
           </div>
         ))}
       </div>
@@ -211,6 +221,7 @@ const LEVELS = ["bg-accent/30", "bg-accent/55", "bg-accent/80", "bg-accent"];
 
 /** One square per day for the last 53 weeks, darker the more cards were analysed that day. */
 function Heatmap({ cards }: { cards: Map<string, number> }) {
+  const t = useT();
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null);
   const today = new Date();
   // Columns are weeks starting on Sunday; the last one is the current week, up to today.
@@ -224,15 +235,16 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
   const busiest = Math.max(1, ...cards.values());
   const CELL = 14;
   const GAP = 3;
+  const dateOf = (d: Date) => d.toLocaleDateString(locale(), { dateStyle: "medium" });
 
   return (
     <div>
-      <p className="mb-3 text-sm text-slate-500">Cards were analysed on {plural(active, "day")} in the last year.</p>
+      <p className="mb-3 text-sm text-slate-500">{t("dashboard.heatmap.activeDays", { count: active })}</p>
       <div className="relative overflow-x-auto">
         <div className="flex gap-[3px] pl-8" style={{ height: 16 }}>
           {weeks.map((week, i) => {
             const first = week[0];
-            const label = first.getDate() <= 7 ? first.toLocaleDateString(undefined, { month: "short" }) : "";
+            const label = first.getDate() <= 7 ? first.toLocaleDateString(locale(), { month: "short" }) : "";
             return (
               <div key={i} className="relative shrink-0 text-[10px] text-slate-500" style={{ width: CELL }}>
                 <span className="absolute left-0 whitespace-nowrap">{label}</span>
@@ -245,7 +257,7 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
             className="grid w-8 shrink-0 text-[10px] text-slate-500"
             style={{ gridTemplateRows: `repeat(7, ${CELL}px)`, rowGap: GAP }}
           >
-            {["", "Mon", "", "Wed", "", "Fri", ""].map((d, i) => (
+            {weekdayRows().map((d, i) => (
               <span key={i} className="leading-3">
                 {d}
               </span>
@@ -269,7 +281,9 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
                         const box = e.currentTarget.getBoundingClientRect();
                         const parent = e.currentTarget.closest(".relative")!.getBoundingClientRect();
                         setHover({
-                          text: `${d.toLocaleDateString(undefined, { dateStyle: "medium" })}: ${n ? plural(n, "card") : "no scanning"}`,
+                          text: n
+                            ? t("dashboard.heatmap.dayCards", { count: n, date: dateOf(d) })
+                            : t("dashboard.heatmap.dayNone", { date: dateOf(d) }),
                           x: box.left - parent.left + CELL / 2,
                           y: box.top - parent.top,
                         });
@@ -292,14 +306,14 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
       </div>
       <div className="mt-3 flex items-center justify-end gap-3 text-xs text-slate-500">
         <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-[3px] bg-slate-200 dark:bg-slate-800" /> No scanning
+          <span className="h-3 w-3 rounded-[3px] bg-slate-200 dark:bg-slate-800" /> {t("dashboard.heatmap.noScanning")}
         </span>
         <span className="flex items-center gap-1.5">
-          Fewer
+          {t("dashboard.heatmap.fewer")}
           {LEVELS.map((c) => (
             <span key={c} className={clsx("h-3 w-3 rounded-[3px]", c)} />
           ))}
-          More cards
+          {t("dashboard.heatmap.moreCards")}
         </span>
       </div>
     </div>
@@ -308,12 +322,21 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
 
 /** Everything analysed so far, across the local sessions. */
 function Totals({ sessions, calls }: { sessions: Session[]; calls: number }) {
+  const t = useT();
   const sum = (f: (s: Session) => number) => sessions.reduce((n, s) => n + f(s), 0);
   const tiles: [string, string, string?][] = [
-    ["Cards", sum((s) => s.counts.done).toLocaleString(), `in ${plural(sessions.length, "session")}`],
-    ["Total value", price(sum((s) => s.counts.totalPrice)), "market prices when analysed"],
-    ["To review", sum((s) => s.counts.toReview).toLocaleString(), "not accepted yet"],
-    ["API calls", calls.toLocaleString(), "last 7 days"],
+    [
+      t("dashboard.totals.cards"),
+      sum((s) => s.counts.done).toLocaleString(locale()),
+      t("dashboard.totals.inSessions", { count: sessions.length }),
+    ],
+    [t("dashboard.totals.totalValue"), price(sum((s) => s.counts.totalPrice)), t("dashboard.totals.totalValueSub")],
+    [
+      t("dashboard.totals.toReview"),
+      sum((s) => s.counts.toReview).toLocaleString(locale()),
+      t("dashboard.totals.toReviewSub"),
+    ],
+    [t("dashboard.totals.apiCalls"), calls.toLocaleString(locale()), t("dashboard.totals.apiCallsSub")],
   ];
   return (
     <div className="grid grid-cols-4 gap-5">
@@ -338,24 +361,25 @@ function Attention({
   sessions: Session[];
   onResume: (id: string) => void;
 }) {
+  const t = useT();
   const rows: ReactNode[] = [];
   if (!settings.tokenSet && settings.engine === "ximilar")
     rows.push(
-      <AttentionRow key="token" icon={KeyRound} text="Add your Ximilar API token to analyse cards.">
+      <AttentionRow key="token" icon={KeyRound} text={t("dashboard.attention.noToken")}>
         <Link to="/settings" className="btn px-2 py-1 text-xs">
-          Open Settings
+          {t("dashboard.attention.openSettings")}
         </Link>
       </AttentionRow>,
     );
   for (const s of sessions) {
     const c = s.counts;
     const notes = [
-      s.status === "running" && `analysing, ${c.done + c.errors} of ${c.total}`,
-      s.status === "paused" && "paused",
-      c.toReview > 0 && `${plural(c.toReview, "card")} to review`,
-      c.errors > 0 && `${c.errors} failed`,
-      s.syncError && "Cards Cloud upload failed",
-      s.ebayError && "eBay job stopped",
+      s.status === "running" && t("dashboard.attention.analysing", { done: c.done + c.errors, total: c.total }),
+      s.status === "paused" && t("dashboard.attention.paused"),
+      c.toReview > 0 && t("dashboard.attention.toReview", { count: c.toReview }),
+      c.errors > 0 && t("dashboard.attention.failed", { count: c.errors }),
+      s.syncError && t("dashboard.attention.syncFailed"),
+      s.ebayError && t("dashboard.attention.ebayStopped"),
     ].filter(Boolean);
     if (!notes.length) continue;
     const filter = c.toReview > 0 ? "?filter=review" : c.errors > 0 ? "?filter=failed" : "";
@@ -363,18 +387,18 @@ function Attention({
       <AttentionRow key={s.id} icon={SOURCE_ICONS[s.sourceKind]} title={s.name} text={notes.join(" · ")}>
         {s.status === "paused" && (
           <button className="btn px-2 py-1 text-xs" onClick={() => onResume(s.id)}>
-            <Play className="h-3 w-3" /> Resume
+            <Play className="h-3 w-3" /> {t("dashboard.attention.resume")}
           </button>
         )}
         <Link to={`/sessions/${s.id}${filter}`} className="btn px-2 py-1 text-xs">
-          {c.toReview > 0 ? "Review" : "Open"}
+          {c.toReview > 0 ? t("dashboard.attention.review") : t("dashboard.attention.open")}
         </Link>
       </AttentionRow>,
     );
   }
   if (!rows.length) return null;
   return (
-    <Card title="Needs attention">
+    <Card title={t("dashboard.attention.title")}>
       <ul className="-mx-2 max-h-72 overflow-y-auto">{rows.slice(0, 8)}</ul>
     </Card>
   );
@@ -406,18 +430,22 @@ function AttentionRow({
 }
 
 function Defaults({ settings }: { settings: SettingsView }) {
+  const t = useT();
+  const game =
+    GAME_LABELS[settings.defaultSubcategory] ?? (settings.defaultSubcategory || t("dashboard.defaults.anyGame"));
   const rows: [string, string][] = [
-    ["Identify as", ID_MODE_LABELS[settings.defaultIdMode]],
-    ...(settings.defaultIdMode === "tcg"
-      ? ([["Game", GAME_LABELS[settings.defaultSubcategory] ?? (settings.defaultSubcategory || "Any game")]] as [
-          string,
-          string,
-        ][])
-      : []),
-    ["Grading", GRADING_LABELS[settings.defaultGrading]],
-    ["Prices", settings.priceStats ? "On" : "Off"],
-    ["Cards from", settings.defaultSources.map((s) => SOURCE_LABELS[s]).join(", ") || SOURCE_LABELS.folder],
-    ["Identify with", settings.engine === "local" ? "Local AI model" : "Ximilar API"],
+    [t("dashboard.defaults.identifyAs"), idModeLabels()[settings.defaultIdMode]],
+    ...(settings.defaultIdMode === "tcg" ? ([[t("dashboard.defaults.game"), game]] as [string, string][]) : []),
+    [t("dashboard.defaults.grading"), gradingLabels()[settings.defaultGrading]],
+    [t("dashboard.defaults.prices"), settings.priceStats ? t("common.on") : t("common.off")],
+    [
+      t("dashboard.defaults.cardsFrom"),
+      settings.defaultSources.map((s) => sourceLabels()[s]).join(", ") || sourceLabels().folder,
+    ],
+    [
+      t("dashboard.defaults.identifyWith"),
+      settings.engine === "local" ? t("dashboard.defaults.localModel") : engineLabels().ximilar,
+    ],
   ];
   return (
     <div>
@@ -433,19 +461,20 @@ function Defaults({ settings }: { settings: SettingsView }) {
         to="/settings"
         className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
       >
-        <Settings2 className="h-3.5 w-3.5" /> Change in Settings
+        <Settings2 className="h-3.5 w-3.5" /> {t("dashboard.defaults.change")}
       </Link>
     </div>
   );
 }
 
 function LastSessions({ sessions, onNew }: { sessions: Session[]; onNew: () => void }) {
+  const t = useT();
   if (!sessions.length)
     return (
       <div className="flex items-center justify-between rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">
-        No sessions yet.
+        {t("dashboard.noSessions")}
         <button className="btn btn-primary" onClick={onNew}>
-          <Plus className="h-4 w-4" /> New session
+          <Plus className="h-4 w-4" /> {t("dashboard.newSession")}
         </button>
       </div>
     );
@@ -465,11 +494,11 @@ function LastSessions({ sessions, onNew }: { sessions: Session[]; onNew: () => v
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium">{s.name}</span>
                 <span className="block text-xs text-slate-500">
-                  {SOURCE_LABELS[s.sourceKind]} · {dateTime(s.createdAt)}
+                  {sourceLabels()[s.sourceKind]} · {dateTime(s.createdAt)}
                 </span>
               </span>
               <span className="text-sm text-slate-500 tabular-nums">
-                {s.counts.done.toLocaleString()} / {plural(s.counts.total, "card")}
+                {t("dashboard.sessionCards", { done: s.counts.done, count: s.counts.total })}
               </span>
               <span className="w-20 text-right text-sm font-medium tabular-nums">{price(s.counts.totalPrice)}</span>
               <StatusChip status={s.status} />

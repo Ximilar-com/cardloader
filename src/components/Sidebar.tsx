@@ -3,19 +3,21 @@ import { LayoutDashboard, Layers, Settings, WalletCards } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ximilarLogo from "../assets/ximilar.svg";
+import { useT, type Key } from "../i18n";
 import { isUnsaved, useUnsavedSettings } from "../pages/SettingsPage";
 import Logo from "./Logo";
 
 const NAV = [
-  { to: "/", label: "Home", icon: LayoutDashboard, match: [] as string[] },
-  { to: "/sessions", label: "Sessions", icon: Layers, match: ["/sessions", "/remote"] },
-  { to: "/cards", label: "Cards", icon: WalletCards, match: ["/cards"] },
-  { to: "/settings", label: "Settings", icon: Settings, match: ["/settings"] },
+  { to: "/", label: "sidebar.nav.home" as Key, icon: LayoutDashboard, match: [] as string[] },
+  { to: "/sessions", label: "sidebar.nav.sessions" as Key, icon: Layers, match: ["/sessions", "/remote"] },
+  { to: "/cards", label: "sidebar.nav.cards" as Key, icon: WalletCards, match: ["/cards"] },
+  { to: "/settings", label: "sidebar.nav.settings" as Key, icon: Settings, match: ["/settings"] },
 ];
 
 export default function Sidebar() {
   const { pathname } = useLocation();
   const unsaved = useUnsavedSettings((s) => isUnsaved(s.saved, s.draft));
+  const t = useT();
   return (
     <nav className="flex w-[76px] shrink-0 flex-col items-center bg-rail py-3 text-white">
       <div className="mb-5 flex flex-col items-center" title="Cardloader">
@@ -41,12 +43,13 @@ export default function Sidebar() {
               {to === "/settings" && unsaved && (
                 <span
                   className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-amber-400"
-                  title="Unsaved settings"
-                  aria-label="Unsaved settings"
+                  title={t("sidebar.unsavedSettings")}
+                  aria-label={t("sidebar.unsavedSettings")}
                 />
               )}
             </span>
-            {label}
+            {/* Long words (Einstellungen) break with a hyphen rather than spill out of the rail. */}
+            <span className="max-w-full px-0.5 text-center leading-tight break-words hyphens-auto">{t(label)}</span>
           </NavLink>
         ))}
       </div>
@@ -57,7 +60,7 @@ export default function Sidebar() {
           void openUrl("https://www.ximilar.com");
         }}
         className="mt-3 px-2 opacity-70 transition-opacity hover:opacity-100"
-        title="Powered by Ximilar"
+        title={t("sidebar.poweredBy")}
       >
         <img src={ximilarLogo} alt="Ximilar" className="w-14" />
       </a>

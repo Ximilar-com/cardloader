@@ -58,7 +58,8 @@ import {
   type Sort,
   type SortKey,
 } from "../lib/cardview";
-import { dateTime, duration, eta, GRADING_LABELS, ID_MODE_LABELS, price, SOURCE_LABELS } from "../lib/format";
+import { dateTime, duration, engineLabels, eta, idModeLabels, price, sourceLabels } from "../lib/format";
+import { rich, t, useT } from "../i18n";
 
 export default function SessionPage() {
   const { id = "" } = useParams();
@@ -66,6 +67,7 @@ export default function SessionPage() {
 }
 
 function SessionView({ id }: { id: string }) {
+  const t = useT();
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [items, setItems] = useState<ItemSummary[]>([]);
@@ -120,7 +122,7 @@ function SessionView({ id }: { id: string }) {
       const processed = s.counts.done + s.counts.errors + s.counts.grading;
       const now = Date.now();
       if (s.status === "running") {
-        samples.current = [...samples.current.filter(([t]) => now - t < 90_000), [now, processed]];
+        samples.current = [...samples.current.filter(([at]) => now - at < 90_000), [now, processed]];
         setSecondsLeft(eta(samples.current, s.counts.queued + s.counts.inProgress));
       } else {
         samples.current = [];
@@ -227,7 +229,7 @@ function SessionView({ id }: { id: string }) {
     api
       .reviewItems(id, ids)
       .then((n) => {
-        if (ids.length > 1) toast(`Accepted ${n} match${n === 1 ? "" : "es"}`);
+        if (ids.length > 1) toast(t("session.toast.accepted", { count: n }));
         if (next) select(next);
       })
       .catch(toastError);
@@ -269,7 +271,7 @@ function SessionView({ id }: { id: string }) {
         <header className="border-b border-slate-200 px-6 pt-4 pb-3 dark:border-slate-800">
           {/* When the detail panel leaves too little room, the buttons go to their own line. */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <Link to="/sessions" className="btn btn-ghost px-1.5" aria-label="Back to sessions">
+            <Link to="/sessions" className="btn btn-ghost px-1.5" aria-label={t("session.backToSessions")}>
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <div className="min-w-64 flex-1">
@@ -286,7 +288,7 @@ function SessionView({ id }: { id: string }) {
                 <StatusChip status={status} />
               </div>
               <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-xs whitespace-nowrap text-slate-500">
-                <span>{SOURCE_LABELS[session.sourceKind]}</span>
+                <span>{sourceLabels()[session.sourceKind]}</span>
                 {session.sourceKind !== "scanner" ? (
                   <button
                     className="flex min-w-0 shrink items-center gap-1 hover:underline"
@@ -299,37 +301,43 @@ function SessionView({ id }: { id: string }) {
                   <span className="truncate">{session.sourceRef}</span>
                 )}
                 <span>·</span>
-                <span>{session.options.engine === "local" ? "Local model" : ID_MODE_LABELS[session.idMode]}</span>
+                <span>
+                  {session.options.engine === "local" ? engineLabels().local : idModeLabels()[session.idMode]}
+                </span>
                 {session.options.grading !== "off" && (
                   <>
                     <span>·</span>
-                    <span>Grading: {GRADING_LABELS[session.options.grading].split(" (")[0]}</span>
+                    <span>{t("session.grading", { mode: t(`status.gradingShort.${session.options.grading}`) })}</span>
                   </>
                 )}
                 <span>·</span>
-                <span>Created {dateTime(session.createdAt)}</span>
+                <span>{t("session.created", { date: dateTime(session.createdAt) })}</span>
               </p>
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-2">
               {running && (
                 <button className="btn" onClick={() => act(() => api.pauseSession(id))}>
-                  <Pause className="h-4 w-4" /> Pause
+                  <Pause className="h-4 w-4" /> {t("session.pause")}
                 </button>
               )}
               {status === "paused" && (
                 <button className="btn btn-primary" onClick={() => act(() => api.runSession(id))}>
-                  <Play className="h-4 w-4" /> Resume
+                  <Play className="h-4 w-4" /> {t("session.resume")}
                 </button>
               )}
               {active && (
                 <button className="btn" onClick={() => act(() => api.stopSession(id))}>
-                  <Square className="h-4 w-4" /> Stop
+                  <Square className="h-4 w-4" /> {t("session.stop")}
                 </button>
               )}
               {!active && (
                 <button className="btn btn-primary" onClick={() => act(() => api.runSession(id))}>
                   <Play className="h-4 w-4" />{" "}
-                  {status === "draft" ? "Run" : session.sourceKind === "scanner" ? "Scan more" : "Run again"}
+                  {status === "draft"
+                    ? t("session.run")
+                    : session.sourceKind === "scanner"
+                      ? t("session.scanMore")
+                      : t("session.runAgain")}
                 </button>
               )}
               {!active && counts.errors > 0 && (
@@ -337,16 +345,12 @@ function SessionView({ id }: { id: string }) {
                   className="btn"
                   onClick={() => act(() => api.retryItems(id).then(() => api.runSession(id, false)))}
                 >
-                  <RotateCcw className="h-4 w-4" /> Retry {counts.errors} failed
+                  <RotateCcw className="h-4 w-4" /> {t("session.retryFailed", { count: counts.errors })}
                 </button>
               )}
               {!active && counts.done > 0 && (counts.synced < counts.done || session.syncError) && (
-                <button
-                  className="btn"
-                  onClick={() => act(() => api.syncSession(id))}
-                  title="Upload this session to Ximilar Cards Cloud"
-                >
-                  <CloudUpload className="h-4 w-4" /> Upload
+                <button className="btn" onClick={() => act(() => api.syncSession(id))} title={t("session.uploadTitle")}>
+                  <CloudUpload className="h-4 w-4" /> {t("session.upload")}
                 </button>
               )}
               {!active && counts.ebayDrafts > 0 && (
@@ -354,15 +358,16 @@ function SessionView({ id }: { id: string }) {
                   className="btn"
                   disabled={!!ebayJob}
                   onClick={() => setPublishing({ ids: null, count: counts.ebayDrafts })}
-                  title="Publish the drafts: they go live on eBay"
+                  title={t("session.publishOnEbayTitle")}
                 >
-                  <Send className="h-4 w-4" /> Publish on eBay
+                  <Send className="h-4 w-4" /> {t("session.publishOnEbay")}
                 </button>
               )}
-              <Menu items={actions.sellMenu(session)} label="List or export the cards">
-                <Store className="h-4 w-4" /> Sell / Export <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              <Menu items={actions.sellMenu(session)} label={t("session.sellMenu")}>
+                <Store className="h-4 w-4" /> {t("session.sellExport")}{" "}
+                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
               </Menu>
-              <Menu items={actions.menu(session, { sell: false })} label="Session actions" />
+              <Menu items={actions.menu(session, { sell: false })} label={t("session.sessionActions")} />
             </div>
           </div>
 
@@ -370,17 +375,30 @@ function SessionView({ id }: { id: string }) {
             <ProgressBar counts={counts} active={running} />
             <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
               <span>
-                <b className="text-slate-800 tabular-nums dark:text-slate-100">{counts.done}</b> / {counts.total}{" "}
-                analysed
+                {rich(t("session.progress.analysed", { done: counts.done, total: counts.total }), {
+                  b: (s) => <b className="text-slate-800 tabular-nums dark:text-slate-100">{s}</b>,
+                })}
               </span>
-              {counts.inProgress > 0 && <span className="text-accent">{counts.inProgress} in progress</span>}
-              {counts.grading > 0 && <span className="text-violet-600">{counts.grading} grading</span>}
-              {counts.errors > 0 && <span className="text-red-600">{counts.errors} failed</span>}
-              {counts.queued > 0 && <span>{counts.queued} queued</span>}
-              {running && secondsLeft != null && <span>~{duration(secondsLeft)} left</span>}
-              {counts.totalPrice > 0 && <span>Total value {price(counts.totalPrice)}</span>}
+              {counts.inProgress > 0 && (
+                <span className="text-accent">{t("session.progress.inProgress", { count: counts.inProgress })}</span>
+              )}
+              {counts.grading > 0 && (
+                <span className="text-violet-600">{t("session.progress.grading", { count: counts.grading })}</span>
+              )}
+              {counts.errors > 0 && (
+                <span className="text-red-600">{t("session.progress.failed", { count: counts.errors })}</span>
+              )}
+              {counts.queued > 0 && <span>{t("session.progress.queued", { count: counts.queued })}</span>}
+              {running && secondsLeft != null && (
+                <span>{t("session.progress.left", { time: duration(secondsLeft) })}</span>
+              )}
+              {counts.totalPrice > 0 && (
+                <span>{t("session.progress.totalValue", { price: price(counts.totalPrice) })}</span>
+              )}
               {counts.calls > 0 && (
-                <span title="Paid Ximilar API calls these cards took">{counts.calls} API calls</span>
+                <span title={t("session.progress.apiCallsTitle")}>
+                  {t("session.progress.apiCalls", { count: counts.calls })}
+                </span>
               )}
               <span className="flex-1" />
               {(session.remoteSessionId || session.options.syncRemote) && (
@@ -390,13 +408,13 @@ function SessionView({ id }: { id: string }) {
                 >
                   <Cloud className="h-3.5 w-3.5" />
                   {session.syncError
-                    ? "Cards Cloud: not synced"
+                    ? t("session.cloud.notSynced")
                     : session.remoteSessionId
-                      ? `Cards Cloud: ${counts.synced} synced`
-                      : "Cards Cloud: waiting"}
+                      ? t("session.cloud.synced", { count: counts.synced })
+                      : t("session.cloud.waiting")}
                   {session.remoteSessionId && (
                     <Link to={`/remote/${session.remoteSessionId}`} className="ml-1 text-accent hover:underline">
-                      open
+                      {t("session.cloud.open")}
                     </Link>
                   )}
                 </span>
@@ -405,9 +423,9 @@ function SessionView({ id }: { id: string }) {
               <button
                 className={clsx("flex items-center gap-1", follow ? "text-accent" : "hover:text-slate-700")}
                 onClick={() => setFollow((f) => !f)}
-                title="Keep the newest card in view"
+                title={t("session.followTitle")}
               >
-                <ArrowDownToLine className="h-3.5 w-3.5" /> Follow
+                <ArrowDownToLine className="h-3.5 w-3.5" /> {t("session.follow")}
               </button>
             </div>
             {session.error && (
@@ -418,14 +436,14 @@ function SessionView({ id }: { id: string }) {
             {session.syncError && !running && (
               <Warning
                 text={`Cards Cloud: ${session.syncError}`}
-                action="Try again"
+                action={t("session.tryAgain")}
                 onAction={() => act(() => api.syncSession(id))}
               />
             )}
             {session.ebayError && !ebayJob && (
               <Warning
                 text={`eBay: ${session.ebayError}`}
-                action="Check again"
+                action={t("session.checkAgain")}
                 onAction={() => act(() => api.ebayRefresh(id, true))}
               />
             )}
@@ -440,12 +458,16 @@ function SessionView({ id }: { id: string }) {
         {rows.length > 0 &&
           (checked.size > 0 ? (
             <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
-              <span className="font-medium">{checked.size} selected</span>
+              <span className="font-medium">{t("session.bulk.selected", { count: checked.size })}</span>
               <span className="flex-1" />
               {/* Accept and Unaccept share the first place: a card shows the one it can do. */}
               {rows.some((r) => (!r.reviewed || r.byAgent) && checked.has(r.key)) && (
-                <button className="btn px-2 py-1 text-xs" onClick={() => accept(checkedIds)} title="Accept the matches">
-                  <Check className="h-3.5 w-3.5" /> Accept
+                <button
+                  className="btn px-2 py-1 text-xs"
+                  onClick={() => accept(checkedIds)}
+                  title={t("session.bulk.acceptTitle")}
+                >
+                  <Check className="h-3.5 w-3.5" /> {t("session.bulk.accept")}
                 </button>
               )}
               {rows.some((r) => r.accepted && checked.has(r.key)) && (
@@ -454,28 +476,28 @@ function SessionView({ id }: { id: string }) {
                   onClick={() =>
                     api
                       .reviewItems(id, checkedIds, false)
-                      .then((n) => toast(`Unaccepted ${n} match${n === 1 ? "" : "es"}`))
+                      .then((n) => toast(t("session.toast.unaccepted", { count: n })))
                       .catch(toastError)
                   }
-                  title="Take the accepts back"
+                  title={t("session.bulk.unacceptTitle")}
                 >
-                  <Undo2 className="h-3.5 w-3.5" /> Unaccept
+                  <Undo2 className="h-3.5 w-3.5" /> {t("session.bulk.unaccept")}
                 </button>
               )}
               <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedIds)}>
-                <MapPin className="h-3.5 w-3.5" /> Set location…
+                <MapPin className="h-3.5 w-3.5" /> {t("session.bulk.setLocation")}
               </button>
               <button
                 className="btn px-2 py-1 text-xs"
                 onClick={() => turnUpright(checkedIds)}
-                title="Turn the cards Ximilar found upside down, front and back"
+                title={t("session.bulk.turnUprightTitle")}
               >
-                <RotateCw className="h-3.5 w-3.5" /> Turn upright
+                <RotateCw className="h-3.5 w-3.5" /> {t("session.bulk.turnUpright")}
               </button>
               <button
                 className="btn px-2 py-1 text-xs"
                 disabled={active}
-                title={active ? "Wait until the session has finished" : "Analyse these cards again (uses API calls)"}
+                title={active ? t("session.bulk.waitUntilFinished") : t("session.bulk.analyseAgainTitle")}
                 onClick={() =>
                   act(() =>
                     api.retryItems(id, checkedIds).then(() => {
@@ -485,20 +507,20 @@ function SessionView({ id }: { id: string }) {
                   )
                 }
               >
-                <RotateCcw className="h-3.5 w-3.5" /> Analyse again
+                <RotateCcw className="h-3.5 w-3.5" /> {t("session.bulk.analyseAgain")}
               </button>
               <button
                 className="btn px-2 py-1 text-xs text-red-600 dark:text-red-400"
                 disabled={active}
-                title={active ? "Stop the session to delete cards" : undefined}
+                title={active ? t("session.bulk.stopToDelete") : undefined}
                 onClick={() => setDeleting(checkedIds)}
               >
-                <Trash2 className="h-3.5 w-3.5" /> Delete…
+                <Trash2 className="h-3.5 w-3.5" /> {t("session.bulk.delete")}
               </button>
               <button
                 className="btn btn-ghost px-1.5"
                 onClick={() => setChecked(new Set())}
-                aria-label="Clear the selection"
+                aria-label={t("session.bulk.clear")}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -506,38 +528,38 @@ function SessionView({ id }: { id: string }) {
           ) : (
             <div className="flex items-center gap-1.5 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
               <Chip on={filter === "all"} onClick={() => setFilter("all")}>
-                All {rows.length}
+                {t("session.filter.all", { count: rows.length })}
               </Chip>
               <Chip on={filter === "review"} onClick={() => setFilter("review")} disabled={!tally.review}>
-                <CircleQuestionMark className="h-3.5 w-3.5" /> To review {tally.review}
+                <CircleQuestionMark className="h-3.5 w-3.5" /> {t("session.filter.review", { count: tally.review })}
               </Chip>
               <Chip on={filter === "failed"} onClick={() => setFilter("failed")} disabled={!tally.failed}>
-                Failed {tally.failed}
+                {t("session.filter.failed", { count: tally.failed })}
               </Chip>
               <Chip on={filter === "corrected"} onClick={() => setFilter("corrected")} disabled={!tally.corrected}>
-                Corrected {tally.corrected}
+                {t("session.filter.corrected", { count: tally.corrected })}
               </Chip>
               {(tally.agent > 0 || filter === "agent") && (
                 <Chip on={filter === "agent"} onClick={() => setFilter("agent")} disabled={!tally.agent}>
-                  <Bot className="h-3.5 w-3.5" /> By AI {tally.agent}
+                  <Bot className="h-3.5 w-3.5" /> {t("session.filter.agent", { count: tally.agent })}
                 </Chip>
               )}
               {filter === "review" && shown.length > 0 && (
                 <button
                   className="btn ml-1 px-2 py-0.5 text-xs"
                   onClick={() => accept(shown.map((r) => Number(r.key)))}
-                  title="Accept every match in this list"
+                  title={t("session.filter.acceptAllTitle")}
                 >
-                  <Check className="h-3 w-3" /> Accept all {shown.length}
+                  <Check className="h-3 w-3" /> {t("session.filter.acceptAll", { count: shown.length })}
                 </button>
               )}
               {filter === "agent" && shown.length > 0 && (
                 <button
                   className="btn ml-1 px-2 py-0.5 text-xs"
                   onClick={() => accept(shown.map((r) => Number(r.key)))}
-                  title="You checked what the agent did: the reviews become yours"
+                  title={t("session.filter.confirmAllTitle")}
                 >
-                  <Check className="h-3 w-3" /> Confirm all {shown.length}
+                  <Check className="h-3 w-3" /> {t("session.filter.confirmAll", { count: shown.length })}
                 </button>
               )}
               <span className="flex-1" />
@@ -545,18 +567,18 @@ function SessionView({ id }: { id: string }) {
                 <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 <input
                   className="input w-52 py-1 pl-7 text-sm"
-                  placeholder="Find a card…"
+                  placeholder={t("session.filter.find")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Escape" && setQuery("")}
-                  aria-label="Find a card"
+                  aria-label={t("session.filter.findLabel")}
                 />
               </label>
               <button
                 className="btn btn-ghost px-1.5"
                 onClick={() => setKeysHelp(true)}
-                title="Keyboard shortcuts"
-                aria-label="Keyboard shortcuts"
+                title={t("session.keys.title")}
+                aria-label={t("session.keys.title")}
               >
                 <Keyboard className="h-4 w-4" />
               </button>
@@ -580,7 +602,7 @@ function SessionView({ id }: { id: string }) {
             />
           ) : rows.length > 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-500">
-              {filter === "review" && !query ? "Nothing left to review." : "No cards match."}
+              {filter === "review" && !query ? t("session.empty.nothingToReview") : t("session.empty.noMatch")}
               <button
                 className="btn"
                 onClick={() => {
@@ -588,12 +610,12 @@ function SessionView({ id }: { id: string }) {
                   setQuery("");
                 }}
               >
-                Show all cards
+                {t("session.empty.showAll")}
               </button>
             </div>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-slate-500">
-              {running ? "Waiting for the first card…" : "No cards yet — press Run."}
+              {running ? t("session.empty.waiting") : t("session.empty.noCards")}
             </div>
           )}
         </div>
@@ -603,7 +625,7 @@ function SessionView({ id }: { id: string }) {
         <DetailPanel
           key={selected}
           view={viewFromItem(detail)}
-          position={at >= 0 ? `Card ${at + 1} of ${shown.length}` : undefined}
+          position={at >= 0 ? t("session.position", { n: at + 1, total: shown.length }) : undefined}
           onPrev={step(-1)}
           onNext={step(1)}
           onAccept={() => accept([detail.id])}
@@ -615,7 +637,7 @@ function SessionView({ id }: { id: string }) {
               .turnItem(detail.id)
               .then((d) => {
                 setDetail(d);
-                toast("Turned upright");
+                toast(t("session.toast.turned"));
               })
               .catch(toastError)
           }
@@ -652,42 +674,39 @@ function SessionView({ id }: { id: string }) {
 
       {publishing && (
         <ConfirmDialog
-          title="Publish on eBay?"
-          confirm={`Publish ${publishing.count} listing${publishing.count === 1 ? "" : "s"}`}
+          title={t("session.publish.title")}
+          confirm={t("session.publish.confirm", { count: publishing.count })}
           danger={false}
           onClose={() => setPublishing(null)}
           onConfirm={() => api.ebayPublish(id, publishing.ids ?? undefined)}
         >
-          {publishing.count === 1 ? "The draft goes" : `${publishing.count} drafts go`} live on eBay at the prices they
-          were drafted with. eBay’s fees apply once listed or sold.
+          {t("session.publish.text", { count: publishing.count })}
         </ConfirmDialog>
       )}
 
       {deleting && (
         <ConfirmDialog
-          title={deleting.length === 1 ? "Delete this card?" : `Delete ${deleting.length} cards?`}
-          confirm="Delete"
+          title={t("session.deleteCards.title", { count: deleting.length })}
+          confirm={t("common.delete")}
           onClose={() => setDeleting(null)}
           onConfirm={() => api.deleteItems(id, deleting).then(() => deleted(deleting))}
         >
-          {deleting.length === 1 ? "The card is" : "The cards are"} removed from this session with their thumbnails;
-          your images stay where they are, and running the session again doesn’t bring{" "}
-          {deleting.length === 1 ? "it" : "them"} back.
-          {session.remoteSessionId && " The Cards Cloud copy keeps them."}
+          {t("session.deleteCards.text", { count: deleting.length })}
+          {session.remoteSessionId && ` ${t("session.deleteCards.remote")}`}
         </ConfirmDialog>
       )}
 
       {locating && (
         <RenameDialog
-          title={`Location of ${locating.length} card${locating.length === 1 ? "" : "s"}`}
+          title={t("session.location.title", { count: locating.length })}
           initial=""
-          hint="Where they are kept, e.g. “Box 4” or “Binder 2, page 7”. It is searchable and goes into the CSV export."
-          confirm="Set location"
+          hint={t("session.location.hint")}
+          confirm={t("session.location.confirm")}
           onClose={() => setLocating(null)}
           onSave={(location) =>
             api.locateItems(id, locating, location).then((n) => {
               setChecked(new Set());
-              toast(`${n} card${n === 1 ? "" : "s"} now at ${location.trim()}`);
+              toast(t("session.toast.located", { count: n, location: location.trim() }));
             })
           }
         />
@@ -738,22 +757,25 @@ function Warning({ text, action, onAction }: { text: string; action: string; onA
   );
 }
 
-const KEYS: [string, string][] = [
-  ["J  /  ↓", "Next card"],
-  ["K  /  ↑", "Previous card"],
-  ["A", "Accept the match (again: unaccept)"],
-  ["1 – 9", "Select that candidate"],
-  ["E", "Edit the card"],
-  ["Delete", "Delete the card"],
-  ["Esc", "Close the card"],
-  ["Shift + click", "Select a range of cards"],
-];
+function keys(): [string, string][] {
+  return [
+    ["J  /  ↓", t("session.keys.next")],
+    ["K  /  ↑", t("session.keys.previous")],
+    ["A", t("session.keys.accept")],
+    ["1 – 9", t("session.keys.select")],
+    ["E", t("session.keys.edit")],
+    ["Delete", t("session.keys.delete")],
+    ["Esc", t("session.keys.close")],
+    [t("session.keys.shiftClick"), t("session.keys.range")],
+  ];
+}
 
 function KeysHelp({ onClose }: { onClose: () => void }) {
+  const t = useT();
   return (
-    <Modal title="Keyboard shortcuts" width="max-w-sm" onClose={onClose}>
+    <Modal title={t("session.keys.title")} width="max-w-sm" onClose={onClose}>
       <dl className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
-        {KEYS.map(([k, v]) => (
+        {keys().map(([k, v]) => (
           <div key={k} className="contents">
             <dt>
               <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-xs dark:border-slate-700 dark:bg-slate-900">
@@ -764,30 +786,30 @@ function KeysHelp({ onClose }: { onClose: () => void }) {
           </div>
         ))}
       </dl>
-      <p className="mt-4 text-xs text-slate-500">
-        Tip: the “To review” filter lists the cards you haven’t accepted yet. Press A to accept one and go to the next;
-        sort by Match to see the unsure ones first.
-      </p>
+      <p className="mt-4 text-xs text-slate-500">{t("session.keys.tip")}</p>
     </Modal>
   );
 }
 
-const JOB_LABELS: Record<EbayProgress["action"], string> = {
-  drafts: "creating drafts",
-  publish: "publishing",
-  refresh: "checking listings",
-  remove: "removing",
-  "": "working",
-};
+function jobLabels(): Record<EbayProgress["action"], string> {
+  return {
+    drafts: t("session.ebay.job.drafts"),
+    publish: t("session.ebay.job.publish"),
+    refresh: t("session.ebay.job.refresh"),
+    remove: t("session.ebay.job.remove"),
+    "": t("session.ebay.job.working"),
+  };
+}
 
 /** The session's cards on eBay, or the job running for them. */
 function EbayStatus({ session, job }: { session: Session; job: EbayProgress | null }) {
+  const t = useT();
   const { ebayDrafts, ebayListed, ebaySold } = session.counts;
   if (!job && !session.ebayError && ebayDrafts + ebayListed + ebaySold === 0) return null;
   const parts = [
-    ebayDrafts > 0 && `${ebayDrafts} draft${ebayDrafts === 1 ? "" : "s"}`,
-    ebayListed > 0 && `${ebayListed} listed`,
-    ebaySold > 0 && `${ebaySold} sold`,
+    ebayDrafts > 0 && t("session.ebay.drafts", { count: ebayDrafts }),
+    ebayListed > 0 && t("session.ebay.listed", { count: ebayListed }),
+    ebaySold > 0 && t("session.ebay.sold", { count: ebaySold }),
   ].filter(Boolean);
   return (
     <span
@@ -797,14 +819,15 @@ function EbayStatus({ session, job }: { session: Session; job: EbayProgress | nu
       <Store className="h-3.5 w-3.5" />
       {job ? (
         <>
-          eBay: {JOB_LABELS[job.action]}
-          {job.total > 0 && ` ${job.done}/${job.total}`}…
+          {job.total > 0
+            ? t("session.ebay.runningProgress", { job: jobLabels()[job.action], done: job.done, total: job.total })
+            : t("session.ebay.running", { job: jobLabels()[job.action] })}
           {job.action !== "refresh" && (
             <button
               className="ml-1 text-slate-400 hover:text-slate-700"
               onClick={() => api.ebayCancel(session.id)}
-              title="Stop"
-              aria-label="Stop the eBay job"
+              title={t("session.ebay.stop")}
+              aria-label={t("session.ebay.stopLabel")}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -812,12 +835,14 @@ function EbayStatus({ session, job }: { session: Session; job: EbayProgress | nu
         </>
       ) : (
         <>
-          eBay: {session.ebayError ?? (parts.join(" · ") || "nothing listed")}
+          {t("session.ebay.status", {
+            status: session.ebayError ?? (parts.join(" · ") || t("session.ebay.nothingListed")),
+          })}
           <button
             className="ml-1 text-slate-400 hover:text-slate-700"
             onClick={() => api.ebayRefresh(session.id, true).catch(() => {})}
-            title="Check the listings on eBay now"
-            aria-label="Check the listings on eBay"
+            title={t("session.ebay.check")}
+            aria-label={t("session.ebay.checkLabel")}
           >
             <RefreshCw className="h-3 w-3" />
           </button>
@@ -829,6 +854,7 @@ function EbayStatus({ session, job }: { session: Session; job: EbayProgress | nu
 
 /** The session name; click to rename in place (Enter saves, Escape cancels). */
 function EditableTitle({ name, onRename }: { name: string; onRename: (name: string) => void }) {
+  const t = useT();
   const [draft, setDraft] = useState<string | null>(null);
   // Enter closes the input, which then blurs: save once.
   const editing = useRef(false);
@@ -840,7 +866,7 @@ function EditableTitle({ name, onRename }: { name: string; onRename: (name: stri
           editing.current = true;
           setDraft(name);
         }}
-        title="Click to rename"
+        title={t("session.title.rename")}
       >
         <h1 className="truncate text-lg font-semibold">{name}</h1>
         <Pencil className="h-3.5 w-3.5 shrink-0 text-slate-400 opacity-0 group-hover:opacity-100" />
@@ -868,7 +894,7 @@ function EditableTitle({ name, onRename }: { name: string; onRename: (name: stri
           setDraft(null);
         }
       }}
-      aria-label="Session name"
+      aria-label={t("session.title.name")}
     />
   );
 }

@@ -11,6 +11,7 @@ import type {
   RemoteItem,
   SlabLabel,
 } from "./api";
+import { t } from "../i18n";
 import { fileUrl } from "./format";
 
 export interface Row {
@@ -150,7 +151,7 @@ export function candidates(alternatives: Json[] | null | undefined, distances?: 
     const distance = typeof raw === "number" ? raw : null;
     list.push({
       index: i,
-      name: str(a.name ?? a.title) || fullName || "Unknown",
+      name: str(a.name ?? a.title) || fullName || t("common.unknown"),
       detail: parts.filter(Boolean).join(" · "),
       fullName,
       distance,
@@ -315,23 +316,18 @@ function recordIdent(record: Json): Json | null {
   return mainObject(record)?._identification ?? record?._identification ?? null;
 }
 
-const ROTATION_LABELS: Record<string, string> = {
-  rotated_upside_down: "Upside down",
-  rotated_left: "Turned left",
-  rotated_right: "Turned right",
-};
-
 /** The front's card as Ximilar found it turned, if it did: its `Rotation` tag is anything but `rotation_ok`. */
 export function rotationOf(response: Json): Rotation | null {
   const tag: Json = mainObject(response?.records?.[0])?._tags?.Rotation?.[0];
   const name = typeof tag?.name === "string" ? tag.name : "";
   if (!name || name === "rotation_ok") return null;
-  const label =
-    ROTATION_LABELS[name] ??
-    name
-      .replace(/^rotated_/, "")
-      .replace(/_/g, " ")
-      .replace(/^./, (c: string) => c.toUpperCase());
+  const known = ["rotated_upside_down", "rotated_left", "rotated_right"] as const;
+  const label = (known as readonly string[]).includes(name)
+    ? t(`status.rotation.${name as (typeof known)[number]}`)
+    : name
+        .replace(/^rotated_/, "")
+        .replace(/_/g, " ")
+        .replace(/^./, (c: string) => c.toUpperCase());
   return { label, tag: name, prob: typeof tag.prob === "number" ? tag.prob : null };
 }
 
@@ -361,14 +357,7 @@ export function matchOf(response: Json): { ident: Json | null; slab: Json | null
   return { ident, slab };
 }
 
-const FIELD_LABELS: [keyof CardFieldsLike, string][] = [
-  ["setName", "Set"],
-  ["setCode", "Set code"],
-  ["cardNumber", "Number"],
-  ["year", "Year"],
-  ["series", "Series"],
-  ["subcategory", "Category"],
-];
+const FIELDS: (keyof CardFieldsLike)[] = ["setName", "setCode", "cardNumber", "year", "series", "subcategory"];
 
 interface CardFieldsLike {
   setName: string;
@@ -380,16 +369,16 @@ interface CardFieldsLike {
 }
 
 function fields(c: CardFieldsLike): [string, string][] {
-  return FIELD_LABELS.map(([k, label]) => [label, c[k]] as [string, string]).filter(([, v]) => !!v);
+  return FIELDS.map((k) => [t(`status.field.${k}`), c[k]] as [string, string]).filter(([, v]) => !!v);
 }
 
 export function viewFromItem(i: ItemDetail): CardView {
   const { ident, slab } = matchOf(i.recognition?.response);
   const best = ident?.best_match ?? {};
-  const images: CardImage[] = [{ label: "Front", src: fileUrl(i.previewPath), path: i.frontPath }];
-  if (i.backPath) images.push({ label: "Back", src: fileUrl(i.backPreviewPath), path: i.backPath });
+  const images: CardImage[] = [{ label: t("common.front"), src: fileUrl(i.previewPath), path: i.frontPath }];
+  if (i.backPath) images.push({ label: t("common.back_side"), src: fileUrl(i.backPreviewPath), path: i.backPath });
   return {
-    title: i.fullName || i.name || (i.status === "done" ? "No match" : "—"),
+    title: i.fullName || i.name || (i.status === "done" ? t("status.noMatch") : "—"),
     picked: i.picked,
     edited: i.edited,
     toReview: needsReview(i),
@@ -429,24 +418,24 @@ function viaOf(recognition: Json): string | undefined {
   if (!recognition) return undefined;
   const endpoint = String(recognition.endpoint ?? "");
   const parts = [
-    recognition.sides?.length > 1 && "front + back",
-    recognition.magic_ai_used && "Magic AI",
-    recognition.skip_detection && "whole image",
+    recognition.sides?.length > 1 && t("status.via.frontBack"),
+    recognition.magic_ai_used && t("status.via.magicAi"),
+    recognition.skip_detection && t("status.via.wholeImage"),
     recognition.id_type && !STANDARD_ENDPOINT.test(endpoint) && endpoint,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : undefined;
 }
 
 function labelOf(path: string): string {
-  if (path.includes("exact")) return "Grading overlay";
-  if (path.includes("clean")) return "Cropped card";
-  if (path.includes("full")) return "Full overlay";
-  return "Result";
+  if (path.includes("exact")) return t("status.image.exact");
+  if (path.includes("clean")) return t("status.image.clean");
+  if (path.includes("full")) return t("status.image.full");
+  return t("status.image.result");
 }
 
 export function viewFromRemote(r: RemoteItem): CardView {
   return {
-    title: r.full_name || r.name || "No match",
+    title: r.full_name || r.name || t("status.noMatch"),
     fields: fields({
       setName: r.set_name,
       setCode: r.set_code,
@@ -467,7 +456,7 @@ export function viewFromRemote(r: RemoteItem): CardView {
     condition: r.grading?.grades?.condition ?? null,
     gradingEndpoint: r.grading?.endpoint ?? null,
     gradingRecords: r.grading?.records ?? [],
-    images: r.image ? [{ label: "Card", src: r.image }] : [],
+    images: r.image ? [{ label: t("status.image.card"), src: r.image }] : [],
     gradingImages: [],
     raw: r,
   };

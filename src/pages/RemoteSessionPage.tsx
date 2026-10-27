@@ -9,9 +9,11 @@ import SessionTable from "../components/SessionTable";
 import StatusChip from "../components/StatusChip";
 import { api, errorText, type Json, type RemoteItem, type RemoteSession } from "../lib/api";
 import { rowFromRemote, viewFromRemote } from "../lib/cardview";
+import { useT } from "../i18n";
 import { dateTime, grade, price } from "../lib/format";
 
 export default function RemoteSessionPage() {
+  const t = useT();
   const { id = "" } = useParams();
   const [session, setSession] = useState<RemoteSession | null>(null);
   const [summary, setSummary] = useState<Json>(null);
@@ -64,31 +66,44 @@ export default function RemoteSessionPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-slate-200 px-6 py-4 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <Link to="/sessions?tab=remote" className="btn btn-ghost px-1.5" aria-label="Back">
+            <Link to="/sessions?tab=remote" className="btn btn-ghost px-1.5" aria-label={t("common.back")}>
               <ArrowLeft className="h-4 w-4" />
             </Link>
             <Cloud className="h-5 w-5 text-accent" />
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h1 className="truncate text-lg font-semibold">{session?.name || "Untitled session"}</h1>
+                <h1 className="truncate text-lg font-semibold">
+                  {session?.name || t("sessions.remoteSession.untitled")}
+                </h1>
                 {session && <StatusChip status={session.status} />}
               </div>
               {session && (
                 <p className="mt-0.5 text-xs text-slate-500">
-                  {session.client?.name ?? session.platform} · started {dateTime(session.started)}
-                  {session.ended && ` · ended ${dateTime(session.ended)}`}
+                  {session.ended
+                    ? t("sessions.remoteSession.startedEnded", {
+                        client: session.client?.name ?? session.platform,
+                        date: dateTime(session.started),
+                        ended: dateTime(session.ended),
+                      })
+                    : t("sessions.remoteSession.started", {
+                        client: session.client?.name ?? session.platform,
+                        date: dateTime(session.started),
+                      })}
                 </p>
               )}
             </div>
-            {session && <Menu items={actions.menu(session)} label="Session actions" />}
+            {session && <Menu items={actions.menu(session)} label={t("sessions.remoteSession.actions")} />}
           </div>
           {summary && (
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              <Stat label="Cards" value={String(summary.identifications ?? count)} />
-              <Stat label="Distinct" value={String(summary.distinct_cards ?? "—")} />
-              <Stat label="Total value" value={price(summary.total_price)} />
-              <Stat label="Paid calls" value={String(summary.paid_calls ?? "—")} />
-              <Stat label="Avg. grade" value={summary.average_grade != null ? grade(summary.average_grade) : "—"} />
+              <Stat label={t("sessions.remoteSession.cards")} value={String(summary.identifications ?? count)} />
+              <Stat label={t("sessions.remoteSession.distinct")} value={String(summary.distinct_cards ?? "—")} />
+              <Stat label={t("sessions.remoteSession.totalValue")} value={price(summary.total_price)} />
+              <Stat label={t("sessions.remoteSession.paidCalls")} value={String(summary.paid_calls ?? "—")} />
+              <Stat
+                label={t("sessions.remoteSession.avgGrade")}
+                value={summary.average_grade != null ? grade(summary.average_grade) : "—"}
+              />
             </div>
           )}
           {error && (
@@ -101,12 +116,10 @@ export default function RemoteSessionPage() {
           <SessionTable rows={rows} selected={selected} onSelect={setSelected} showStatus={false} />
         </div>
         <div className="flex items-center justify-between border-t border-slate-200 px-6 py-2 text-xs text-slate-500 dark:border-slate-800">
-          <span>
-            {items.length} of {count} cards
-          </span>
+          <span>{t("sessions.remoteSession.loadedOf", { shown: items.length, count })}</span>
           {nextPage && (
             <button className="btn" disabled={loading} onClick={() => loadMore(nextPage)}>
-              {loading ? "Loading…" : "Load more"}
+              {loading ? t("common.loading") : t("sessions.remoteSession.loadMore")}
             </button>
           )}
         </div>

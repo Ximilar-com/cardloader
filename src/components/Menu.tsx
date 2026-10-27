@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useT } from "../i18n";
 
 export interface MenuItem {
   label: string;
@@ -16,13 +17,15 @@ export interface MenuItem {
  * clip it. */
 export default function Menu({
   items,
-  label = "More actions",
+  label: givenLabel,
   children,
 }: {
   items: (MenuItem | null | false)[];
   label?: string;
   children?: ReactNode;
 }) {
+  const t = useT();
+  const label = givenLabel ?? t("common.moreActions");
   const [at, setAt] = useState<{ top: number; right: number; up: boolean } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const list = items.filter(Boolean) as MenuItem[];

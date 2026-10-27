@@ -10,6 +10,7 @@ import {
   FolderOpen,
   Info,
   KeyRound,
+  Languages,
   LogIn,
   LogOut,
   MapPin,
@@ -31,15 +32,17 @@ import { ErrorNote } from "../components/Modal";
 import { toast } from "../components/Toast";
 import {
   Check,
-  DPI_OPTIONS,
-  MULTIFEED_OPTIONS,
-  PAIRING_OPTIONS,
-  GAME_OPTIONS,
-  CONDITION_OPTIONS,
+  conditionOptions,
   conditionScale,
+  dpiOptions,
+  gameOptions,
+  multifeedOptions,
+  pairingOptions,
 } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
+import { languageOf, rich, t, useI18n, useT, type Language } from "../i18n";
+import { LANGUAGES } from "../i18n/languages";
 import {
   api,
   errorText,
@@ -54,11 +57,14 @@ import {
   type Settings,
   type SettingsView,
 } from "../lib/api";
-import { bytes, dateTime, GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
+import { bytes, dateTime, gradingLabels, idModeLabels, sourceLabels } from "../lib/format";
 
 const DEFAULT_API = "https://api.ximilar.com";
 
 /** Settings changed but not saved yet: kept when the user leaves the page, so nothing typed is lost. */
+/** The tab to show when the page remounts after a language change. */
+let reopenTab: Tab | null = null;
+
 export const useUnsavedSettings = create<{
   saved: Settings | null;
   draft: Settings | null;
@@ -76,14 +82,15 @@ export function isUnsaved(saved: Settings | null, draft: Settings | null): boole
 /** What is wrong with the settings, by field; empty when they can be saved. */
 function problems(s: Settings): Partial<Record<"apiBaseUrl" | "page" | "port", string>> {
   const out: Partial<Record<"apiBaseUrl" | "page" | "port", string>> = {};
-  if (!/^https?:\/\/[^\s/]+/.test(s.apiBaseUrl.trim())) out.apiBaseUrl = "An address starting with https://";
+  if (!/^https?:\/\/[^\s/]+/.test(s.apiBaseUrl.trim())) out.apiBaseUrl = t("settings.problems.apiBaseUrl");
   const mm = [s.scan.pageWidthMm, s.scan.pageHeightMm];
-  if (mm.some((v) => !Number.isFinite(v) || v < 20 || v > 400)) out.page = "Between 20 and 400 mm";
-  if (!Number.isInteger(s.mcp.port) || s.mcp.port < 1024 || s.mcp.port > 65535) out.port = "Between 1024 and 65535";
+  if (mm.some((v) => !Number.isFinite(v) || v < 20 || v > 400)) out.page = t("settings.problems.page");
+  if (!Number.isInteger(s.mcp.port) || s.mcp.port < 1024 || s.mcp.port > 65535) out.port = t("settings.problems.port");
   return out;
 }
 
 export default function SettingsPage() {
+  const t = useT();
   const [view, setViewState] = useState<SettingsView | null>(null);
   const draft = useUnsavedSettings((s) => s.draft);
   const setDraft = useUnsavedSettings((s) => s.setDraft);
@@ -104,7 +111,10 @@ export default function SettingsPage() {
   const showSetup = useSetupWizard((s) => s.show);
   // Another page can open Settings at a tab: navigate("/settings", { state: { section } }).
   const section = (useLocation().state as { section?: Tab } | null)?.section;
-  const [tab, setTab] = useState<Tab>(section ?? "ximilar");
+  const [tab, setTab] = useState<Tab>(() => reopenTab ?? section ?? "ximilar");
+  useEffect(() => {
+    reopenTab = null;
+  }, []);
   const tokenInput = useRef<HTMLInputElement>(null);
   const loaded = !!view;
 
@@ -165,6 +175,11 @@ export default function SettingsPage() {
       setSaved(true);
       // Saving starts or stops the agents' server.
       api.mcpStatus().then(setMcp);
+      if (languageOf(v.language) !== useI18n.getState().language) {
+        // The app remounts its pages in the new language: come back to this tab.
+        reopenTab = tab;
+        useI18n.getState().setLanguage(v.language);
+      }
     } catch (e) {
       setError(errorText(e));
     }
@@ -206,33 +221,33 @@ export default function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center gap-4 border-b border-slate-200 px-6 py-4 dark:border-slate-800">
-        <h1 className="text-lg font-semibold">Settings</h1>
+        <h1 className="text-lg font-semibold">{t("settings.title")}</h1>
         <div className="flex-1" />
-        {saved && !dirty && <span className="text-sm text-emerald-600">Saved</span>}
+        {saved && !dirty && <span className="text-sm text-emerald-600">{t("common.saved")}</span>}
         {dirty && (
           <span className="flex items-center gap-1.5 text-sm font-medium text-amber-700 dark:text-amber-400">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Unsaved changes
+            <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> {t("settings.unsavedChanges")}
           </span>
         )}
         <button className="btn" disabled={!dirty} onClick={() => setDraft(strip(view))}>
-          Discard
+          {t("settings.discard")}
         </button>
         {/* Gray until something changes, then the accent with a ring, so a pending save stands out. */}
         <button
           className={clsx("btn", dirty && valid && "btn-primary ring-4 ring-accent/25")}
           disabled={!dirty || !valid}
           onClick={save}
-          title={valid ? undefined : "Correct the marked fields first"}
+          title={valid ? undefined : t("settings.fixFirst")}
         >
-          Save
+          {t("common.save")}
         </button>
       </header>
       <div className="flex min-h-0 flex-1">
         <nav
           className="w-52 shrink-0 space-y-0.5 border-r border-slate-200 p-3 dark:border-slate-800"
-          aria-label="Settings"
+          aria-label={t("settings.title")}
         >
-          {TABS.map(({ key, label, icon: Icon }) => (
+          {tabs().map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               className={clsx(
@@ -247,13 +262,13 @@ export default function SettingsPage() {
               <Icon className="h-4 w-4 shrink-0" />
               <span className="flex-1">{label}</span>
               {key === "ximilar" && view.tokenSet && (
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="token saved" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label={t("settings.tokenSaved")} />
               )}
               {key === "ebay" && view.ebayConnected && ebayReady(view.ebay) && (
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="eBay connected" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label={t("settings.ebayConnected")} />
               )}
               {key === "agents" && mcp?.running && (
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="agents can connect" />
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label={t("settings.agentsCanConnect")} />
               )}
             </button>
           ))}
@@ -265,53 +280,53 @@ export default function SettingsPage() {
             {tab === "ximilar" && (
               <>
                 <Section
-                  title="Ximilar API"
+                  title={t("settings.ximilar.title")}
                   done={view.tokenSet}
-                  text={
-                    <>
-                      Cardloader calls the Ximilar Collectibles Recognition and Card Grading APIs with your token. Find
-                      it in the{" "}
+                  text={rich(t("settings.ximilar.text"), {
+                    link: (s) => (
                       <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
-                        Ximilar App
-                      </button>{" "}
-                      under your profile.
-                    </>
-                  }
+                        {s}
+                      </button>
+                    ),
+                  })}
                 >
                   <div>
-                    <label className="label">API token</label>
+                    <label className="label">{t("settings.ximilar.token")}</label>
                     <div className="flex gap-2">
                       <input
                         ref={tokenInput}
                         type="password"
                         className="input font-mono"
-                        placeholder={view.tokenSet ? "•••••••••••••••• (saved)" : "Paste your API token"}
+                        placeholder={
+                          view.tokenSet ? t("settings.savedPlaceholder") : t("settings.ximilar.tokenPlaceholder")
+                        }
                         value={token}
                         onChange={(e) => setToken(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && token && saveToken(token)}
                       />
                       <button className="btn btn-primary" disabled={!token} onClick={() => saveToken(token)}>
-                        <KeyRound className="h-4 w-4" /> Save token
+                        <KeyRound className="h-4 w-4" /> {t("settings.ximilar.saveToken")}
                       </button>
                       {view.tokenSet && (
                         <button className="btn" onClick={() => saveToken("")}>
-                          Remove
+                          {t("common.remove")}
                         </button>
                       )}
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
                       {view.tokenSet
                         ? view.tokenStorage === "keychain"
-                          ? "Stored in the system keychain."
+                          ? t("settings.ximilar.storedKeychain")
                           : view.tokenStorage === "dev"
-                            ? "Development build — stored in the settings file, not the keychain."
-                            : "No system keychain available — stored in the settings file."
-                        : "No token saved."}
+                            ? t("settings.ximilar.storedDev")
+                            : t("settings.ximilar.storedFile")
+                        : t("settings.ximilar.noToken")}
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <button className="btn" disabled={!view.tokenSet || checking} onClick={testConnection}>
-                      <RefreshCw className={clsx("h-4 w-4", checking && "animate-spin")} /> Test connection
+                      <RefreshCw className={clsx("h-4 w-4", checking && "animate-spin")} />{" "}
+                      {t("settings.ximilar.testConnection")}
                     </button>
                     {check && (
                       <div className="space-y-0.5 text-sm">
@@ -319,16 +334,20 @@ export default function SettingsPage() {
                           ok={check.ok}
                           text={
                             check.ok
-                              ? `Connected${check.account ? ` as ${check.account}` : ""}`
-                              : (check.error ?? "Failed")
+                              ? check.account
+                                ? t("settings.connectedAs", { account: check.account })
+                                : t("settings.connected")
+                              : (check.error ?? t("settings.ximilar.failed"))
                           }
                         />
                         <Status
                           ok={check.cardsCloud}
                           text={
                             check.cardsCloud
-                              ? "Cards Cloud available"
-                              : `Cards Cloud unavailable${check.cardsCloudError ? ` (${check.cardsCloudError})` : ""}`
+                              ? t("settings.ximilar.cardsCloudAvailable")
+                              : check.cardsCloudError
+                                ? t("settings.ximilar.cardsCloudUnavailableWhy", { error: check.cardsCloudError })
+                                : t("settings.ximilar.cardsCloudUnavailable")
                           }
                         />
                       </div>
@@ -336,23 +355,23 @@ export default function SettingsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="label">Cards Cloud workspace (optional)</label>
+                      <label className="label">{t("settings.ximilar.workspace")}</label>
                       <input
                         className="input font-mono"
-                        placeholder="default workspace"
+                        placeholder={t("settings.ximilar.workspacePlaceholder")}
                         value={draft.workspace ?? ""}
                         onChange={(e) => set("workspace", e.target.value || null)}
                       />
                     </div>
                     <div>
                       <label className="label flex items-center justify-between">
-                        API base URL
+                        {t("settings.ximilar.baseUrl")}
                         {draft.apiBaseUrl.trim() !== DEFAULT_API && (
                           <button
                             className="text-xs font-normal text-accent"
                             onClick={() => set("apiBaseUrl", DEFAULT_API)}
                           >
-                            Reset
+                            {t("settings.ximilar.reset")}
                           </button>
                         )}
                       </label>
@@ -369,14 +388,8 @@ export default function SettingsPage() {
             )}
             {tab === "models" && (
               <Section
-                title="Local models"
-                text={
-                  <>
-                    Vision models that identify cards on this computer, free and offline. Larger models read the small
-                    print more reliably but are slower and need more memory; <b>⋯ → Compare with local model…</b> on a
-                    Ximilar session shows how each does on your cards. The chosen model is the one new sessions use.
-                  </>
-                }
+                title={t("settings.models.title")}
+                text={rich(t("settings.models.text"), { b: (s) => <b>{s}</b> })}
               >
                 {models && (
                   <ModelPicker models={models} value={draft.localModel} onChange={(id) => set("localModel", id)} />
@@ -385,40 +398,45 @@ export default function SettingsPage() {
             )}
             {tab === "sessions" && (
               <>
-                <Section
-                  title="Identification"
-                  text="What identifies the cards in new sessions. Each session keeps its choice."
-                >
+                <Section title={t("settings.sessions.identification")} text={t("settings.sessions.identificationText")}>
                   <div className="grid grid-cols-2 gap-3">
                     <EngineOption
                       active={draft.engine === "ximilar"}
                       onClick={() => set("engine", "ximilar")}
                       icon={<Cloud className="h-5 w-5" />}
-                      title="Ximilar API"
-                      badge="Default"
-                      text="The exact card and print from Ximilar's database, with prices, other candidates and grading. Uses API credits; needs internet."
+                      title={t("settings.sessions.ximilarTitle")}
+                      badge={t("settings.sessions.ximilarBadge")}
+                      text={t("settings.sessions.ximilarText")}
                     />
                     <EngineOption
                       active={draft.engine === "local"}
                       onClick={() => set("engine", "local")}
                       icon={<Cpu className="h-5 w-5" />}
-                      title="Local model"
-                      text="A small vision model on this computer: free and offline. Reads the name, number and year printed on the card and estimates grades and condition; no prices or candidates."
+                      title={t("settings.sessions.localTitle")}
+                      text={t("settings.sessions.localText")}
                     />
                   </div>
                   {draft.engine === "local" && (
                     <p className="text-sm text-slate-500">
-                      New sessions use {models?.find((m) => m.id === draft.localModel)?.name ?? draft.localModel}.{" "}
-                      <button className="text-accent hover:underline" onClick={() => setTab("models")}>
-                        Change it in Local models
-                      </button>
+                      {rich(
+                        t("settings.sessions.localUses", {
+                          model: models?.find((m) => m.id === draft.localModel)?.name ?? draft.localModel,
+                        }),
+                        {
+                          link: (s) => (
+                            <button className="text-accent hover:underline" onClick={() => setTab("models")}>
+                              {s}
+                            </button>
+                          ),
+                        },
+                      )}
                     </p>
                   )}
                 </Section>
-                <Section title="New sessions" text="Defaults for the New session dialog.">
+                <Section title={t("settings.sessions.title")} text={t("settings.sessions.text")}>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
-                      <label className="label">Default folder</label>
+                      <label className="label">{t("settings.sessions.defaultFolder")}</label>
                       <div className="flex gap-2">
                         <input
                           className="input"
@@ -435,65 +453,69 @@ export default function SettingsPage() {
                             if (typeof picked === "string") set("defaultFolder", picked);
                           }}
                         >
-                          <FolderOpen className="h-4 w-4" /> Browse
+                          <FolderOpen className="h-4 w-4" /> {t("settings.sessions.browse")}
                         </button>
                       </div>
                     </div>
                     <Field
-                      label="Identify as"
+                      label={t("settings.sessions.identifyAs")}
                       value={draft.defaultIdMode}
-                      options={optionsOf(ID_MODE_LABELS)}
+                      options={optionsOf(idModeLabels())}
                       onChange={(v) => set("defaultIdMode", v)}
                     />
                     {draft.defaultIdMode === "tcg" ? (
                       <Field
-                        label="Game"
+                        label={t("settings.sessions.game")}
                         value={draft.defaultSubcategory}
-                        options={GAME_OPTIONS}
+                        options={gameOptions()}
                         onChange={(v) => set("defaultSubcategory", v)}
                       />
                     ) : (
                       <div />
                     )}
                     <Field
-                      label="New session opens"
+                      label={t("settings.sessions.opens")}
                       value={draft.defaultSources[0] ?? "folder"}
-                      options={SOURCE_OPTIONS}
+                      options={sourceOptions()}
                       onChange={(v) => set("defaultSources", [v, ...draft.defaultSources.filter((s) => s !== v)])}
                     />
                     <Field
-                      label="Grading"
+                      label={t("settings.sessions.grading")}
                       value={draft.defaultGrading}
-                      options={optionsOf(GRADING_LABELS)}
+                      options={optionsOf(gradingLabels())}
                       onChange={(v) => set("defaultGrading", v)}
                     />
                     <Field
-                      label="Condition scale"
+                      label={t("settings.sessions.conditionScale")}
                       value={conditionScale(draft.defaultConditionMode, false)}
-                      options={CONDITION_OPTIONS}
+                      options={conditionOptions()}
                       onChange={(v) => set("defaultConditionMode", v)}
                     />
                     <Field
-                      label="Images per card"
+                      label={t("settings.sessions.imagesPerCard")}
                       value={draft.defaultPairing}
-                      options={PAIRING_OPTIONS}
+                      options={pairingOptions()}
                       onChange={(v) => set("defaultPairing", v)}
                     />
                     <Field
-                      label="Parallel requests"
+                      label={t("settings.sessions.parallel")}
                       value={String(Math.min(draft.concurrency, 3))}
-                      options={CONCURRENCY_OPTIONS}
+                      options={concurrencyOptions()}
                       onChange={(v) => set("concurrency", Number(v))}
                     />
-                    <Check label="Price statistics" checked={draft.priceStats} onChange={(v) => set("priceStats", v)} />
                     <Check
-                      label="Sync new sessions to Cards Cloud"
+                      label={t("settings.sessions.priceStats")}
+                      checked={draft.priceStats}
+                      onChange={(v) => set("priceStats", v)}
+                    />
+                    <Check
+                      label={t("settings.sessions.syncByDefault")}
                       checked={draft.syncByDefault}
                       onChange={(v) => set("syncByDefault", v)}
                     />
                   </div>
                   <button className="btn mt-4" onClick={() => showSetup(view)}>
-                    <Wand2 className="h-4 w-4" /> Run setup again
+                    <Wand2 className="h-4 w-4" /> {t("settings.sessions.runSetup")}
                   </button>
                 </Section>
               </>
@@ -503,24 +525,20 @@ export default function SettingsPage() {
             )}
             {tab === "scanner" && (
               <Section
-                title="Scanner"
-                text={
-                  support?.backend === "twain"
-                    ? "Windows: scanners are driven through TWAIN (install RICOH PaperStream IP for the fi-8170)."
-                    : "Scanners are driven through SANE (scanimage). Connect the scanner over USB."
-                }
+                title={t("settings.scanner.title")}
+                text={support?.backend === "twain" ? t("settings.scanner.twainText") : t("settings.scanner.saneText")}
               >
                 {support && !support.available && <ErrorNote>{support.hint}</ErrorNote>}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2">
-                    <label className="label">Default scanner</label>
+                    <label className="label">{t("settings.scanner.defaultScanner")}</label>
                     <div className="flex gap-2">
                       <Select
                         value={draft.defaultScanner ?? ""}
                         onChange={(v) => set("defaultScanner", v || null)}
-                        aria-label="Default scanner"
+                        aria-label={t("settings.scanner.defaultScanner")}
                         options={[
-                          { value: "", label: "None" },
+                          { value: "", label: t("common.none") },
                           ...(draft.defaultScanner && !devices?.some((d) => d.id === draft.defaultScanner)
                             ? [{ value: draft.defaultScanner, label: draft.defaultScanner, icon: ScanLine }]
                             : []),
@@ -528,7 +546,8 @@ export default function SettingsPage() {
                         ]}
                       />
                       <button className="btn" onClick={findScanners} disabled={findingScanners || !support?.available}>
-                        <RefreshCw className={clsx("h-4 w-4", findingScanners && "animate-spin")} /> Find scanners
+                        <RefreshCw className={clsx("h-4 w-4", findingScanners && "animate-spin")} />{" "}
+                        {t("settings.scanner.findScanners")}
                       </button>
                     </div>
                     {support?.backend === "twain" && (
@@ -536,19 +555,19 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <Field
-                    label="Resolution"
+                    label={t("settings.scanner.resolution")}
                     value={String(draft.scan.dpi)}
-                    options={DPI_OPTIONS}
+                    options={dpiOptions()}
                     onChange={(v) => setScan("dpi", Number(v))}
                   />
                   <Field
-                    label="Colour"
+                    label={t("settings.scanner.colour")}
                     value={draft.scan.color}
-                    options={COLOR_OPTIONS}
+                    options={colorOptions()}
                     onChange={(v) => setScan("color", v)}
                   />
                   <div>
-                    <label className="label">Page width (mm)</label>
+                    <label className="label">{t("settings.scanner.pageWidth")}</label>
                     <input
                       type="number"
                       className={clsx("input", invalid.page && "border-red-400")}
@@ -558,13 +577,13 @@ export default function SettingsPage() {
                   </div>
                   <div>
                     <label className="label flex items-center justify-between">
-                      Page height (mm)
+                      {t("settings.scanner.pageHeight")}
                       {(draft.scan.pageWidthMm !== 66 || draft.scan.pageHeightMm !== 92) && (
                         <button
                           className="text-xs font-normal text-accent"
                           onClick={() => set("scan", { ...draft.scan, pageWidthMm: 66, pageHeightMm: 92 })}
                         >
-                          Reset to 66 × 92
+                          {t("settings.scanner.resetPage")}
                         </button>
                       )}
                     </label>
@@ -577,38 +596,34 @@ export default function SettingsPage() {
                     {invalid.page && <p className="mt-1 text-xs text-red-600">{invalid.page}</p>}
                   </div>
                   <Field
-                    label="Multifeed detection"
+                    label={t("settings.scanner.multifeed")}
                     value={draft.scan.multifeed}
-                    options={MULTIFEED_OPTIONS}
+                    options={multifeedOptions()}
                     onChange={(v) => setScan("multifeed", v)}
                   />
                   <Field
-                    label="Rotation"
+                    label={t("settings.scanner.rotation")}
                     value={draft.scan.rotation}
-                    options={ROTATION_OPTIONS}
+                    options={rotationOptions()}
                     onChange={(v) => setScan("rotation", v)}
                   />
                   <div className="flex items-end pb-2">
                     <Check
-                      label="Scan both sides (duplex)"
+                      label={t("settings.scanner.duplex")}
                       checked={draft.scan.duplex}
                       onChange={(v) => setScan("duplex", v)}
                     />
                   </div>
                   {draft.scan.duplex && (
                     <Field
-                      label="Side order"
+                      label={t("settings.scanner.sideOrder")}
                       value={draft.scan.backFirst ? "back" : "front"}
-                      options={SIDE_ORDER_OPTIONS}
+                      options={sideOrderOptions()}
                       onChange={(v) => setScan("backFirst", v === "back")}
                     />
                   )}
                 </div>
-                <p className="text-xs text-slate-500">
-                  Every scanner session scans with these settings, also when it is continued. Sessions that don’t grade
-                  scan at 300 dpi at most. Standard cards are 63 × 88 mm; a slightly larger frame (66 × 92 mm) keeps the
-                  card edges in the scan.
-                </p>
+                <p className="text-xs text-slate-500">{t("settings.scanner.note")}</p>
               </Section>
             )}
             {tab === "agents" && (
@@ -621,6 +636,26 @@ export default function SettingsPage() {
                 setError={setError}
               />
             )}
+            {tab === "language" && (
+              <Section title={t("common.language")} text={t("settings.language.text")}>
+                <Select<Language>
+                  value={languageOf(draft.language)}
+                  onChange={(v) => set("language", v)}
+                  aria-label={t("common.language")}
+                  options={LANGUAGES.map(({ code, name, english, Flag }) => ({
+                    value: code,
+                    label: (
+                      <span className="flex items-center gap-2">
+                        <Flag className="h-3.5 w-5 rounded-[2px] ring-1 ring-black/10" />
+                        {name}
+                      </span>
+                    ),
+                    text: name,
+                    hint: english !== name ? english : undefined,
+                  }))}
+                />
+              </Section>
+            )}
             {tab === "about" && <About />}
           </div>
         </div>
@@ -630,20 +665,26 @@ export default function SettingsPage() {
 }
 
 /** The TWAIN driver's own dialog: automatic cropping, deskew and the like, kept for every later scan. */
-const PERMISSIONS: { key: keyof McpSettings; label: string; hint: string }[] = [
-  {
-    key: "allowRun",
-    label: "Run and review",
-    hint: "create, run and stop sessions; accept, pick and edit cards; sync to Cards Cloud; CSV and TCGplayer exports",
-  },
-  { key: "allowDelete", label: "Delete", hint: "cards and sessions, also in Cards Cloud" },
-  {
-    key: "allowMarket",
-    label: "Marketplaces",
-    hint: "eBay drafts, publishing and removing listings; Whatnot and Shopify exports (they upload pictures)",
-  },
-  { key: "allowSettings", label: "Settings", hint: "the defaults of new sessions (never your tokens or keys)" },
-];
+function permissions(): { key: keyof McpSettings; label: string; hint: string }[] {
+  return [
+    { key: "allowRun", label: t("settings.agents.permissions.run"), hint: t("settings.agents.permissions.runHint") },
+    {
+      key: "allowDelete",
+      label: t("settings.agents.permissions.delete"),
+      hint: t("settings.agents.permissions.deleteHint"),
+    },
+    {
+      key: "allowMarket",
+      label: t("settings.agents.permissions.market"),
+      hint: t("settings.agents.permissions.marketHint"),
+    },
+    {
+      key: "allowSettings",
+      label: t("settings.agents.permissions.settings"),
+      hint: t("settings.agents.permissions.settingsHint"),
+    },
+  ];
+}
 
 /** AI agents (Claude Desktop, Claude Code, Cursor, …) working with Cardloader over MCP. */
 function AgentsTab({
@@ -661,6 +702,7 @@ function AgentsTab({
   portProblem?: string;
   setError: (e: string | null) => void;
 }) {
+  const t = useT();
   const command = status?.command ?? "";
   const [app, setApp] = useState<AgentApp>("claude");
   // Claude Desktop, Cursor, Gemini CLI and LM Studio read the same `mcpServers` shape.
@@ -670,28 +712,17 @@ function AgentsTab({
       .regenerateMcpToken()
       .then((s) => {
         setStatus(s);
-        toast("New token: apps connected over HTTP need it");
+        toast(t("settings.agents.newTokenToast"));
       })
       .catch((e) => setError(errorText(e)));
   return (
     <>
-      <Section
-        title="AI agents"
-        done={status?.running}
-        text={
-          <>
-            Let AI apps such as Claude Desktop, Claude Code or Cursor work with Cardloader through MCP: start sessions
-            on a folder, read the results, and review cards by looking at their pictures. They connect on this computer
-            only, with a token, while Cardloader is open. What they do shows up here as it happens, and cards they
-            accept get an AI mark until you confirm them.
-          </>
-        }
-      >
-        <Check label="Let AI agents use Cardloader" checked={draft.enabled} onChange={(v) => set({ enabled: v })} />
+      <Section title={t("settings.agents.title")} done={status?.running} text={t("settings.agents.text")}>
+        <Check label={t("settings.agents.enable")} checked={draft.enabled} onChange={(v) => set({ enabled: v })} />
         <div className="space-y-2">
-          <div className="label">Agents may</div>
-          <Check label="Read sessions, cards and their pictures (always)" checked disabled onChange={() => {}} />
-          {PERMISSIONS.map((p) => (
+          <div className="label">{t("settings.agents.may")}</div>
+          <Check label={t("settings.agents.read")} checked disabled onChange={() => {}} />
+          {permissions().map((p) => (
             <div key={p.key}>
               <Check
                 label={p.label}
@@ -705,7 +736,7 @@ function AgentsTab({
         </div>
         <div className="flex items-end gap-3">
           <div>
-            <div className="label">Port</div>
+            <div className="label">{t("settings.agents.port")}</div>
             <input
               className="input w-28"
               type="number"
@@ -714,28 +745,27 @@ function AgentsTab({
               onChange={(e) => set({ port: Number(e.target.value) })}
             />
           </div>
-          <p className="pb-2 text-xs text-slate-500">
-            {portProblem ?? "On 127.0.0.1 only; the next free one is used when it is taken."}
-          </p>
+          <p className="pb-2 text-xs text-slate-500">{portProblem ?? t("settings.agents.portHint")}</p>
         </div>
         {status?.error ? (
           <Status ok={false} text={status.error} />
         ) : status?.running ? (
           <Status
             ok
-            text={`Running at ${status.url}${status.lastUsed ? ` · last used ${dateTime(status.lastUsed)}` : ""}`}
+            text={
+              status.lastUsed
+                ? t("settings.agents.runningUsed", { url: status.url ?? "", time: dateTime(status.lastUsed) })
+                : t("settings.agents.running", { url: status.url ?? "" })
+            }
           />
         ) : (
-          draft.enabled && <p className="text-sm text-slate-500">Save to start it.</p>
+          draft.enabled && <p className="text-sm text-slate-500">{t("settings.agents.saveToStart")}</p>
         )}
       </Section>
       {status?.running && (
-        <Section
-          title="Connect an app"
-          text="Apps start Cardloader’s own program with the argument mcp; it finds the open app and its token by itself."
-        >
+        <Section title={t("settings.agents.connect.title")} text={t("settings.agents.connect.text")}>
           <div className="flex flex-wrap gap-0.5 rounded-md bg-slate-100 p-0.5 dark:bg-slate-900" role="tablist">
-            {AGENT_APPS.map(([key, label]) => (
+            {agentApps().map(([key, label]) => (
               <button
                 key={key}
                 role="tab"
@@ -758,12 +788,12 @@ function AgentsTab({
               <>
                 <Snippet
                   label="Claude Desktop"
-                  hint="Settings → Developer → Edit Config: add this, then quit and reopen Claude."
+                  hint={t("settings.agents.connect.claudeDesktopHint")}
                   text={mcpServers}
                 />
                 <Snippet
                   label="Claude Code"
-                  hint="Run this in a terminal; /mcp then lists Cardloader."
+                  hint={t("settings.agents.connect.claudeCodeHint")}
                   text={`claude mcp add cardloader -- "${command}" mcp`}
                 />
               </>
@@ -771,56 +801,44 @@ function AgentsTab({
             {app === "codex" && (
               <>
                 <Snippet
-                  label="Codex CLI and IDE extension"
-                  hint="Run this in a terminal; both read the same configuration."
+                  label={t("settings.agents.connect.codex")}
+                  hint={t("settings.agents.connect.codexHint")}
                   text={`codex mcp add cardloader -- "${command}" mcp`}
                 />
                 <Snippet
-                  label="Or the config file"
-                  hint="Add this to ~/.codex/config.toml."
+                  label={t("settings.agents.connect.configFile")}
+                  hint={t("settings.agents.connect.codexConfigHint")}
                   text={`[mcp_servers.cardloader]\ncommand = '${command}'\nargs = ["mcp"]`}
                 />
               </>
             )}
             {app === "cursor" && (
-              <Snippet
-                label="Cursor"
-                hint="Add this to ~/.cursor/mcp.json (or a project’s .cursor/mcp.json), then turn cardloader on in Cursor’s MCP settings."
-                text={mcpServers}
-              />
+              <Snippet label="Cursor" hint={t("settings.agents.connect.cursorHint")} text={mcpServers} />
             )}
             {app === "gemini" && (
-              <Snippet
-                label="Gemini CLI"
-                hint="Add this to ~/.gemini/settings.json; /mcp then lists Cardloader."
-                text={mcpServers}
-              />
+              <Snippet label="Gemini CLI" hint={t("settings.agents.connect.geminiHint")} text={mcpServers} />
             )}
             {app === "lmstudio" && (
-              <Snippet
-                label="LM Studio"
-                hint="Program tab → Install → Edit mcp.json: add this. Reviewing cards needs a model that sees images and calls tools."
-                text={mcpServers}
-              />
+              <Snippet label="LM Studio" hint={t("settings.agents.connect.lmstudioHint")} text={mcpServers} />
             )}
             {app === "http" && (
               <div className="space-y-2">
                 <Snippet
-                  label="Address"
-                  hint="For apps that connect over HTTP, with the header below."
+                  label={t("settings.agents.connect.address")}
+                  hint={t("settings.agents.connect.addressHint")}
                   text={status.url ?? ""}
                 />
-                <Snippet label="Header" text={`Authorization: Bearer ${status.token ?? ""}`} />
+                <Snippet
+                  label={t("settings.agents.connect.header")}
+                  text={`Authorization: Bearer ${status.token ?? ""}`}
+                />
                 <button className="btn px-2 py-1 text-xs" onClick={newToken}>
-                  <RefreshCw className="h-3.5 w-3.5" /> New token
+                  <RefreshCw className="h-3.5 w-3.5" /> {t("settings.agents.connect.newToken")}
                 </button>
               </div>
             )}
           </div>
-          <p className="text-xs text-slate-500">
-            Try asking: “Run a new Cardloader session on my folder ~/Cards/pokemon — English Pokémon, fronts only, store
-            it in Ximilar”, or “Review the latest Cardloader session and accept the cards that match their pictures”.
-          </p>
+          <p className="text-xs text-slate-500">{t("settings.agents.connect.tryAsking")}</p>
         </Section>
       )}
     </>
@@ -829,22 +847,25 @@ function AgentsTab({
 
 type AgentApp = "claude" | "codex" | "cursor" | "gemini" | "lmstudio" | "http";
 
-const AGENT_APPS: [AgentApp, string][] = [
-  ["claude", "Claude"],
-  ["codex", "OpenAI Codex"],
-  ["cursor", "Cursor"],
-  ["gemini", "Gemini CLI"],
-  ["lmstudio", "LM Studio"],
-  ["http", "Other (HTTP)"],
-];
+function agentApps(): [AgentApp, string][] {
+  return [
+    ["claude", "Claude"],
+    ["codex", "OpenAI Codex"],
+    ["cursor", "Cursor"],
+    ["gemini", "Gemini CLI"],
+    ["lmstudio", "LM Studio"],
+    ["http", t("settings.agents.connect.otherApp")],
+  ];
+}
 
 /** Text to copy into another app. */
 function Snippet({ label, hint, text }: { label: string; hint?: string; text: string }) {
+  const t = useT();
   const copy = () =>
     navigator.clipboard
       .writeText(text)
-      .then(() => toast("Copied"))
-      .catch(() => toast("Couldn’t copy: select the text instead"));
+      .then(() => toast(t("common.copied")))
+      .catch(() => toast(t("settings.agents.snippet.copyFailed")));
   return (
     <div>
       <div className="label">{label}</div>
@@ -853,7 +874,11 @@ function Snippet({ label, hint, text }: { label: string; hint?: string; text: st
         <pre className="selectable min-w-0 flex-1 overflow-x-auto rounded-md bg-slate-100 px-3 py-2 font-mono text-xs dark:bg-slate-900">
           {text}
         </pre>
-        <button className="btn px-2 py-1 text-xs" onClick={copy} aria-label={`Copy: ${label}`}>
+        <button
+          className="btn px-2 py-1 text-xs"
+          onClick={copy}
+          aria-label={t("settings.agents.snippet.copy", { label })}
+        >
           <Copy className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -862,6 +887,7 @@ function Snippet({ label, hint, text }: { label: string; hint?: string; text: st
 }
 
 function DriverSettings({ device, disabled }: { device: string | null; disabled: boolean }) {
+  const t = useT();
   const [state, setState] = useState<"open" | "saved" | "unchanged" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const configure = () => {
@@ -880,18 +906,18 @@ function DriverSettings({ device, disabled }: { device: string | null; disabled:
     <div className="mt-2 space-y-1">
       <div className="flex items-center gap-3">
         <button className="btn" onClick={configure} disabled={disabled || !device || state === "open"}>
-          <SlidersHorizontal className="h-4 w-4" /> Driver settings…
+          <SlidersHorizontal className="h-4 w-4" /> {t("settings.scanner.driver.button")}
         </button>
         <span className="text-xs text-slate-500">
           {state === "open"
-            ? "The driver’s window is open…"
+            ? t("settings.scanner.driver.open")
             : state === "saved"
-              ? "Saved: every scan starts from them."
+              ? t("settings.scanner.driver.saved")
               : state === "unchanged"
-                ? "Nothing saved (cancelled, or the driver can’t keep its settings)."
+                ? t("settings.scanner.driver.unchanged")
                 : device
-                  ? "The scanner’s own options, e.g. automatic cropping and deskew."
-                  : "Choose a scanner first."}
+                  ? t("settings.scanner.driver.hint")
+                  : t("settings.scanner.driver.chooseFirst")}
         </span>
       </div>
       <ErrorNote>{error}</ErrorNote>
@@ -900,59 +926,60 @@ function DriverSettings({ device, disabled }: { device: string | null; disabled:
 }
 
 function About() {
+  const t = useT();
   const [info, setInfo] = useState<AppInfo | null>(null);
   useEffect(() => {
     api.appInfo().then(setInfo);
   }, []);
   return (
     <Section
-      title="About Cardloader"
-      text={
-        <>
-          Open source, by Ximilar.{" "}
+      title={t("settings.about.title")}
+      text={rich(t("settings.about.text"), {
+        link: (s) => (
           <button
             className="text-accent underline"
             onClick={() => openUrl("https://github.com/Ximilar-com/cardloader/releases")}
           >
-            Releases and what’s new
+            {s}
           </button>
-        </>
-      }
+        ),
+      })}
     >
       {info && (
         <dl className="grid grid-cols-[120px_1fr] items-center gap-x-4 gap-y-2 text-sm">
-          <dt className="text-slate-500">Version</dt>
+          <dt className="text-slate-500">{t("settings.about.version")}</dt>
           <dd>{info.version}</dd>
-          <dt className="text-slate-500">Data folder</dt>
+          <dt className="text-slate-500">{t("settings.about.dataFolder")}</dt>
           <dd className="flex min-w-0 items-center gap-2">
             <span className="selectable truncate font-mono text-xs" title={info.dataDir}>
               {info.dataDir}
             </span>
             <button className="btn px-2 py-0.5 text-xs" onClick={() => openPath(info.dataDir)}>
-              <FolderOpen className="h-3.5 w-3.5" /> Open
+              <FolderOpen className="h-3.5 w-3.5" /> {t("common.open")}
             </button>
           </dd>
-          <dt className="text-slate-500">Space used</dt>
-          <dd>
-            {bytes(info.dataBytes)} — sessions’ thumbnails, scans and grading images; deleting a session frees its share
-          </dd>
+          <dt className="text-slate-500">{t("settings.about.spaceUsed")}</dt>
+          <dd>{t("settings.about.space", { size: bytes(info.dataBytes) })}</dd>
         </dl>
       )}
     </Section>
   );
 }
 
-type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "agents" | "about";
+type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "agents" | "language" | "about";
 
-const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
-  { key: "ximilar", label: "Ximilar API", icon: KeyRound },
-  { key: "models", label: "Local models", icon: Cpu },
-  { key: "sessions", label: "New sessions", icon: SlidersHorizontal },
-  { key: "ebay", label: "Selling", icon: Store },
-  { key: "scanner", label: "Scanner", icon: ScanLine },
-  { key: "agents", label: "AI agents", icon: Bot },
-  { key: "about", label: "About", icon: Info },
-];
+function tabs(): { key: Tab; label: string; icon: LucideIcon }[] {
+  return [
+    { key: "ximilar", label: t("settings.tabs.ximilar"), icon: KeyRound },
+    { key: "models", label: t("settings.tabs.models"), icon: Cpu },
+    { key: "sessions", label: t("settings.tabs.sessions"), icon: SlidersHorizontal },
+    { key: "ebay", label: t("settings.tabs.ebay"), icon: Store },
+    { key: "scanner", label: t("settings.tabs.scanner"), icon: ScanLine },
+    { key: "agents", label: t("settings.tabs.agents"), icon: Bot },
+    { key: "language", label: t("common.language"), icon: Languages },
+    { key: "about", label: t("settings.tabs.about"), icon: Info },
+  ];
+}
 
 function strip(s: Settings | SettingsView): Settings {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -973,6 +1000,7 @@ function EbayTab({
   applyView: (v: SettingsView) => void;
   setError: (e: string | null) => void;
 }) {
+  const t = useT();
   const [cert, setCert] = useState("");
   const [imgbbKey, setImgbbKey] = useState("");
   const [connecting, setConnecting] = useState(false);
@@ -1060,7 +1088,7 @@ function EbayTab({
     });
 
   const named = (list: { id: string; name: string }[] | undefined, value: string) => [
-    { value: "", label: "Choose…", disabled: true },
+    { value: "", label: t("settings.ebay.listings.choose"), disabled: true },
     ...(list ?? []).map((p) => ({ value: p.id, label: p.name })),
     ...(value && !list?.some((p) => p.id === value) ? [{ value, label: value }] : []),
   ];
@@ -1068,32 +1096,33 @@ function EbayTab({
   return (
     <>
       <Section
-        title="eBay developer keys"
+        title={t("settings.ebay.keys.title")}
         done={keysReady}
-        text={
-          <>
-            Cardloader lists cards with your own keys from the{" "}
+        text={rich(t("settings.ebay.keys.text"), {
+          link: (s) => (
             <button className="text-accent underline" onClick={() => openUrl("https://developer.ebay.com/my/keys")}>
-              eBay developer program
+              {s}
             </button>
-            . Create a keyset, then under <b>User Tokens</b> add an eBay Redirect URL (RuName) and keep eBay’s own “auth
-            accepted” page. Production keys work once eBay activates them, which needs the Marketplace Account Deletion
-            exemption (or notifications).
-          </>
-        }
+          ),
+          b: (s) => <b>{s}</b>,
+        })}
       >
         <div className="grid grid-cols-2 gap-4">
           <Field
-            label="Environment"
+            label={t("settings.ebay.keys.environment")}
             value={ebay.sandbox ? "sandbox" : "production"}
             options={[
-              { value: "production", label: "Production", hint: "real listings" },
-              { value: "sandbox", label: "Sandbox", hint: "test listings" },
+              {
+                value: "production",
+                label: t("settings.ebay.keys.production"),
+                hint: t("settings.ebay.keys.productionHint"),
+              },
+              { value: "sandbox", label: t("settings.ebay.keys.sandbox"), hint: t("settings.ebay.keys.sandboxHint") },
             ]}
             onChange={(v) => setEbay({ sandbox: v === "sandbox" })}
           />
           <div>
-            <label className="label">App ID (Client ID)</label>
+            <label className="label">{t("settings.ebay.keys.appId")}</label>
             <input
               className="input font-mono"
               value={ebay.appId}
@@ -1102,7 +1131,7 @@ function EbayTab({
             />
           </div>
           <div className="col-span-2">
-            <label className="label">RuName (eBay Redirect URL name)</label>
+            <label className="label">{t("settings.ebay.keys.ruName")}</label>
             <input
               className="input font-mono"
               value={ebay.ruName}
@@ -1111,38 +1140,43 @@ function EbayTab({
             />
           </div>
           <div className="col-span-2">
-            <label className="label">Cert ID (Client Secret)</label>
+            <label className="label">{t("settings.ebay.keys.certId")}</label>
             <div className="flex gap-2">
               <input
                 type="password"
                 className="input font-mono"
-                placeholder={view.ebayCertSet ? "•••••••••••••••• (saved)" : "Paste the Cert ID"}
+                placeholder={
+                  view.ebayCertSet ? t("settings.savedPlaceholder") : t("settings.ebay.keys.certPlaceholder")
+                }
                 value={cert}
                 onChange={(e) => setCert(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && cert && saveCert(cert)}
               />
               <button className="btn btn-primary" disabled={!cert} onClick={() => saveCert(cert)}>
-                <KeyRound className="h-4 w-4" /> Save
+                <KeyRound className="h-4 w-4" /> {t("common.save")}
               </button>
               {view.ebayCertSet && (
                 <button className="btn" onClick={() => saveCert("")}>
-                  Remove
+                  {t("common.remove")}
                 </button>
               )}
             </div>
-            <p className="mt-1 text-xs text-slate-500">Kept with the API token; changing the keys disconnects eBay.</p>
+            <p className="mt-1 text-xs text-slate-500">{t("settings.ebay.keys.certNote")}</p>
           </div>
         </div>
       </Section>
 
       <Section
-        title="eBay account"
+        title={t("settings.ebay.account.title")}
         done={view.ebayConnected}
-        text="Sign in to the eBay seller account the cards are listed on. eBay asks you to agree once; the login lasts about 18 months."
+        text={t("settings.ebay.account.text")}
       >
         {view.ebayConnected ? (
           <div className="flex items-center gap-3">
-            <Status ok text={`Connected${saved.username ? ` as ${saved.username}` : ""}`} />
+            <Status
+              ok
+              text={saved.username ? t("settings.connectedAs", { account: saved.username }) : t("settings.connected")}
+            />
             <div className="flex-1" />
             <button
               className="btn"
@@ -1155,34 +1189,35 @@ function EbayTab({
                 }
               }}
             >
-              <LogOut className="h-4 w-4" /> Disconnect
+              <LogOut className="h-4 w-4" /> {t("settings.ebay.account.disconnect")}
             </button>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="flex items-center gap-3">
               <button className="btn btn-primary" disabled={!keysReady || connecting} onClick={() => connect()}>
-                <LogIn className="h-4 w-4" /> {connecting ? "Waiting for eBay…" : "Connect eBay account"}
+                <LogIn className="h-4 w-4" />{" "}
+                {connecting ? t("settings.ebay.account.waiting") : t("settings.ebay.account.connect")}
               </button>
               <span className="text-xs text-slate-500">
                 {keysChanged
-                  ? "Save the keys first."
+                  ? t("settings.ebay.account.saveKeysFirst")
                   : !keysReady
-                    ? "Enter the keys above first."
+                    ? t("settings.ebay.account.enterKeysFirst")
                     : connecting
-                      ? "Finish signing in in the eBay window."
+                      ? t("settings.ebay.account.finishSigningIn")
                       : ""}
               </span>
               <div className="flex-1" />
               {pasted === null && keysReady && (
                 <button className="text-xs text-accent hover:underline" onClick={() => setPasted("")}>
-                  Paste the address instead
+                  {t("settings.ebay.account.pasteInstead")}
                 </button>
               )}
             </div>
             {pasted !== null && (
               <div>
-                <label className="label">Address eBay showed after you agreed</label>
+                <label className="label">{t("settings.ebay.account.pasted")}</label>
                 <div className="flex gap-2">
                   <input
                     className="input font-mono text-xs"
@@ -1196,13 +1231,10 @@ function EbayTab({
                     disabled={!pasted.trim() || connecting || !keysReady}
                     onClick={() => connect(pasted)}
                   >
-                    Connect
+                    {t("settings.ebay.account.connectButton")}
                   </button>
                 </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  If the window can’t finish: open eBay’s sign-in in your browser, agree, and paste the address of the
-                  page it ends on.
-                </p>
+                <p className="mt-1 text-xs text-slate-500">{t("settings.ebay.account.pasteHelp")}</p>
               </div>
             )}
           </div>
@@ -1211,12 +1243,12 @@ function EbayTab({
 
       {view.ebayConnected && (
         <Section
-          title="Listings"
+          title={t("settings.ebay.listings.title")}
           done={ebayReady(saved)}
-          text="What new listings use. Cards are listed on eBay US (EBAY_US), priced in US dollars, one of each, at a fixed price until sold."
+          text={t("settings.ebay.listings.text")}
         >
           {!current ? (
-            <p className="text-sm text-slate-500">Loading your eBay account…</p>
+            <p className="text-sm text-slate-500">{t("settings.ebay.listings.loading")}</p>
           ) : current.error ? (
             <ErrorNote>{current.error}</ErrorNote>
           ) : (
@@ -1224,36 +1256,33 @@ function EbayTab({
               <>
                 {!current.setup.optedIn && (
                   <div className="flex items-center gap-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-                    <span className="flex-1">
-                      Business policies are off for this account; listings need them. Turn them on, then create
-                      shipping, payment and return policies in Seller Hub.
-                    </span>
+                    <span className="flex-1">{t("settings.ebay.listings.policiesOff")}</span>
                     <button className="btn shrink-0" disabled={busy} onClick={() => act(api.ebayOptIn)}>
-                      Turn on business policies
+                      {t("settings.ebay.listings.turnOn")}
                     </button>
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-4">
                   <Field
-                    label="Shipping policy"
+                    label={t("settings.ebay.listings.shipping")}
                     value={ebay.fulfillmentPolicyId}
                     options={named(current.setup.fulfillmentPolicies, ebay.fulfillmentPolicyId)}
                     onChange={(v) => setEbay({ fulfillmentPolicyId: v })}
                   />
                   <Field
-                    label="Payment policy"
+                    label={t("settings.ebay.listings.payment")}
                     value={ebay.paymentPolicyId}
                     options={named(current.setup.paymentPolicies, ebay.paymentPolicyId)}
                     onChange={(v) => setEbay({ paymentPolicyId: v })}
                   />
                   <Field
-                    label="Return policy"
+                    label={t("settings.ebay.listings.return")}
                     value={ebay.returnPolicyId}
                     options={named(current.setup.returnPolicies, ebay.returnPolicyId)}
                     onChange={(v) => setEbay({ returnPolicyId: v })}
                   />
                   <div>
-                    <div className="label">Ships from</div>
+                    <div className="label">{t("settings.ebay.listings.shipsFrom")}</div>
                     <div className="flex gap-2">
                       <Select
                         value={ebay.locationKey}
@@ -1262,11 +1291,11 @@ function EbayTab({
                           icon: o.value ? MapPin : undefined,
                         }))}
                         onChange={(v) => setEbay({ locationKey: v })}
-                        aria-label="Ships from"
+                        aria-label={t("settings.ebay.listings.shipsFrom")}
                       />
                       <button
                         className="btn shrink-0 px-2"
-                        title="Add a location"
+                        title={t("settings.ebay.listings.addLocationTitle")}
                         onClick={() => setPlace(place ? null : { postalCode: "", country: "US" })}
                       >
                         <Plus className="h-4 w-4" />
@@ -1277,7 +1306,7 @@ function EbayTab({
                 {place && (
                   <div className="flex items-end gap-2">
                     <div className="flex-1">
-                      <label className="label">Postal code</label>
+                      <label className="label">{t("settings.ebay.listings.postalCode")}</label>
                       <input
                         className="input"
                         value={place.postalCode}
@@ -1285,7 +1314,7 @@ function EbayTab({
                       />
                     </div>
                     <div className="w-28">
-                      <label className="label">Country</label>
+                      <label className="label">{t("settings.ebay.listings.country")}</label>
                       <input
                         className="input uppercase"
                         maxLength={2}
@@ -1298,15 +1327,15 @@ function EbayTab({
                       disabled={busy || !place.postalCode.trim() || place.country.trim().length !== 2}
                       onClick={() => addLocation(place)}
                     >
-                      Add location
+                      {t("settings.ebay.listings.addLocation")}
                     </button>
                   </div>
                 )}
                 <div className="flex items-center gap-3">
                   <button className="btn" onClick={() => setReloads((n) => n + 1)}>
-                    <RefreshCw className="h-4 w-4" /> Reload policies
+                    <RefreshCw className="h-4 w-4" /> {t("settings.ebay.listings.reload")}
                   </button>
-                  <span className="text-xs text-slate-500">Changed policies on eBay? Reload them here, then Save.</span>
+                  <span className="text-xs text-slate-500">{t("settings.ebay.listings.reloadHint")}</span>
                 </div>
               </>
             )
@@ -1315,36 +1344,35 @@ function EbayTab({
       )}
 
       <Section
-        title="Picture hosting"
+        title={t("settings.ebay.hosting.title")}
         done={view.imgbbKeySet}
-        text={
-          <>
-            Whatnot’s CSV import downloads each card’s pictures from a public link, so the Whatnot export uploads them
-            to{" "}
+        text={rich(t("settings.ebay.hosting.text"), {
+          link: (s) => (
             <button className="text-accent underline" onClick={() => openUrl("https://api.imgbb.com/")}>
-              ImgBB
-            </button>{" "}
-            first (free; get an API key there). Uploaded pictures are public to anyone with the link.
-          </>
-        }
+              {s}
+            </button>
+          ),
+        })}
       >
         <div>
-          <label className="label">ImgBB API key</label>
+          <label className="label">{t("settings.ebay.hosting.imgbbKey")}</label>
           <div className="flex gap-2">
             <input
               type="password"
               className="input font-mono"
-              placeholder={view.imgbbKeySet ? "•••••••••••••••• (saved)" : "Paste the API key"}
+              placeholder={
+                view.imgbbKeySet ? t("settings.savedPlaceholder") : t("settings.ebay.hosting.keyPlaceholder")
+              }
               value={imgbbKey}
               onChange={(e) => setImgbbKey(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && imgbbKey && saveImgbbKey(imgbbKey)}
             />
             <button className="btn btn-primary" disabled={!imgbbKey} onClick={() => saveImgbbKey(imgbbKey)}>
-              <KeyRound className="h-4 w-4" /> Save
+              <KeyRound className="h-4 w-4" /> {t("common.save")}
             </button>
             {view.imgbbKeySet && (
               <button className="btn" onClick={() => saveImgbbKey("")}>
-                Remove
+                {t("common.remove")}
               </button>
             )}
           </div>
@@ -1366,12 +1394,13 @@ function Section({
   done?: boolean;
   children: ReactNode;
 }) {
+  const t = useT();
   return (
     <section className="card space-y-4 p-5">
       <div>
         <h2 className="flex items-center gap-1.5 text-base font-semibold">
           {title}
-          {done && <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label="token saved" />}
+          {done && <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label={t("settings.tokenSaved")} />}
         </h2>
         {text && <p className="mt-0.5 text-sm text-slate-500">{text}</p>}
       </div>
@@ -1399,32 +1428,41 @@ function Field<T extends string>({
   );
 }
 
-const ROTATION_OPTIONS: SelectOption<Settings["scan"]["rotation"]>[] = [
-  { value: "none", label: "None" },
-  { value: "upside_down", label: "Upside down", hint: "cards fed bottom edge first" },
-];
+function rotationOptions(): SelectOption<Settings["scan"]["rotation"]>[] {
+  return [
+    { value: "none", label: t("common.none") },
+    { value: "upside_down", label: t("settings.scanner.upsideDown"), hint: t("settings.scanner.upsideDownHint") },
+  ];
+}
 
-const SIDE_ORDER_OPTIONS: SelectOption<"front" | "back">[] = [
-  { value: "front", label: "Front, then back" },
-  { value: "back", label: "Back, then front" },
-];
+function sideOrderOptions(): SelectOption<"front" | "back">[] {
+  return [
+    { value: "front", label: t("settings.scanner.frontFirst") },
+    { value: "back", label: t("settings.scanner.backFirst") },
+  ];
+}
 
-const SOURCE_OPTIONS: SelectOption<Settings["defaultSources"][number]>[] = (
-  ["scanner", "folder", "watch_folder", "csv"] as const
-).map((value) => ({ value, label: SOURCE_LABELS[value] }));
+function sourceOptions(): SelectOption<Settings["defaultSources"][number]>[] {
+  const labels = sourceLabels();
+  return (["scanner", "folder", "watch_folder", "csv"] as const).map((value) => ({ value, label: labels[value] }));
+}
 
 // At most 3, as `settings::MAX_CONCURRENCY`.
-const CONCURRENCY_OPTIONS: SelectOption<string>[] = [
-  { value: "1", label: "1" },
-  { value: "2", label: "2" },
-  { value: "3", label: "3", hint: "fastest" },
-];
+function concurrencyOptions(): SelectOption<string>[] {
+  return [
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3", hint: t("settings.sessions.fastest") },
+  ];
+}
 
-const COLOR_OPTIONS: SelectOption<Settings["scan"]["color"]>[] = [
-  { value: "color", label: "Colour" },
-  { value: "gray", label: "Greyscale" },
-  { value: "bw", label: "Black & white" },
-];
+function colorOptions(): SelectOption<Settings["scan"]["color"]>[] {
+  return [
+    { value: "color", label: t("settings.scanner.colorColor") },
+    { value: "gray", label: t("settings.scanner.colorGray") },
+    { value: "bw", label: t("settings.scanner.colorBw") },
+  ];
+}
 
 function Status({ ok, text }: { ok: boolean; text: string }) {
   return (

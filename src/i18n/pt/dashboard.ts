@@ -1,0 +1,67 @@
+import type { Messages } from "..";
+import type en from "../en/dashboard";
+
+const messages: Messages<typeof en> = {
+  title: "Início",
+  newSession: "Nova sessão",
+  lastWeek: "Últimos 7 dias",
+  defaultsTitle: "Padrões para novas sessões",
+  runSetupAgain: "Refazer a configuração",
+  activity: "Atividade",
+  lastSessions: "Últimas sessões",
+  allSessions: "Todas as sessões",
+  week: {
+    cardsAnalysed: "cartas analisadas",
+    dayCards: { one: "{date}: {count} carta", other: "{date}: {count} cartas" },
+    today: "Hoje",
+  },
+  heatmap: {
+    activeDays: {
+      one: "Cartas foram analisadas em {count} dia no último ano.",
+      other: "Cartas foram analisadas em {count} dias no último ano.",
+    },
+    dayCards: { one: "{date}: {count} carta", other: "{date}: {count} cartas" },
+    dayNone: "{date}: nada escaneado",
+    noScanning: "Nada escaneado",
+    fewer: "Menos",
+    moreCards: "Mais cartas",
+  },
+  totals: {
+    cards: "Cartas",
+    inSessions: { one: "em {count} sessão", other: "em {count} sessões" },
+    totalValue: "Valor total",
+    totalValueSub: "preços de mercado na análise",
+    toReview: "Para revisar",
+    toReviewSub: "ainda não aceitas",
+    apiCalls: "Chamadas à API",
+    apiCallsSub: "últimos 7 dias",
+  },
+  attention: {
+    title: "Precisa de atenção",
+    noToken: "Adicione seu token de API do Ximilar para analisar cartas.",
+    openSettings: "Abrir Configurações",
+    analysing: "analisando, {done} de {total}",
+    paused: "pausada",
+    toReview: { one: "{count} carta para revisar", other: "{count} cartas para revisar" },
+    failed: "{count} com falha",
+    syncFailed: "Falha no envio ao Cards Cloud",
+    ebayStopped: "Tarefa do eBay interrompida",
+    resume: "Retomar",
+    review: "Revisar",
+    open: "Abrir",
+  },
+  defaults: {
+    identifyAs: "Identificar como",
+    game: "Jogo",
+    anyGame: "Qualquer jogo",
+    grading: "Graduação",
+    prices: "Preços",
+    cardsFrom: "Cartas de",
+    identifyWith: "Identificar com",
+    localModel: "Modelo de IA local",
+    change: "Alterar em Configurações",
+  },
+  noSessions: "Nenhuma sessão ainda.",
+  sessionCards: { one: "{done} / {count} carta", other: "{done} / {count} cartas" },
+};
+export default messages;

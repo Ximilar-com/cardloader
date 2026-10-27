@@ -1,15 +1,20 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { GradingMode, IdMode } from "./api";
+import { locale, t } from "../i18n";
+import type { Engine, GradingMode, IdMode, SourceKind } from "./api";
 
-const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
-
+/** Ximilar's prices are in US dollars, written the way the app's language writes amounts. */
 export function price(value: number | null | undefined): string {
-  return value == null ? "—" : usd.format(value);
+  return value == null ? "—" : new Intl.NumberFormat(locale(), { style: "currency", currency: "USD" }).format(value);
 }
 
 export function grade(value: number | null | undefined): string {
   if (value == null) return "—";
-  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+  return value.toLocaleString(locale(), { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+}
+
+/** A number shown with `digits` decimals, as the app's language writes them ("0.120", "0,120"). */
+export function decimal(value: number, digits: number): string {
+  return value.toLocaleString(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
 export function basename(path: string): string {
@@ -21,7 +26,7 @@ export function dateTime(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  return d.toLocaleString(locale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
 /** "45s", "3m 20s", "1h 5m". */
@@ -42,9 +47,10 @@ export function fileUrl(path: string | null | undefined): string | undefined {
 
 export function defaultSessionName(now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `Session ${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(
     now.getMinutes(),
   )}`;
+  return t("status.sessionName", { date });
 }
 
 /** Estimated seconds left from recent progress samples [ms timestamp, processed count]. */
@@ -64,29 +70,36 @@ export function bytes(n: number): string {
   return `${Math.round(n / 1e3)} kB`;
 }
 
-export const ENGINE_LABELS: Record<string, string> = {
-  ximilar: "Ximilar API",
-  local: "Local model",
-};
+// Functions, not constants: the labels follow the app's language.
 
-export const ID_MODE_LABELS: Record<IdMode, string> = {
-  auto: "Auto-detect",
-  tcg: "Trading card games",
-  sport: "Sport cards",
-  comics: "Comics",
-  slab: "Graded slabs",
-};
+export function engineLabels(): Record<Engine, string> {
+  return { ximilar: t("status.engine.ximilar"), local: t("status.engine.local") };
+}
 
-export const GRADING_LABELS: Record<GradingMode, string> = {
-  off: "Off",
-  condition: "Condition (fast)",
-  grade: "Full grade",
-  centering: "Centering only",
-};
+export function idModeLabels(): Record<IdMode, string> {
+  return {
+    auto: t("status.idMode.auto"),
+    tcg: t("status.idMode.tcg"),
+    sport: t("status.idMode.sport"),
+    comics: t("status.idMode.comics"),
+    slab: t("status.idMode.slab"),
+  };
+}
 
-export const SOURCE_LABELS: Record<string, string> = {
-  folder: "Folder",
-  watch_folder: "Watch folder",
-  scanner: "Scanner",
-  csv: "CSV file",
-};
+export function gradingLabels(): Record<GradingMode, string> {
+  return {
+    off: t("status.grading.off"),
+    condition: t("status.grading.condition"),
+    grade: t("status.grading.grade"),
+    centering: t("status.grading.centering"),
+  };
+}
+
+export function sourceLabels(): Record<SourceKind, string> {
+  return {
+    folder: t("status.source.folder"),
+    watch_folder: t("status.source.watch_folder"),
+    scanner: t("status.source.scanner"),
+    csv: t("status.source.csv"),
+  };
+}

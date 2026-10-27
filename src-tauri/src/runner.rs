@@ -47,8 +47,8 @@ pub trait EventSink: Send + Sync {
     fn item(&self, item: ItemSummary);
     fn ebay(&self, _progress: &EbayProgress) {}
     fn session_deleted(&self, _id: &str) {}
-    /// A run ended on its own (not stopped): tell the user if they are looking elsewhere.
-    fn finished(&self, _session: &Session) {}
+    /// A run ended on its own (not stopped): tell the user if they are looking elsewhere, in the app's language.
+    fn finished(&self, _session: &Session, _language: &str) {}
 }
 
 impl EventSink for AppHandle {
@@ -68,7 +68,7 @@ impl EventSink for AppHandle {
         let _ = self.emit(EVENT_SESSION_DELETED, id);
     }
 
-    fn finished(&self, session: &Session) {
+    fn finished(&self, session: &Session, language: &str) {
         use tauri::Manager;
         use tauri_plugin_notification::NotificationExt;
         let focused = self
@@ -80,36 +80,10 @@ impl EventSink for AppHandle {
                 .notification()
                 .builder()
                 .title(&session.name)
-                .body(finished_text(session))
+                .body(crate::i18n::finished_text(session, language))
                 .show();
         }
     }
-}
-
-/// "Done: 412 cards, $1,284.50 · 23 to review · 2 failed", or why the run failed.
-fn finished_text(session: &Session) -> String {
-    let c = &session.counts;
-    if session.status == SessionStatus::Failed {
-        return format!(
-            "Stopped: {}",
-            session.error.as_deref().unwrap_or("an error")
-        );
-    }
-    let mut text = format!(
-        "Done: {} card{}",
-        c.done,
-        if c.done == 1 { "" } else { "s" }
-    );
-    if c.total_price > 0.0 {
-        text += &format!(", ${:.2}", c.total_price);
-    }
-    if c.to_review > 0 {
-        text += &format!(" · {} to review", c.to_review);
-    }
-    if c.errors > 0 {
-        text += &format!(" · {} failed", c.errors);
-    }
-    text
 }
 
 struct EbayJob {
@@ -536,7 +510,9 @@ impl Runner {
             runner.emit_session(&id);
             if status != SessionStatus::Stopped {
                 if let Ok(session) = runner.db.session(&id) {
-                    runner.events.finished(&session);
+                    runner
+                        .events
+                        .finished(&session, &runner.settings.get().language);
                 }
             }
         });

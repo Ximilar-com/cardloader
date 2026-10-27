@@ -4,17 +4,21 @@
 import clsx from "clsx";
 import { Percent } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { rich, t as translate, useT } from "../i18n";
 import type { CardCondition, EbayPreview } from "../lib/api";
 import { fileUrl } from "../lib/format";
 import { Check } from "./NewSessionDialog";
 import type { SelectOption } from "./Select";
 
-export const CONDITIONS: SelectOption<CardCondition>[] = [
-  { value: "near_mint", label: "Near Mint or better" },
-  { value: "excellent", label: "Excellent", hint: "lightly played" },
-  { value: "very_good", label: "Very Good", hint: "moderately played" },
-  { value: "poor", label: "Poor", hint: "heavily played" },
-];
+/** The conditions of ungraded cards: the labels are marketplace condition names (English), the hints translated. */
+export function conditions(): SelectOption<CardCondition>[] {
+  return [
+    { value: "near_mint", label: "Near Mint or better" },
+    { value: "excellent", label: "Excellent", hint: translate("market.conditionHint.excellent") },
+    { value: "very_good", label: "Very Good", hint: translate("market.conditionHint.veryGood") },
+    { value: "poor", label: "Poor", hint: translate("market.conditionHint.poor") },
+  ];
+}
 
 /** A price as typed, if it is one. */
 export function parsePrice(text: string | undefined): number | null {
@@ -56,10 +60,11 @@ export default function PricedCards({
   can: (c: EbayPreview) => boolean;
   note?: (c: EbayPreview) => ReactNode;
   badge?: (c: EbayPreview) => ReactNode;
-  /** "listed", "exported". */
-  verb: string;
+  /** What happens to the chosen cards. */
+  verb: "listed" | "exported";
   showPrices?: boolean;
 }) {
+  const t = useT();
   const [adjusting, setAdjusting] = useState(false);
   const open = cards.filter(can);
   const all = open.length > 0 && open.every((c) => chosen.has(c.itemId));
@@ -73,7 +78,13 @@ export default function PricedCards({
     <div className="rounded-md border border-slate-200 dark:border-slate-800">
       <div className="flex items-center gap-3 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900">
         <Check
-          label={all ? "All cards" : `${open.length} card${open.length === 1 ? "" : "s"} can be ${verb}`}
+          label={
+            all
+              ? t("market.priced.allCards")
+              : t(verb === "listed" ? "market.priced.canBeListed" : "market.priced.canBeExported", {
+                  count: open.length,
+                })
+          }
           checked={all}
           onChange={(on) => onChosen(on ? new Set(open.map((c) => c.itemId)) : new Set())}
         />
@@ -83,10 +94,10 @@ export default function PricedCards({
             className={clsx("flex items-center gap-1 text-accent hover:underline", adjusting && "font-medium")}
             onClick={() => setAdjusting(!adjusting)}
           >
-            <Percent className="h-3 w-3" /> Adjust prices
+            <Percent className="h-3 w-3" /> {t("market.priced.adjustPrices")}
           </button>
         )}
-        {showPrices && <span className="w-28 text-right">Price (USD)</span>}
+        {showPrices && <span className="w-28 text-right">{t("market.priced.priceUsd")}</span>}
       </div>
       {showPrices && adjusting && (
         <AdjustPrices
@@ -121,6 +132,7 @@ export default function PricedCards({
 
 /** Sets the chosen cards' prices from their market price at once. */
 function AdjustPrices({ onApply }: { onApply: (percent: number, ninetyNine: boolean, min: number) => void }) {
+  const t = useT();
   const [percent, setPercent] = useState("100");
   const [ninetyNine, setNinetyNine] = useState(true);
   const [min, setMin] = useState("0.99");
@@ -130,25 +142,31 @@ function AdjustPrices({ onApply }: { onApply: (percent: number, ninetyNine: bool
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-accent/5 px-3 py-2 text-sm dark:border-slate-800">
       <label className="flex items-center gap-1.5">
-        <input
-          className="input w-16 py-0.5 text-right tabular-nums"
-          inputMode="decimal"
-          value={percent}
-          onChange={(e) => setPercent(e.target.value)}
-          aria-label="Percent of the market price"
-        />
-        % of the market price
+        {rich(t("market.priced.percentOfMarket"), {
+          field: () => (
+            <input
+              className="input w-16 py-0.5 text-right tabular-nums"
+              inputMode="decimal"
+              value={percent}
+              onChange={(e) => setPercent(e.target.value)}
+              aria-label={t("market.priced.percentLabel")}
+            />
+          ),
+        })}
       </label>
-      <Check label="end in .99" checked={ninetyNine} onChange={setNinetyNine} />
+      <Check label={t("market.priced.endIn99")} checked={ninetyNine} onChange={setNinetyNine} />
       <label className="flex items-center gap-1.5">
-        at least $
-        <input
-          className="input w-16 py-0.5 text-right tabular-nums"
-          inputMode="decimal"
-          value={min}
-          onChange={(e) => setMin(e.target.value)}
-          aria-label="Lowest price"
-        />
+        {rich(t("market.priced.atLeast"), {
+          field: () => (
+            <input
+              className="input w-16 py-0.5 text-right tabular-nums"
+              inputMode="decimal"
+              value={min}
+              onChange={(e) => setMin(e.target.value)}
+              aria-label={t("market.priced.lowestPrice")}
+            />
+          ),
+        })}
       </label>
       <span className="flex-1" />
       <button
@@ -156,7 +174,7 @@ function AdjustPrices({ onApply }: { onApply: (percent: number, ninetyNine: bool
         disabled={!valid}
         onClick={() => onApply(p, ninetyNine, m)}
       >
-        Apply to the chosen cards
+        {t("market.priced.apply")}
       </button>
     </div>
   );
@@ -183,6 +201,7 @@ function CardRow({
   note: ReactNode;
   badge?: ReactNode;
 }) {
+  const t = useT();
   const bad = showPrice && chosen && parsePrice(value) == null;
   return (
     <li className={clsx("flex items-center gap-3 px-3 py-2", !enabled && "opacity-60")}>
@@ -192,7 +211,7 @@ function CardRow({
         checked={chosen}
         disabled={!enabled}
         onChange={(e) => onChoose(e.target.checked)}
-        aria-label={`Choose #${c.seq}`}
+        aria-label={t("market.priced.choose", { seq: String(c.seq) })}
       />
       {c.thumbPath ? (
         <img src={fileUrl(c.thumbPath)} alt="" className="h-10 w-auto max-w-[30px] rounded object-contain" />
@@ -215,13 +234,13 @@ function CardRow({
           className={clsx("input pl-6 text-right tabular-nums", bad && "border-red-400 ring-1 ring-red-300")}
           inputMode="decimal"
           value={value}
-          placeholder="Price"
+          placeholder={t("market.priced.price")}
           disabled={!enabled}
           onChange={(e) => {
             onPrice(e.target.value);
             if (e.target.value.trim()) onChoose(true);
           }}
-          aria-label={`Price of #${c.seq}`}
+          aria-label={t("market.priced.priceOf", { seq: String(c.seq) })}
         />
       </div>
     </li>

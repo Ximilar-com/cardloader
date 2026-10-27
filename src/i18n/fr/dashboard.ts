@@ -1,0 +1,67 @@
+import type { Messages } from "..";
+import type en from "../en/dashboard";
+
+const messages: Messages<typeof en> = {
+  title: "Accueil",
+  newSession: "Nouvelle session",
+  lastWeek: "7 derniers jours",
+  defaultsTitle: "Valeurs par défaut des nouvelles sessions",
+  runSetupAgain: "Relancer la configuration",
+  activity: "Activité",
+  lastSessions: "Dernières sessions",
+  allSessions: "Toutes les sessions",
+  week: {
+    cardsAnalysed: "cartes analysées",
+    dayCards: { one: "{date} : {count} carte", other: "{date} : {count} cartes" },
+    today: "Aujourd’hui",
+  },
+  heatmap: {
+    activeDays: {
+      one: "Des cartes ont été analysées {count} jour au cours de la dernière année.",
+      other: "Des cartes ont été analysées {count} jours au cours de la dernière année.",
+    },
+    dayCards: { one: "{date} : {count} carte", other: "{date} : {count} cartes" },
+    dayNone: "{date} : aucune numérisation",
+    noScanning: "Aucune numérisation",
+    fewer: "Moins",
+    moreCards: "Plus de cartes",
+  },
+  totals: {
+    cards: "Cartes",
+    inSessions: { one: "dans {count} session", other: "dans {count} sessions" },
+    totalValue: "Valeur totale",
+    totalValueSub: "prix du marché lors de l’analyse",
+    toReview: "À vérifier",
+    toReviewSub: "pas encore acceptées",
+    apiCalls: "Appels API",
+    apiCallsSub: "7 derniers jours",
+  },
+  attention: {
+    title: "À traiter",
+    noToken: "Ajoutez votre jeton API Ximilar pour analyser des cartes.",
+    openSettings: "Ouvrir les réglages",
+    analysing: "analyse en cours, {done} sur {total}",
+    paused: "en pause",
+    toReview: { one: "{count} carte à vérifier", other: "{count} cartes à vérifier" },
+    failed: "{count} en échec",
+    syncFailed: "Échec de l’envoi vers Cards Cloud",
+    ebayStopped: "Tâche eBay arrêtée",
+    resume: "Reprendre",
+    review: "Vérifier",
+    open: "Ouvrir",
+  },
+  defaults: {
+    identifyAs: "Identifier comme",
+    game: "Jeu",
+    anyGame: "Tous les jeux",
+    grading: "Gradation",
+    prices: "Prix",
+    cardsFrom: "Cartes depuis",
+    identifyWith: "Identifier avec",
+    localModel: "Modèle IA local",
+    change: "Modifier dans Réglages",
+  },
+  noSessions: "Aucune session pour l’instant.",
+  sessionCards: { one: "{done} / {count} carte", other: "{done} / {count} cartes" },
+};
+export default messages;
