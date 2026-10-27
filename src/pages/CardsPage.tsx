@@ -130,16 +130,18 @@ export default function CardsPage() {
           <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
             <span className="font-medium">{checked.size} selected</span>
             <span className="flex-1" />
-            <button
-              className="btn px-2 py-1 text-xs"
-              onClick={() =>
-                perSession(checkedCards, (s, ids) => api.reviewItems(s, ids))
-                  .then((n) => toast(`Accepted ${n} match${n === 1 ? "" : "es"}`))
-                  .catch(toastError)
-              }
-            >
-              <Check className="h-3.5 w-3.5" /> Accept
-            </button>
+            {rows.some((r) => !r.reviewed && checked.has(r.key)) && (
+              <button
+                className="btn px-2 py-1 text-xs"
+                onClick={() =>
+                  perSession(checkedCards, (s, ids) => api.reviewItems(s, ids))
+                    .then((n) => toast(`Accepted ${n} match${n === 1 ? "" : "es"}`))
+                    .catch(toastError)
+                }
+              >
+                <Check className="h-3.5 w-3.5" /> Accept
+              </button>
+            )}
             {rows.some((r) => r.accepted && checked.has(r.key)) && (
               <button
                 className="btn px-2 py-1 text-xs"

@@ -37,6 +37,8 @@ export interface Row {
   toReview?: boolean;
   /** The user accepted the match as it was (picked and edited cards show that instead). */
   accepted?: boolean;
+  /** Accepted, picked or edited. */
+  reviewed?: boolean;
   location?: string;
   /** Cards page: the session it is in, and how many identified cards are the same card. */
   sessionName?: string;
@@ -192,6 +194,7 @@ export function rowFromItem(i: ItemSummary): Row {
     edited: i.edited,
     toReview: needsReview(i),
     accepted: isAccepted(i),
+    reviewed: i.reviewed,
     location: i.location,
     ebay: i.ebay,
   };
