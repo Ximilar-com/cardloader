@@ -17,7 +17,7 @@ import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, grade, price } from "../lib/format";
 import { ErrorNote } from "./Modal";
-import StatusChip, { ConfidenceChip, EditedChip, PickedChip } from "./StatusChip";
+import StatusChip, { AcceptedChip, ConfidenceChip, EditedChip, PickedChip } from "./StatusChip";
 
 export default function DetailPanel({
   view,
@@ -25,6 +25,7 @@ export default function DetailPanel({
   onRetry,
   onPick,
   onAccept,
+  onUnaccept,
   onEdit,
   onDelete,
   onPrev,
@@ -42,6 +43,8 @@ export default function DetailPanel({
   onPick?: (index: number) => Promise<unknown>;
   /** Accepts the match of a card to review. */
   onAccept?: () => void;
+  /** Takes an accept back: the card is to review again (if its match is unsure). */
+  onUnaccept?: () => void;
   /** Saves what the user typed; without it, the card can't be edited. */
   onEdit?: (edit: ItemEdit) => Promise<unknown>;
   onDelete?: () => void;
@@ -84,6 +87,7 @@ export default function DetailPanel({
             <ConfidenceChip value={view.confidence} />
             {view.picked && !view.edited && <PickedChip />}
             {view.edited && <EditedChip />}
+            {view.accepted && <AcceptedChip />}
             {view.distance != null && (
               <span className="text-[11px] text-slate-400">distance {view.distance.toFixed(3)}</span>
             )}
@@ -123,7 +127,13 @@ export default function DetailPanel({
         </button>
       </div>
       {(view.toReview && onAccept) || position ? (
-        <div className="flex items-center gap-2 border-b border-slate-200 bg-amber-50/60 px-4 py-2 text-xs dark:border-slate-800 dark:bg-amber-950/20">
+        <div
+          className={clsx(
+            "flex items-center gap-2 border-b border-slate-200 px-4 py-2 text-xs dark:border-slate-800",
+            view.toReview && onAccept && "bg-amber-50/60 dark:bg-amber-950/20",
+            view.accepted && "bg-emerald-50/60 dark:bg-emerald-950/20",
+          )}
+        >
           {view.toReview && onAccept ? (
             <>
               <span className="flex-1 text-amber-800 dark:text-amber-300">
@@ -132,6 +142,17 @@ export default function DetailPanel({
               <button className="btn btn-primary px-2 py-0.5 text-xs" onClick={onAccept} title="Accept the match (A)">
                 <Check className="h-3 w-3" /> Accept
               </button>
+            </>
+          ) : view.accepted ? (
+            <>
+              <span className="flex-1 text-emerald-800 dark:text-emerald-300">
+                You accepted this match{position && ` · ${position}`}
+              </span>
+              {onUnaccept && (
+                <button className="btn px-2 py-0.5 text-xs" onClick={onUnaccept} title="Take the accept back">
+                  Undo
+                </button>
+              )}
             </>
           ) : (
             <span className="flex-1 text-slate-500">{position}</span>

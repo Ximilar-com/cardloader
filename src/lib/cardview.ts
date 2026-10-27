@@ -35,6 +35,8 @@ export interface Row {
   edited?: boolean;
   /** The match is unsure or missing and nobody has accepted or corrected it. */
   toReview?: boolean;
+  /** The user accepted the match as it was (picked and edited cards show that instead). */
+  accepted?: boolean;
   location?: string;
   /** Cards page: the session it is in, and how many identified cards are the same card. */
   sessionName?: string;
@@ -56,6 +58,7 @@ export interface CardView {
   /** The user typed the card's fields or price. */
   edited?: boolean;
   toReview?: boolean;
+  accepted?: boolean;
   /** What the edit form starts from (local cards only). */
   edit?: ItemEdit;
   status?: ItemStatus;
@@ -146,6 +149,11 @@ export function needsReview(i: Pick<ItemSummary, "status" | "reviewed" | "confid
   return i.confidence === "low" || i.confidence === "medium" || (!i.name && !i.fullName);
 }
 
+/** Accepted as Ximilar matched it: reviewed, without a pick or an edit. */
+export function isAccepted(i: Pick<ItemSummary, "reviewed" | "picked" | "edited">): boolean {
+  return i.reviewed && !i.picked && !i.edited;
+}
+
 const CARD_FIELDS: (keyof CardFields)[] = [
   "name",
   "fullName",
@@ -183,6 +191,7 @@ export function rowFromItem(i: ItemSummary): Row {
     picked: i.picked,
     edited: i.edited,
     toReview: needsReview(i),
+    accepted: isAccepted(i),
     location: i.location,
     ebay: i.ebay,
   };
@@ -334,6 +343,7 @@ export function viewFromItem(i: ItemDetail): CardView {
     picked: i.picked,
     edited: i.edited,
     toReview: needsReview(i),
+    accepted: isAccepted(i),
     edit: editOf(i),
     status: i.status,
     error: i.error,

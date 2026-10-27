@@ -554,6 +554,7 @@ function SessionView({ id }: { id: string }) {
           onPrev={step(-1)}
           onNext={step(1)}
           onAccept={() => accept([detail.id])}
+          onUnaccept={() => api.reviewItems(id, [detail.id], false).catch(toastError)}
           onEdit={(edit) => api.updateItem(detail.id, edit).then(setDetail)}
           onDelete={active ? undefined : () => setDeleting([detail.id])}
           onClose={() => {

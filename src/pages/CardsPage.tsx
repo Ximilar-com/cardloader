@@ -243,6 +243,7 @@ export default function CardsPage() {
               .then(() => step(1)?.())
               .catch(toastError)
           }
+          onUnaccept={() => api.reviewItems(detail.sessionId, [detail.id], false).catch(toastError)}
           onEdit={(edit) => api.updateItem(detail.id, edit).then(setDetail)}
           onPick={
             detail.status === "done" || detail.status === "grading"

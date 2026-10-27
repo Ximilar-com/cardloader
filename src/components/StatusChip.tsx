@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { AlertCircle, CheckCircle2, Clock, Loader2, Pause, Square, Star } from "lucide-react";
+import { AlertCircle, BadgeCheck, CheckCircle2, Clock, Loader2, Pause, Square, Star } from "lucide-react";
 import type { ItemStatus, SessionStatus } from "../lib/api";
 
 const STYLES: Record<string, string> = {
@@ -97,5 +97,25 @@ export function ReviewDot() {
       title="To review: accept the match (A) or pick another candidate"
       aria-label="To review"
     />
+  );
+}
+
+/** The user accepted the match: a green check next to the confidence. */
+export function AcceptedMark() {
+  return (
+    <span className="shrink-0" title="You accepted this match" aria-label="Accepted">
+      <BadgeCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+    </span>
+  );
+}
+
+export function AcceptedChip() {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+      title="You accepted this match"
+    >
+      <BadgeCheck className="h-3 w-3" /> Accepted
+    </span>
   );
 }

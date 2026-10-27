@@ -6,7 +6,7 @@ import type { SlabLabel } from "../lib/api";
 import type { Row, Sort, SortKey } from "../lib/cardview";
 import { grade, price } from "../lib/format";
 import { EbayBadge } from "./Ebay";
-import StatusChip, { ConfidenceChip, EditedChip, PickedChip, ReviewDot } from "./StatusChip";
+import StatusChip, { AcceptedMark, ConfidenceChip, EditedChip, PickedChip, ReviewDot } from "./StatusChip";
 
 /** Card and set take the spare width, unless conditions or slabs need it: they are words, not a number. */
 function gridColumns(showSlab: boolean, wordy: boolean, checks: boolean): string {
@@ -208,6 +208,7 @@ export default function SessionTable({
                 <span className="flex items-center gap-1.5">
                   {r.edited ? <EditedChip /> : r.picked ? <PickedChip /> : <ConfidenceChip value={r.confidence} />}
                   {r.toReview && <ReviewDot />}
+                  {r.accepted && <AcceptedMark />}
                 </span>
                 <span className="text-right tabular-nums">{price(r.price)}</span>
                 <span className="text-right tabular-nums" title={r.condition ?? undefined}>
