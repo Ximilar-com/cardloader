@@ -73,6 +73,10 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Home.** Your cards, their total value, the cards to review and the API calls of the last 7 days; a list of
   what needs attention (sessions to review, failed cards, interrupted sessions to resume, upload errors); and a year
   of activity. **New session** estimates the API calls before you start.
+- **Cards.** Every identified card of your sessions in one list: search by name, set, number, location or notes,
+  filter to cards to review, graded cards or duplicates (×3 shows you have three), with the total value. Tick cards
+  to set where they are kept (a box, a binder page). When listing or exporting, **Adjust prices** sets the chosen
+  cards to a percentage of the market price, ending in .99, with a minimum.
 - **Pause, stop, resume.** You can pause, stop and resume a session, even after the app restarts. Failed cards can
   be retried individually. When the connection drops, the session pauses instead of failing its cards.
 

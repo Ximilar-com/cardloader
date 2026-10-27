@@ -2,7 +2,8 @@
 // dialogs share.
 
 import clsx from "clsx";
-import type { ReactNode } from "react";
+import { Percent } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import type { CardCondition, EbayPreview } from "../lib/api";
 import { fileUrl } from "../lib/format";
 import { Check } from "./NewSessionDialog";
@@ -19,6 +20,13 @@ export const CONDITIONS: SelectOption<CardCondition>[] = [
 export function parsePrice(text: string | undefined): number | null {
   const n = Number((text ?? "").replace(",", ".").trim());
   return text?.trim() && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
+/** A price from the market price: `percent` of it, ending in .99 if asked, never below `min`. */
+export function adjustPrice(market: number, percent: number, ninetyNine: boolean, min: number): number {
+  let p = (market * percent) / 100;
+  if (ninetyNine) p = Math.max(0, Math.ceil(p) - 0.01);
+  return Math.round(Math.max(p, min) * 100) / 100;
 }
 
 /** The note under a card: its category and condition, or why it can't go. */
@@ -52,6 +60,7 @@ export default function PricedCards({
   verb: string;
   showPrices?: boolean;
 }) {
+  const [adjusting, setAdjusting] = useState(false);
   const open = cards.filter(can);
   const all = open.length > 0 && open.every((c) => chosen.has(c.itemId));
   const toggle = (id: number, on: boolean) => {
@@ -69,8 +78,27 @@ export default function PricedCards({
           onChange={(on) => onChosen(on ? new Set(open.map((c) => c.itemId)) : new Set())}
         />
         <span className="flex-1" />
+        {showPrices && (
+          <button
+            className={clsx("flex items-center gap-1 text-accent hover:underline", adjusting && "font-medium")}
+            onClick={() => setAdjusting(!adjusting)}
+          >
+            <Percent className="h-3 w-3" /> Adjust prices
+          </button>
+        )}
         {showPrices && <span className="w-28 text-right">Price (USD)</span>}
       </div>
+      {showPrices && adjusting && (
+        <AdjustPrices
+          onApply={(percent, ninetyNine, min) => {
+            const next = { ...prices };
+            for (const c of cards)
+              if (chosen.has(c.itemId) && c.price != null)
+                next[c.itemId] = adjustPrice(c.price, percent, ninetyNine, min).toFixed(2);
+            onPrices(next);
+          }}
+        />
+      )}
       <ul className="max-h-[45vh] divide-y divide-slate-100 overflow-y-auto dark:divide-slate-900">
         {cards.map((c) => (
           <CardRow
@@ -87,6 +115,49 @@ export default function PricedCards({
           />
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** Sets the chosen cards' prices from their market price at once. */
+function AdjustPrices({ onApply }: { onApply: (percent: number, ninetyNine: boolean, min: number) => void }) {
+  const [percent, setPercent] = useState("100");
+  const [ninetyNine, setNinetyNine] = useState(true);
+  const [min, setMin] = useState("0.99");
+  const p = Number(percent.replace(",", "."));
+  const m = Number(min.replace(",", ".") || 0);
+  const valid = Number.isFinite(p) && p > 0 && p <= 1000 && Number.isFinite(m) && m >= 0;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-accent/5 px-3 py-2 text-sm dark:border-slate-800">
+      <label className="flex items-center gap-1.5">
+        <input
+          className="input w-16 py-0.5 text-right tabular-nums"
+          inputMode="decimal"
+          value={percent}
+          onChange={(e) => setPercent(e.target.value)}
+          aria-label="Percent of the market price"
+        />
+        % of the market price
+      </label>
+      <Check label="end in .99" checked={ninetyNine} onChange={setNinetyNine} />
+      <label className="flex items-center gap-1.5">
+        at least $
+        <input
+          className="input w-16 py-0.5 text-right tabular-nums"
+          inputMode="decimal"
+          value={min}
+          onChange={(e) => setMin(e.target.value)}
+          aria-label="Lowest price"
+        />
+      </label>
+      <span className="flex-1" />
+      <button
+        className="btn btn-primary px-2 py-0.5 text-xs"
+        disabled={!valid}
+        onClick={() => onApply(p, ninetyNine, m)}
+      >
+        Apply to the chosen cards
+      </button>
     </div>
   );
 }

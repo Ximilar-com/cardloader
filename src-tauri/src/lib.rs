@@ -87,6 +87,7 @@ pub fn run() {
             commands::list_items,
             commands::get_item,
             commands::select_match,
+            commands::search_cards,
             commands::update_item,
             commands::review_items,
             commands::locate_items,

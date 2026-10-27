@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { LayoutDashboard, Layers, Settings } from "lucide-react";
+import { LayoutDashboard, Layers, Settings, WalletCards } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ximilarLogo from "../assets/ximilar.svg";
@@ -9,6 +9,7 @@ import Logo from "./Logo";
 const NAV = [
   { to: "/", label: "Home", icon: LayoutDashboard, match: [] as string[] },
   { to: "/sessions", label: "Sessions", icon: Layers, match: ["/sessions", "/remote"] },
+  { to: "/cards", label: "Cards", icon: WalletCards, match: ["/cards"] },
   { to: "/settings", label: "Settings", icon: Settings, match: ["/settings"] },
 ];
 

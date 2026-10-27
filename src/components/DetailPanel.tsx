@@ -31,6 +31,7 @@ export default function DetailPanel({
   onNext,
   position,
   ebay,
+  extra,
 }: {
   view: CardView;
   onClose: () => void;
@@ -48,6 +49,8 @@ export default function DetailPanel({
   onNext?: () => void;
   /** "3 of 120" */
   position?: string;
+  /** Shown under the image, e.g. a link to the card's session. */
+  extra?: ReactNode;
 }) {
   const [editing, setEditing] = useState(false);
 
@@ -167,6 +170,7 @@ export default function DetailPanel({
           </div>
         )}
 
+        {extra}
         {ebay}
 
         {editing && view.edit && onEdit ? (

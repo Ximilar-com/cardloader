@@ -379,6 +379,19 @@ pub fn select_match(state: S, id: i64, index: usize) -> Result<ItemDetail> {
     state.runner.pick_match(id, index)
 }
 
+/// Identified cards of every session for the Cards page (see `Db::search_cards`).
+#[tauri::command]
+pub fn search_cards(
+    state: S,
+    query: String,
+    filter: String,
+    limit: Option<usize>,
+) -> Result<CardSearch> {
+    state
+        .db
+        .search_cards(&query, &filter, limit.unwrap_or(1000).min(5000))
+}
+
 /// Saves what the user typed for a card: its fields and price (once identified), notes and location.
 #[tauri::command]
 pub fn update_item(state: S, id: i64, edit: ItemEdit) -> Result<ItemDetail> {

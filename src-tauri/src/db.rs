@@ -382,6 +382,63 @@ impl Db {
         })
     }
 
+    /// Identified cards of every session matching `query` (name, set, number, location, notes) and `filter`
+    /// (`review`, `graded`, `duplicates`, else all), newest first: the first `limit` and the totals.
+    pub fn search_cards(&self, query: &str, filter: &str, limit: usize) -> Result<CardSearch> {
+        let condition = match filter {
+            "review" => TO_REVIEW.to_string(),
+            "graded" => "(i.grade IS NOT NULL OR i.slab_company IS NOT NULL)".into(),
+            "duplicates" => "copies > 1".into(),
+            _ => "1".into(),
+        };
+        let columns = ITEM_SUMMARY_COLUMNS
+            .split(',')
+            .map(|c| format!("i.{}", c.trim()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Copies are counted over all identified cards, before the search narrows them.
+        let sql = format!(
+            "WITH i AS (
+                SELECT *, COUNT(*) OVER (PARTITION BY lower(COALESCE(name, '')), lower(COALESCE(set_name, '')),
+                    lower(COALESCE(card_number, ''))) AS copies
+                FROM items WHERE status IN ('done', 'grading')
+                    AND (COALESCE(name, '') != '' OR COALESCE(full_name, '') != '')
+             ), found AS (
+                SELECT i.*, s.name AS session_name FROM i JOIN sessions s ON s.id = i.session_id
+                WHERE {condition} AND (?1 = '' OR i.name LIKE ?1 OR i.full_name LIKE ?1 OR i.set_name LIKE ?1
+                    OR i.card_number LIKE ?1 OR i.location LIKE ?1 OR i.notes LIKE ?1)
+             )
+             SELECT {columns}, i.session_name, i.copies, COUNT(*) OVER (), COALESCE(SUM(i.price) OVER (), 0)
+             FROM found i ORDER BY i.analyzed_at DESC, i.id DESC LIMIT ?2"
+        );
+        let pattern = match query.trim() {
+            "" => String::new(),
+            q => format!("%{q}%"),
+        };
+        self.with(|c| {
+            let mut stmt = c.prepare(&sql)?;
+            let mut search = CardSearch::default();
+            let rows = stmt.query_map(params![pattern, limit as i64], |r| {
+                Ok((
+                    CardRow {
+                        item: item_summary(r)?,
+                        session_name: r.get(38)?,
+                        copies: r.get(39)?,
+                    },
+                    r.get::<_, i64>(40)?,
+                    r.get::<_, f64>(41)?,
+                ))
+            })?;
+            for row in rows {
+                let (card, total, value) = row?;
+                search.total = total;
+                search.value = value;
+                search.cards.push(card);
+            }
+            Ok(search)
+        })
+    }
+
     /// Source paths already in the session (or whose cards were deleted from it), so a re-run of a folder
     /// only adds new files.
     pub fn known_paths(&self, session_id: &str) -> Result<std::collections::HashSet<String>> {
@@ -1270,6 +1327,69 @@ mod tests {
         assert_eq!(db.set_reviewed(&s.id, &ids, true).unwrap(), 3);
         assert_eq!(db.session(&s.id).unwrap().counts.to_review, 0);
         assert!(db.item_summary(ids[1]).unwrap().reviewed);
+    }
+
+    #[test]
+    fn cards_are_searched_across_sessions() {
+        let db = Db::memory().unwrap();
+        let (a, b) = (session(&db), session(&db));
+        let add = |s: &Session, name: &str, number: &str, price: f64, confidence: &str| {
+            let n = db.items(&s.id).unwrap().len();
+            let id = db
+                .insert_item(
+                    &s.id,
+                    &format!("/{n}.jpg"),
+                    None,
+                    &ItemImages::default(),
+                    None,
+                )
+                .unwrap();
+            db.claim_next(&s.id).unwrap();
+            let card = CardFields {
+                name: name.into(),
+                set_name: "Base Set".into(),
+                card_number: number.into(),
+                ..Default::default()
+            };
+            db.save_recognition(
+                id,
+                "tcg",
+                &card,
+                Some(confidence),
+                None,
+                Some(price),
+                None,
+                &Value::Null,
+                1,
+                ItemStatus::Done,
+            )
+            .unwrap();
+            id
+        };
+        let pikachu = add(&a, "Pikachu", "58", 4.0, "high");
+        add(&b, "pikachu", "58", 5.0, "low");
+        add(&b, "Charizard", "4", 300.0, "high");
+        db.set_location(&a.id, &[pikachu], "Box 7").unwrap();
+
+        let all = db.search_cards("", "", 100).unwrap();
+        assert_eq!((all.total, all.value), (3, 309.0));
+        let copies: Vec<i64> = all.cards.iter().map(|c| c.copies).collect();
+        assert_eq!(
+            copies,
+            vec![1, 2, 2],
+            "newest first; the two Pikachus are copies"
+        );
+        let found = db.search_cards("box 7", "", 100).unwrap();
+        assert_eq!(found.cards[0].item.id, pikachu);
+        assert_eq!(found.cards[0].session_name, "Test");
+        assert_eq!(db.search_cards("", "duplicates", 100).unwrap().total, 2);
+        assert_eq!(db.search_cards("", "review", 100).unwrap().total, 1);
+        let first = db.search_cards("", "", 1).unwrap();
+        assert_eq!(
+            (first.cards.len(), first.total),
+            (1, 3),
+            "totals count past the limit"
+        );
     }
 
     #[test]

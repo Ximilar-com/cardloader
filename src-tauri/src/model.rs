@@ -360,6 +360,26 @@ pub struct ItemSummary {
     pub ebay: Option<EbayListing>,
 }
 
+/// A card on the Cards page: an identified card of any session, with how many such cards there are.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardRow {
+    #[serde(flatten)]
+    pub item: ItemSummary,
+    pub session_name: String,
+    /// Identified cards with the same name, set and number, this one included.
+    pub copies: i64,
+}
+
+/// The cards matching a search: the first `limit` and the totals of all of them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardSearch {
+    pub cards: Vec<CardRow>,
+    pub total: i64,
+    pub value: f64,
+}
+
 /// What the user can change on a card by hand.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

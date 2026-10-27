@@ -36,6 +36,9 @@ export interface Row {
   /** The match is unsure or missing and nobody has accepted or corrected it. */
   toReview?: boolean;
   location?: string;
+  /** Cards page: the session it is in, and how many identified cards are the same card. */
+  sessionName?: string;
+  copies?: number;
   ebay?: EbayListing | null;
 }
 

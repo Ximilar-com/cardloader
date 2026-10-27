@@ -62,8 +62,9 @@ src/
   lib/cardview.ts one Row/CardView shape for local items and Cards Cloud rows
   lib/demo.ts     mockIPC answers for `npm run dev` outside Tauri
   lib/setup.ts    first-run setup answers ↔ the default settings they become (only the settings are stored)
-  pages/          DashboardPage (home: 7-day bars, activity heatmap, last sessions, defaults), SessionsPage
-                  (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, SettingsPage
+  pages/          DashboardPage (home: totals, needs attention, 7-day bars, activity heatmap, last sessions,
+                  defaults), SessionsPage (local + Cards Cloud tabs), SessionPage, RemoteSessionPage, CardsPage
+                  (identified cards of all sessions: `search_cards`), SettingsPage
   components/     SetupWizard (shown while `setupDone` is false; rerun from Home or Settings), SessionTable
                   (virtualized), DetailPanel, NewSessionDialog, SessionActions, Menu, …
 ```
@@ -134,6 +135,10 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
 - **TWAIN driver settings**: `scanner_driver_settings` opens the driver's own dialog through the sidecar's
   `configure` (automatic crop, deskew, …) and keeps them in `<config>/twain/<device>.bin`; every scan replays
   them (`settings_path`) before Cardloader sets resolution, colour and page size.
+- **Cards page** (`Db::search_cards`): identified cards of every session, newest first, at most 5000 rows with the
+  totals of all matches; `copies` counts identified cards with the same name, set and number (case-insensitive).
+  Export dialogs can set the chosen cards' prices from the market price (`PricedCards::adjustPrice`); nothing
+  about pricing is stored.
 - Settings left unsaved survive leaving the page (`useUnsavedSettings`, a dot on the sidebar).
 - A run that completes or fails (not one the user stopped) sends an OS notification when the window isn't focused
   (`EventSink::finished`, `tauri-plugin-notification` from Rust, so no capability).

@@ -347,6 +347,40 @@ function selectMatch(id: number, index: number): ItemDetail {
   return item;
 }
 
+/** What `search_cards` does in Rust. */
+function searchCards(query: string, filter: string, limit: number) {
+  const q = query.trim().toLowerCase();
+  const all = [...items.values()].flat().filter((i) => (i.status === "done" || i.status === "grading") && i.name);
+  const key = (i: ItemDetail) => `${i.name}|${i.setName}|${i.cardNumber}`.toLowerCase();
+  const copies = new Map<string, number>();
+  for (const i of all) copies.set(key(i), (copies.get(key(i)) ?? 0) + 1);
+  const found = all
+    .map((i) => ({
+      ...summary(i),
+      sessionName: sessions.find((s) => s.id === i.sessionId)?.name ?? "",
+      copies: copies.get(key(i)) ?? 1,
+    }))
+    .filter((c) =>
+      filter === "review"
+        ? needsReview(c)
+        : filter === "graded"
+          ? c.grade != null || c.slab != null
+          : filter === "duplicates"
+            ? c.copies > 1
+            : true,
+    )
+    .filter(
+      (c) =>
+        !q ||
+        [c.name, c.fullName, c.setName, c.cardNumber, c.location, c.notes].some((v) => v.toLowerCase().includes(q)),
+    );
+  return {
+    cards: found.slice(0, limit),
+    total: found.length,
+    value: found.reduce((n, c) => n + (c.price ?? 0), 0),
+  };
+}
+
 /** What `update_item` does in Rust (without the full name rebuilt). */
 function updateItem(id: number, edit: ItemEdit): ItemDetail {
   const item = [...items.values()].flat().find((i) => i.id === id)!;
@@ -1027,6 +1061,8 @@ export function installDemo() {
           return selectMatch(a.id, a.index);
         case "get_item":
           return [...items.values()].flat().find((i) => i.id === a.id);
+        case "search_cards":
+          return searchCards(String(a.query ?? ""), a.filter, a.limit ?? 1000);
         case "update_item":
           return updateItem(a.id, a.edit);
         case "review_items":

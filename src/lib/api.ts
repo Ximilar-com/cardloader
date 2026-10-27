@@ -176,6 +176,22 @@ export interface ItemSummary extends CardFields {
   ebay: EbayListing | null;
 }
 
+/** A card on the Cards page: an identified card of any session. */
+export interface CardRow extends ItemSummary {
+  sessionName: string;
+  /** Identified cards with the same name, set and number, this one included. */
+  copies: number;
+}
+
+export type CardFilter = "all" | "review" | "graded" | "duplicates";
+
+/** The cards matching a search: the first ones, and the totals of all of them. */
+export interface CardSearch {
+  cards: CardRow[];
+  total: number;
+  value: number;
+}
+
 /** What the user can change on a card by hand. */
 export interface ItemEdit extends CardFields {
   price: number | null;
@@ -517,6 +533,9 @@ export const api = {
   getItem: (id: number) => invoke<ItemDetail>("get_item", { id }),
   /** Makes candidate `index` (into the response's alternatives) the card's match. */
   selectMatch: (id: number, index: number) => invoke<ItemDetail>("select_match", { id, index }),
+  /** Identified cards of every session, newest first, searched by name, set, number, location and notes. */
+  searchCards: (query: string, filter: CardFilter, limit?: number) =>
+    invoke<CardSearch>("search_cards", { query, filter, limit }),
   /** Saves what the user typed: the card fields and price (once identified), notes and location. */
   updateItem: (id: number, edit: ItemEdit) => invoke<ItemDetail>("update_item", { id, edit }),
   /** Accepts the cards' matches, or with `reviewed: false` takes that back. */

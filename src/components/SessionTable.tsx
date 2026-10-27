@@ -164,15 +164,30 @@ export default function SessionTable({
                 <Thumb src={r.thumb} />
                 <span className="text-xs text-slate-400 tabular-nums">{r.seq}</span>
                 <span className="min-w-0">
-                  <span className="block truncate font-medium" title={r.fullName}>
-                    {r.name ||
-                      (r.status === "done" ? (
-                        <span className="text-slate-400">No match</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      ))}
+                  <span className="flex min-w-0 items-center gap-1.5 font-medium" title={r.fullName}>
+                    <span className="truncate">
+                      {r.name ||
+                        (r.status === "done" ? (
+                          <span className="text-slate-400">No match</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        ))}
+                    </span>
+                    {r.copies != null && r.copies > 1 && (
+                      <span
+                        className="shrink-0 rounded bg-slate-100 px-1 text-[11px] text-slate-600 tabular-nums dark:bg-slate-800 dark:text-slate-300"
+                        title={`You have ${r.copies} of this card (same name, set and number)`}
+                      >
+                        ×{r.copies}
+                      </span>
+                    )}
                   </span>
-                  {r.error ? (
+                  {r.sessionName ? (
+                    <span className="block truncate text-xs text-slate-400">
+                      {r.sessionName}
+                      {r.location && ` · ${r.location}`}
+                    </span>
+                  ) : r.error ? (
                     <span className="block truncate text-xs text-red-600 dark:text-red-400" title={r.error}>
                       {r.error}
                     </span>
