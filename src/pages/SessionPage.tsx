@@ -2,7 +2,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
   ArrowLeft,
-  BadgeQuestionMark,
+  CircleQuestionMark,
   Check,
   ChevronDown,
   Cloud,
@@ -489,7 +489,7 @@ function SessionView({ id }: { id: string }) {
                 All {rows.length}
               </Chip>
               <Chip on={filter === "review"} onClick={() => setFilter("review")} disabled={!tally.review}>
-                <BadgeQuestionMark className="h-3.5 w-3.5" /> To review {tally.review}
+                <CircleQuestionMark className="h-3.5 w-3.5" /> To review {tally.review}
               </Chip>
               <Chip on={filter === "failed"} onClick={() => setFilter("failed")} disabled={!tally.failed}>
                 Failed {tally.failed}

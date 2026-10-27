@@ -1,8 +1,8 @@
 import clsx from "clsx";
 import {
   AlertCircle,
-  BadgeCheck,
-  BadgeQuestionMark,
+  CircleCheck,
+  CircleQuestionMark,
   CheckCircle2,
   Clock,
   Loader2,
@@ -103,7 +103,7 @@ export function EditedChip() {
 export function ReviewMark() {
   return (
     <span className="shrink-0" title="To review: accept the match (A) or pick another candidate" aria-label="To review">
-      <BadgeQuestionMark className="h-4 w-4 text-amber-500" />
+      <CircleQuestionMark className="h-[18px] w-[18px] text-orange-500" strokeWidth={2.5} />
     </span>
   );
 }
@@ -111,10 +111,10 @@ export function ReviewMark() {
 export function ReviewChip() {
   return (
     <span
-      className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+      className="inline-flex items-center gap-1 rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950 dark:text-orange-300"
       title="Unsure match: accept it or pick another candidate"
     >
-      <BadgeQuestionMark className="h-3 w-3" /> To review
+      <CircleQuestionMark className="h-3 w-3" /> To review
     </span>
   );
 }
@@ -123,7 +123,7 @@ export function ReviewChip() {
 export function AcceptedMark() {
   return (
     <span className="shrink-0" title="You accepted this match" aria-label="Accepted">
-      <BadgeCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+      <CircleCheck className="h-[18px] w-[18px] text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} />
     </span>
   );
 }
@@ -134,7 +134,7 @@ export function AcceptedChip() {
       className="inline-flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
       title="You accepted this match"
     >
-      <BadgeCheck className="h-3 w-3" /> Accepted
+      <CircleCheck className="h-3 w-3" /> Accepted
     </span>
   );
 }

@@ -1,8 +1,8 @@
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
-  BadgeCheck,
-  BadgeQuestionMark,
+  CircleCheck,
+  CircleQuestionMark,
   Check,
   ChevronDown,
   ChevronUp,
@@ -134,14 +134,14 @@ export default function DetailPanel({
         <div
           className={clsx(
             "flex items-center gap-2 border-b border-slate-200 px-4 py-2 text-xs dark:border-slate-800",
-            view.toReview && onAccept && "bg-amber-50/60 dark:bg-amber-950/20",
+            view.toReview && onAccept && "bg-orange-50/70 dark:bg-orange-950/20",
             view.accepted && "bg-emerald-50/60 dark:bg-emerald-950/20",
           )}
         >
           {view.toReview && onAccept ? (
             <>
-              <span className="flex flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">
-                <BadgeQuestionMark className="h-4 w-4 shrink-0" />
+              <span className="flex flex-1 items-center gap-1.5 text-orange-800 dark:text-orange-300">
+                <CircleQuestionMark className="h-4 w-4 shrink-0 text-orange-500" strokeWidth={2.5} />
                 Unsure match — accept it or pick another candidate below.
               </span>
               <button className="btn btn-primary px-2 py-0.5 text-xs" onClick={onAccept} title="Accept the match (A)">
@@ -151,7 +151,7 @@ export default function DetailPanel({
           ) : view.accepted ? (
             <>
               <span className="flex flex-1 items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
-                <BadgeCheck className="h-4 w-4 shrink-0" />
+                <CircleCheck className="h-4 w-4 shrink-0 text-emerald-600" strokeWidth={2.5} />
                 You accepted this match{position && ` · ${position}`}
               </span>
               {onUnaccept && (

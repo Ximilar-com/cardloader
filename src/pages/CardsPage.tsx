@@ -2,7 +2,7 @@
 // each there are.
 
 import clsx from "clsx";
-import { BadgeQuestionMark, Check, ExternalLink, MapPin, Search, Undo2, X } from "lucide-react";
+import { CircleQuestionMark, Check, ExternalLink, MapPin, Search, Undo2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
@@ -170,7 +170,7 @@ export default function CardsPage() {
           <div className="flex items-center gap-1.5 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
             {FILTERS.map(([key, label]) => (
               <Chip key={key} on={filter === key} onClick={() => setFilter(key)}>
-                {key === "review" && <BadgeQuestionMark className="h-3.5 w-3.5" />}
+                {key === "review" && <CircleQuestionMark className="h-3.5 w-3.5" />}
                 {label}
               </Chip>
             ))}
