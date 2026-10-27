@@ -411,6 +411,8 @@ pub struct ItemDetail {
 pub struct DayCount {
     pub date: String,
     pub cards: u32,
+    /// Paid Ximilar API calls of the cards analysed that day.
+    pub calls: u32,
 }
 
 pub fn now() -> String {

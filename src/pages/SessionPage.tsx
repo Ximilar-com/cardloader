@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
 import { EbaySection } from "../components/Ebay";
 import Menu from "../components/Menu";
@@ -74,7 +74,11 @@ function SessionView({ id }: { id: string }) {
   const [ebayJob, setEbayJob] = useState<EbayProgress | null>(null);
   /** Cards to publish (all drafts: null), awaiting confirmation. */
   const [publishing, setPublishing] = useState<{ ids: number[] | null; count: number } | null>(null);
-  const [filter, setFilter] = useState<RowFilter>("all");
+  const [params] = useSearchParams();
+  const [filter, setFilter] = useState<RowFilter>(() => {
+    const f = params.get("filter");
+    return f === "review" || f === "failed" || f === "corrected" ? f : "all";
+  });
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort | null>(null);
   /** Cards ticked for a bulk action, and the last one ticked (Shift extends from it). */

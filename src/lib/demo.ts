@@ -728,9 +728,11 @@ function activity(days: number) {
     const weekend = d.getDay() === 0 || d.getDay() === 6;
     if (Math.abs(roll) < (weekend ? 0.8 : 0.35)) continue;
     const pad = (n: number) => String(n).padStart(2, "0");
+    const cards = Math.round(Math.abs(roll) * 180) + 5;
     out.push({
       date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-      cards: Math.round(Math.abs(roll) * 180) + 5,
+      cards,
+      calls: Math.round(cards * 2.3),
     });
   }
   return out;
@@ -1043,8 +1045,16 @@ export function installDemo() {
         }
         case "count_images":
           return 42;
+        case "app_info":
+          return {
+            version: "0.3.0",
+            dataDir: "/Users/demo/Library/Application Support/com.ximilar.cardloader",
+            dataBytes: 734_003_200,
+          };
         case "scanner_support":
           return { backend: "sane", available: true, hint: null };
+        case "scanner_driver_settings":
+          return true;
         case "list_scanners":
           return [{ id: "fujitsu:fi-8170:1234", name: "FUJITSU fi-8170", backend: "sane" }];
         case "list_remote_sessions": {

@@ -393,6 +393,8 @@ export interface CompareReport {
 export interface DayCount {
   date: string;
   cards: number;
+  /** Paid Ximilar API calls of the cards analysed that day. */
+  calls: number;
 }
 
 export interface SettingsView extends Settings {
@@ -403,6 +405,13 @@ export interface SettingsView extends Settings {
   ebayConnected: boolean;
   /** The ImgBB key that hosts pictures for the Whatnot export. */
   imgbbKeySet: boolean;
+}
+
+export interface AppInfo {
+  version: string;
+  /** Where sessions, thumbnails and the database are kept. */
+  dataDir: string;
+  dataBytes: number;
 }
 
 export interface ConnectionCheck {
@@ -519,6 +528,7 @@ export const api = {
   /** Deletes cards from a stopped session; running the folder again doesn't bring them back. */
   deleteItems: (sessionId: string, itemIds: number[]) => invoke<number>("delete_items", { sessionId, itemIds }),
   countImages: (path: string) => invoke<number>("count_images", { path }),
+  appInfo: () => invoke<AppInfo>("app_info"),
 
   listModels: () => invoke<ModelStatus[]>("list_models"),
   /** Starts or resumes a download; progress arrives through onModelUpdated. */
@@ -532,6 +542,8 @@ export const api = {
 
   scannerSupport: () => invoke<ScannerSupport>("scanner_support"),
   listScanners: () => invoke<DeviceInfo[]>("list_scanners"),
+  /** Opens the TWAIN driver's settings dialog; true when its settings were saved for later scans. */
+  scannerDriverSettings: (device: string) => invoke<boolean>("scanner_driver_settings", { device }),
 
   listRemoteSessions: (page: number, search = "") =>
     invoke<Page<RemoteSession>>("list_remote_sessions", { page, search }),

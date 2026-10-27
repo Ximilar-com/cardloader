@@ -3,6 +3,7 @@ import { LayoutDashboard, Layers, Settings } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ximilarLogo from "../assets/ximilar.svg";
+import { isUnsaved, useUnsavedSettings } from "../pages/SettingsPage";
 import Logo from "./Logo";
 
 const NAV = [
@@ -13,6 +14,7 @@ const NAV = [
 
 export default function Sidebar() {
   const { pathname } = useLocation();
+  const unsaved = useUnsavedSettings((s) => isUnsaved(s.saved, s.draft));
   return (
     <nav className="flex w-[76px] shrink-0 flex-col items-center bg-rail py-3 text-white">
       <div className="mb-5 flex flex-col items-center" title="Cardloader">
@@ -33,7 +35,16 @@ export default function Sidebar() {
               );
             }}
           >
-            <Icon className="h-5 w-5" strokeWidth={1.8} />
+            <span className="relative">
+              <Icon className="h-5 w-5" strokeWidth={1.8} />
+              {to === "/settings" && unsaved && (
+                <span
+                  className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-amber-400"
+                  title="Unsaved settings"
+                  aria-label="Unsaved settings"
+                />
+              )}
+            </span>
             {label}
           </NavLink>
         ))}

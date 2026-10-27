@@ -1,7 +1,18 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import clsx from "clsx";
-import { Cloud, Cpu, Eye, FileSpreadsheet, FolderOpen, RefreshCw, ScanLine, Settings, Zap } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ChevronRight,
+  Cloud,
+  Cpu,
+  Eye,
+  FileSpreadsheet,
+  FolderOpen,
+  RefreshCw,
+  ScanLine,
+  Settings,
+  Zap,
+} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   api,
@@ -426,6 +437,7 @@ export default function NewSessionDialog({
                   {imageCount === 0 && kind === "folder"
                     ? "No images in this folder (JPEG, PNG, WebP, TIFF or BMP)."
                     : `${imageCount} image${imageCount === 1 ? "" : "s"} found`}
+                  {imageCount > 0 && options && kind === "folder" && ` · ${costOf(options, imageCount)}`}
                   {kind === "watch_folder" && " — new images will be picked up while the session runs"}
                 </p>
               )
@@ -497,6 +509,9 @@ export default function NewSessionDialog({
                     options={MULTIFEED_OPTIONS}
                   />
                 </div>
+                <p className="col-span-3 -mt-1 text-xs text-slate-500">
+                  These are your Scanner settings: changing them here changes them for every scanner session.
+                </p>
               </div>
             )}
           </div>
@@ -567,17 +582,19 @@ export default function NewSessionDialog({
               <>
                 <Check label="Price statistics" checked={options.priceStats} onChange={(v) => set("priceStats", v)} />
                 <Check label="Read graded slab labels" checked={options.slab} onChange={(v) => set("slab", v)} />
-                <KnownAttributes
-                  options={options}
-                  idMode={idMode}
-                  onChange={(patch) => setOptions({ ...options, ...patch })}
-                />
-                <BothSides
-                  options={options}
-                  idMode={idMode}
-                  csv={kind === "csv"}
-                  onChange={(patch) => setOptions({ ...options, ...patch })}
-                />
+                <MoreOptions initiallyOpen={usesMoreOptions(options)}>
+                  <KnownAttributes
+                    options={options}
+                    idMode={idMode}
+                    onChange={(patch) => setOptions({ ...options, ...patch })}
+                  />
+                  <BothSides
+                    options={options}
+                    idMode={idMode}
+                    csv={kind === "csv"}
+                    onChange={(patch) => setOptions({ ...options, ...patch })}
+                  />
+                </MoreOptions>
               </>
             )}
             <Check
@@ -797,6 +814,57 @@ function Hinted({
       </p>
     </div>
   );
+}
+
+/** Known attributes, front and back, Magic AI and a custom endpoint: folded away unless one is in use. */
+function MoreOptions({ initiallyOpen, children }: { initiallyOpen: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(initiallyOpen);
+  return (
+    <div className="col-span-2 space-y-3">
+      <button
+        type="button"
+        className="flex items-center gap-1 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+      >
+        <ChevronRight className={clsx("h-4 w-4 transition-transform", open && "rotate-90")} />
+        More options
+        {!open && (
+          <span className="font-normal text-slate-400">
+            {" "}
+            — what you know about the cards, front and back, Magic AI, custom endpoint
+          </span>
+        )}
+      </button>
+      {open && <div className="grid grid-cols-2 gap-4">{children}</div>}
+    </div>
+  );
+}
+
+function usesMoreOptions(o: SessionOptions): boolean {
+  return (
+    o.skipDetection ||
+    o.knownCategory ||
+    o.knownSide ||
+    o.knownRotation ||
+    !!o.alphabet ||
+    !!o.subcategory ||
+    o.bothSides ||
+    o.magicAi ||
+    !!o.customEndpoint.trim()
+  );
+}
+
+/** Roughly what analysing the folder costs: a call per card, one more to grade it; Cards Cloud bills one per
+ * stored image and one for the session. */
+function costOf(o: SessionOptions, images: number): string {
+  const cards = o.pairing === "front_back" ? Math.ceil(images / 2) : images;
+  const local = o.engine === "local";
+  const sync = o.syncRemote ? cards + 1 : 0;
+  const calls = (local ? 0 : cards * (1 + (o.grading !== "off" ? 1 : 0))) + sync;
+  if (!calls) return "identified on this computer, no API calls";
+  const n = `about ${calls.toLocaleString()} API call${calls === 1 ? "" : "s"}`;
+  return local ? `${n} for Cards Cloud` : `${n}${o.magicAi ? " (Magic AI may add more)" : ""}`;
 }
 
 /** Front + back identification, magic AI and a custom endpoint: mostly for sports cards. */

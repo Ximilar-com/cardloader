@@ -425,10 +425,18 @@ impl Runner {
     }
 
     pub fn pause(&self, id: &str) -> Result<()> {
+        self.pause_with_error(id, None)
+    }
+
+    /// Pauses the session and says why on it (Resume clears it).
+    fn pause_with(&self, id: &str, why: &str) -> Result<()> {
+        self.pause_with_error(id, Some(why))
+    }
+
+    fn pause_with_error(&self, id: &str, why: Option<&str>) -> Result<()> {
         if let Some(run) = self.runs.lock().unwrap().get(id) {
             run.paused.send_replace(true);
-            self.db
-                .set_session_status(id, SessionStatus::Paused, None)?;
+            self.db.set_session_status(id, SessionStatus::Paused, why)?;
             self.emit_session(id);
         }
         Ok(())
@@ -671,8 +679,14 @@ impl Runner {
                                 Some(ingest_task.take().unwrap().await.unwrap_or(Ok(())));
                             continue; // one more look: the last units may have just been queued
                         }
-                    } else {
+                    } else if workers.is_empty() {
                         break;
+                    } else {
+                        // A card in progress may come back to the queue (no connection): wait for it.
+                        if let Some(Ok(Some(err))) = workers.join_next().await {
+                            fatal.get_or_insert(err);
+                        }
+                        continue;
                     }
                     tokio::select! {
                         _ = new_items.notified() => {},
@@ -885,6 +899,18 @@ impl Runner {
             Ok(()) => None,
             Err(Error::Api(ApiError::Cancelled)) => {
                 let _ = self.db.set_item_status(item_id, ItemStatus::Queued, None);
+                None
+            }
+            // Still failing after the retries: the connection (or Ximilar) is down. Every other card would
+            // fail the same way, so the session waits for the user instead.
+            Err(Error::Api(e)) if e.failure() == Failure::Retry => {
+                let _ = self.db.set_item_status(item_id, ItemStatus::Queued, None);
+                let _ = self.pause_with(
+                    &session.id,
+                    &format!(
+                        "Paused: Ximilar can’t be reached ({e}). Resume when you are back online."
+                    ),
+                );
                 None
             }
             Err(Error::Api(e)) if e.failure() == Failure::Auth => {
@@ -2098,6 +2124,65 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Failed);
         assert!(s.error.unwrap().contains("Invalid token"));
         assert_eq!(s.counts.queued, 1, "the card stays queued for the next run");
+    }
+
+    /// Without a connection the cards stay queued and the session pauses, saying why; it doesn't fail them.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn no_connection_pauses_the_session() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["x.png", "y.png"] {
+            RgbImage::from_pixel(100, 140, Rgb([1, 2, 3]))
+                .save(dir.path().join(name))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        let settings = Settings {
+            // Nothing listens on port 9.
+            api_base_url: "http://127.0.0.1:9".into(),
+            ..Settings::default()
+        };
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("s.json"),
+            settings,
+            "token",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "T".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: dir.path().to_string_lossy().into_owned(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        let started = Instant::now();
+        let s = loop {
+            let s = db.session(&session.id).unwrap();
+            if s.status == SessionStatus::Paused && s.counts.in_progress == 0 && s.counts.total == 2
+            {
+                break s;
+            }
+            assert!(started.elapsed() < Duration::from_secs(20), "{s:?}");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        };
+        assert!(s.error.unwrap().contains("can’t be reached"));
+        assert_eq!((s.counts.errors, s.counts.queued), (0, 2));
+        assert!(runner.is_running(&session.id), "paused, not ended");
+        runner.start(&session.id).unwrap();
+        let resumed = db.session(&session.id).unwrap();
+        assert_eq!(
+            (resumed.status, resumed.error),
+            (SessionStatus::Running, None)
+        );
+        runner.stop(&session.id).unwrap();
     }
 
     /// eBay's Inventory and Media APIs for two cards: the first is accepted, the second's offer is refused.

@@ -1,11 +1,12 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
   CheckCircle2,
   Cloud,
   Cpu,
   FolderOpen,
+  Info,
   KeyRound,
   LogIn,
   LogOut,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
+import { create } from "zustand";
 import { ebayReady } from "../components/Ebay";
 import { ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
@@ -38,6 +40,7 @@ import Select, { optionsOf, type SelectOption } from "../components/Select";
 import {
   api,
   errorText,
+  type AppInfo,
   type ConnectionCheck,
   type DeviceInfo,
   type EbaySettings,
@@ -46,11 +49,42 @@ import {
   type Settings,
   type SettingsView,
 } from "../lib/api";
-import { GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
+import { bytes, GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
+
+const DEFAULT_API = "https://api.ximilar.com";
+
+/** Settings changed but not saved yet: kept when the user leaves the page, so nothing typed is lost. */
+export const useUnsavedSettings = create<{
+  saved: Settings | null;
+  draft: Settings | null;
+  setDraft: (d: Settings | ((d: Settings | null) => Settings | null)) => void;
+}>((set) => ({
+  saved: null,
+  draft: null,
+  setDraft: (d) => set((s) => ({ draft: typeof d === "function" ? d(s.draft) : d })),
+}));
+
+export function isUnsaved(saved: Settings | null, draft: Settings | null): boolean {
+  return !!saved && !!draft && JSON.stringify(strip(saved)) !== JSON.stringify(strip(draft));
+}
+
+/** What is wrong with the settings, by field; empty when they can be saved. */
+function problems(s: Settings): Partial<Record<"apiBaseUrl" | "page", string>> {
+  const out: Partial<Record<"apiBaseUrl" | "page", string>> = {};
+  if (!/^https?:\/\/[^\s/]+/.test(s.apiBaseUrl.trim())) out.apiBaseUrl = "An address starting with https://";
+  const mm = [s.scan.pageWidthMm, s.scan.pageHeightMm];
+  if (mm.some((v) => !Number.isFinite(v) || v < 20 || v > 400)) out.page = "Between 20 and 400 mm";
+  return out;
+}
 
 export default function SettingsPage() {
-  const [view, setView] = useState<SettingsView | null>(null);
-  const [draft, setDraft] = useState<Settings | null>(null);
+  const [view, setViewState] = useState<SettingsView | null>(null);
+  const draft = useUnsavedSettings((s) => s.draft);
+  const setDraft = useUnsavedSettings((s) => s.setDraft);
+  const setView = (v: SettingsView) => {
+    setViewState(v);
+    useUnsavedSettings.setState({ saved: strip(v) });
+  };
   const [token, setToken] = useState("");
   const [check, setCheck] = useState<ConnectionCheck | null>(null);
   const [checking, setChecking] = useState(false);
@@ -73,17 +107,33 @@ export default function SettingsPage() {
 
   useEffect(() => {
     api.getSettings().then((v) => {
-      setView(v);
-      setDraft(v);
+      // Edits left unsaved on an earlier visit stay; otherwise start from what is stored.
+      const { saved, draft } = useUnsavedSettings.getState();
+      setViewState(v);
+      useUnsavedSettings.setState({
+        saved: strip(v),
+        draft: isUnsaved(saved, draft) ? { ...draft!, ebay: { ...draft!.ebay, username: v.ebay.username } } : strip(v),
+      });
+      // Show at once whether the saved token still works.
+      if (v.tokenSet) {
+        setChecking(true);
+        api
+          .testConnection()
+          .then(setCheck)
+          .catch(() => {})
+          .finally(() => setChecking(false));
+      }
     });
     api.scannerSupport().then(setSupport);
   }, []);
 
   if (!view || !draft) return null;
-  const dirty = JSON.stringify(strip(view)) !== JSON.stringify(strip(draft));
+  const dirty = isUnsaved(view, draft);
+  const invalid = problems(draft);
+  const valid = Object.keys(invalid).length === 0;
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) => {
     setSaved(false);
-    setDraft({ ...draft, [key]: value });
+    setDraft((d) => d && { ...d, [key]: value });
   };
   const setEbay = (patch: Partial<EbaySettings>) => {
     setSaved(false);
@@ -100,9 +150,9 @@ export default function SettingsPage() {
   const save = async () => {
     setError(null);
     try {
-      const v = await api.saveSettings(draft);
+      const v = await api.saveSettings({ ...draft, apiBaseUrl: draft.apiBaseUrl.trim() });
       setView(v);
-      setDraft(v);
+      setDraft(strip(v));
       setSaved(true);
     } catch (e) {
       setError(errorText(e));
@@ -153,11 +203,16 @@ export default function SettingsPage() {
             <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" /> Unsaved changes
           </span>
         )}
-        <button className="btn" disabled={!dirty} onClick={() => setDraft(view)}>
+        <button className="btn" disabled={!dirty} onClick={() => setDraft(strip(view))}>
           Discard
         </button>
         {/* Gray until something changes, then the accent with a ring, so a pending save stands out. */}
-        <button className={clsx("btn", dirty && "btn-primary ring-4 ring-accent/25")} disabled={!dirty} onClick={save}>
+        <button
+          className={clsx("btn", dirty && valid && "btn-primary ring-4 ring-accent/25")}
+          disabled={!dirty || !valid}
+          onClick={save}
+          title={valid ? undefined : "Correct the marked fields first"}
+        >
           Save
         </button>
       </header>
@@ -276,12 +331,23 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="label">API base URL</label>
+                      <label className="label flex items-center justify-between">
+                        API base URL
+                        {draft.apiBaseUrl.trim() !== DEFAULT_API && (
+                          <button
+                            className="text-xs font-normal text-accent"
+                            onClick={() => set("apiBaseUrl", DEFAULT_API)}
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </label>
                       <input
-                        className="input font-mono"
+                        className={clsx("input font-mono", invalid.apiBaseUrl && "border-red-400")}
                         value={draft.apiBaseUrl}
                         onChange={(e) => set("apiBaseUrl", e.target.value)}
                       />
+                      {invalid.apiBaseUrl && <p className="mt-1 text-xs text-red-600">{invalid.apiBaseUrl}</p>}
                     </div>
                   </div>
                 </Section>
@@ -451,6 +517,9 @@ export default function SettingsPage() {
                         <RefreshCw className={clsx("h-4 w-4", findingScanners && "animate-spin")} /> Find scanners
                       </button>
                     </div>
+                    {support?.backend === "twain" && (
+                      <DriverSettings device={draft.defaultScanner} disabled={!support.available} />
+                    )}
                   </div>
                   <Field
                     label="Resolution"
@@ -468,19 +537,30 @@ export default function SettingsPage() {
                     <label className="label">Page width (mm)</label>
                     <input
                       type="number"
-                      className="input"
+                      className={clsx("input", invalid.page && "border-red-400")}
                       value={draft.scan.pageWidthMm}
                       onChange={(e) => setScan("pageWidthMm", Number(e.target.value))}
                     />
                   </div>
                   <div>
-                    <label className="label">Page height (mm)</label>
+                    <label className="label flex items-center justify-between">
+                      Page height (mm)
+                      {(draft.scan.pageWidthMm !== 66 || draft.scan.pageHeightMm !== 92) && (
+                        <button
+                          className="text-xs font-normal text-accent"
+                          onClick={() => set("scan", { ...draft.scan, pageWidthMm: 66, pageHeightMm: 92 })}
+                        >
+                          Reset to 66 × 92
+                        </button>
+                      )}
+                    </label>
                     <input
                       type="number"
-                      className="input"
+                      className={clsx("input", invalid.page && "border-red-400")}
                       value={draft.scan.pageHeightMm}
                       onChange={(e) => setScan("pageHeightMm", Number(e.target.value))}
                     />
+                    {invalid.page && <p className="mt-1 text-xs text-red-600">{invalid.page}</p>}
                   </div>
                   <Field
                     label="Multifeed detection"
@@ -517,6 +597,7 @@ export default function SettingsPage() {
                 </p>
               </Section>
             )}
+            {tab === "about" && <About />}
           </div>
         </div>
       </div>
@@ -524,7 +605,89 @@ export default function SettingsPage() {
   );
 }
 
-type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner";
+/** The TWAIN driver's own dialog: automatic cropping, deskew and the like, kept for every later scan. */
+function DriverSettings({ device, disabled }: { device: string | null; disabled: boolean }) {
+  const [state, setState] = useState<"open" | "saved" | "unchanged" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const configure = () => {
+    if (!device) return;
+    setState("open");
+    setError(null);
+    api
+      .scannerDriverSettings(device)
+      .then((saved) => setState(saved ? "saved" : "unchanged"))
+      .catch((e) => {
+        setState(null);
+        setError(errorText(e));
+      });
+  };
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="flex items-center gap-3">
+        <button className="btn" onClick={configure} disabled={disabled || !device || state === "open"}>
+          <SlidersHorizontal className="h-4 w-4" /> Driver settings…
+        </button>
+        <span className="text-xs text-slate-500">
+          {state === "open"
+            ? "The driver’s window is open…"
+            : state === "saved"
+              ? "Saved: every scan starts from them."
+              : state === "unchanged"
+                ? "Nothing saved (cancelled, or the driver can’t keep its settings)."
+                : device
+                  ? "The scanner’s own options, e.g. automatic cropping and deskew."
+                  : "Choose a scanner first."}
+        </span>
+      </div>
+      <ErrorNote>{error}</ErrorNote>
+    </div>
+  );
+}
+
+function About() {
+  const [info, setInfo] = useState<AppInfo | null>(null);
+  useEffect(() => {
+    api.appInfo().then(setInfo);
+  }, []);
+  return (
+    <Section
+      title="About Cardloader"
+      text={
+        <>
+          Open source, by Ximilar.{" "}
+          <button
+            className="text-accent underline"
+            onClick={() => openUrl("https://github.com/Ximilar-com/cardloader/releases")}
+          >
+            Releases and what’s new
+          </button>
+        </>
+      }
+    >
+      {info && (
+        <dl className="grid grid-cols-[120px_1fr] items-center gap-x-4 gap-y-2 text-sm">
+          <dt className="text-slate-500">Version</dt>
+          <dd>{info.version}</dd>
+          <dt className="text-slate-500">Data folder</dt>
+          <dd className="flex min-w-0 items-center gap-2">
+            <span className="selectable truncate font-mono text-xs" title={info.dataDir}>
+              {info.dataDir}
+            </span>
+            <button className="btn px-2 py-0.5 text-xs" onClick={() => openPath(info.dataDir)}>
+              <FolderOpen className="h-3.5 w-3.5" /> Open
+            </button>
+          </dd>
+          <dt className="text-slate-500">Space used</dt>
+          <dd>
+            {bytes(info.dataBytes)} — sessions’ thumbnails, scans and grading images; deleting a session frees its share
+          </dd>
+        </dl>
+      )}
+    </Section>
+  );
+}
+
+type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "about";
 
 const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "ximilar", label: "Ximilar API", icon: KeyRound },
@@ -532,6 +695,7 @@ const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "sessions", label: "New sessions", icon: SlidersHorizontal },
   { key: "ebay", label: "Selling", icon: Store },
   { key: "scanner", label: "Scanner", icon: ScanLine },
+  { key: "about", label: "About", icon: Info },
 ];
 
 function strip(s: Settings | SettingsView): Settings {

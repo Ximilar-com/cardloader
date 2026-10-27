@@ -1,12 +1,24 @@
 import clsx from "clsx";
-import { ChevronRight, Eye, FileSpreadsheet, FolderOpen, Plus, ScanLine, Settings2, Wand2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  Eye,
+  FileSpreadsheet,
+  FolderOpen,
+  KeyRound,
+  Play,
+  Plus,
+  ScanLine,
+  Settings2,
+  Wand2,
+} from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ErrorNote } from "../components/Modal";
 import NewSessionDialog, { GAME_LABELS } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import StatusChip from "../components/StatusChip";
-import { api, errorText, type Session, type SettingsView, type SourceKind } from "../lib/api";
+import { api, errorText, onSessionUpdated, type Session, type SettingsView, type SourceKind } from "../lib/api";
 import { GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS, dateTime, price } from "../lib/format";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
@@ -29,6 +41,7 @@ export default function DashboardPage() {
   const show = useSetupWizard((s) => s.show);
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [cards, setCards] = useState<Map<string, number> | null>(null);
+  const [calls, setCalls] = useState(0);
   const [sessions, setSessions] = useState<Session[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState<SourceKind | null>(null);
@@ -38,13 +51,18 @@ export default function DashboardPage() {
     api.getSettings().then(setSettings).catch(fail);
     api
       .dashboardActivity(HEATMAP_DAYS)
-      .then((days) => setCards(new Map(days.map((d) => [d.date, d.cards]))))
+      .then((days) => {
+        setCards(new Map(days.map((d) => [d.date, d.cards])));
+        const week = dayKey(daysBack(6));
+        setCalls(days.filter((d) => d.date >= week).reduce((n, d) => n + d.calls, 0));
+      })
       .catch(fail);
-    api
-      .listSessions()
-      .then((list) => setSessions(list.slice(0, 3)))
-      .catch(fail);
+    api.listSessions().then(setSessions).catch(fail);
+    const un = onSessionUpdated((s) => setSessions((list) => list && list.map((x) => (x.id === s.id ? s : x))));
+    return () => void un.then((f) => f());
   }, []);
+
+  const resume = (id: string) => api.runSession(id).catch((e) => setError(errorText(e)));
 
   const sources = settings?.defaultSources.length ? settings.defaultSources : (["folder"] as SourceKind[]);
 
@@ -67,6 +85,8 @@ export default function DashboardPage() {
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-5xl space-y-5">
           <ErrorNote>{error}</ErrorNote>
+          {sessions && <Totals sessions={sessions} calls={calls} />}
+          {settings && sessions && <Attention settings={settings} sessions={sessions} onResume={resume} />}
           <div className="grid grid-cols-[3fr_2fr] gap-5">
             <Card title="Last 7 days">{cards && <WeekBars cards={cards} />}</Card>
             <Card
@@ -94,7 +114,7 @@ export default function DashboardPage() {
               </Link>
             }
           >
-            {sessions && <LastSessions sessions={sessions} onNew={() => setCreating(sources[0])} />}
+            {sessions && <LastSessions sessions={sessions.slice(0, 3)} onNew={() => setCreating(sources[0])} />}
           </Card>
         </div>
       </div>
@@ -169,7 +189,10 @@ function WeekBars({ cards }: { cards: Map<string, number> }) {
   );
 }
 
-/** One square per day for the last 53 weeks: blue when cards were analysed that day. */
+/** Heatmap shades, from a few cards to the busiest day's. */
+const LEVELS = ["bg-accent/30", "bg-accent/55", "bg-accent/80", "bg-accent"];
+
+/** One square per day for the last 53 weeks, darker the more cards were analysed that day. */
 function Heatmap({ cards }: { cards: Map<string, number> }) {
   const [hover, setHover] = useState<{ text: string; x: number; y: number } | null>(null);
   const today = new Date();
@@ -181,6 +204,7 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
     weeks[weeks.length - 1].push(d);
   }
   const active = [...cards.values()].filter((n) => n > 0).length;
+  const busiest = Math.max(1, ...cards.values());
   const CELL = 14;
   const GAP = 3;
 
@@ -220,7 +244,7 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
                       key={dayKey(d)}
                       className={clsx(
                         "rounded-[3px]",
-                        n > 0 ? "bg-accent" : "bg-slate-200 dark:bg-slate-800",
+                        n > 0 ? LEVELS[Math.min(3, Math.floor((n / busiest) * 4))] : "bg-slate-200 dark:bg-slate-800",
                         "hover:ring-2 hover:ring-slate-400/60",
                       )}
                       style={{ width: CELL, height: CELL, gridRow: d.getDay() + 1 }}
@@ -254,10 +278,113 @@ function Heatmap({ cards }: { cards: Map<string, number> }) {
           <span className="h-3 w-3 rounded-[3px] bg-slate-200 dark:bg-slate-800" /> No scanning
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-3 w-3 rounded-[3px] bg-accent" /> Cards analysed
+          Fewer
+          {LEVELS.map((c) => (
+            <span key={c} className={clsx("h-3 w-3 rounded-[3px]", c)} />
+          ))}
+          More cards
         </span>
       </div>
     </div>
+  );
+}
+
+/** Everything analysed so far, across the local sessions. */
+function Totals({ sessions, calls }: { sessions: Session[]; calls: number }) {
+  const sum = (f: (s: Session) => number) => sessions.reduce((n, s) => n + f(s), 0);
+  const tiles: [string, string, string?][] = [
+    ["Cards", sum((s) => s.counts.done).toLocaleString(), `in ${plural(sessions.length, "session")}`],
+    ["Total value", price(sum((s) => s.counts.totalPrice)), "market prices when analysed"],
+    ["To review", sum((s) => s.counts.toReview).toLocaleString(), "unsure or missing matches"],
+    ["API calls", calls.toLocaleString(), "last 7 days"],
+  ];
+  return (
+    <div className="grid grid-cols-4 gap-5">
+      {tiles.map(([label, value, sub]) => (
+        <div key={label} className="card px-5 py-4">
+          <div className="text-xs font-medium text-slate-500">{label}</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
+          {sub && <div className="text-xs text-slate-500">{sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** What is waiting for the user: running and interrupted sessions, cards to review, failures, a missing token. */
+function Attention({
+  settings,
+  sessions,
+  onResume,
+}: {
+  settings: SettingsView;
+  sessions: Session[];
+  onResume: (id: string) => void;
+}) {
+  const rows: ReactNode[] = [];
+  if (!settings.tokenSet && settings.engine === "ximilar")
+    rows.push(
+      <AttentionRow key="token" icon={KeyRound} text="Add your Ximilar API token to analyse cards.">
+        <Link to="/settings" className="btn px-2 py-1 text-xs">
+          Open Settings
+        </Link>
+      </AttentionRow>,
+    );
+  for (const s of sessions) {
+    const c = s.counts;
+    const notes = [
+      s.status === "running" && `analysing, ${c.done + c.errors} of ${c.total}`,
+      s.status === "paused" && "paused",
+      c.toReview > 0 && `${plural(c.toReview, "card")} to review`,
+      c.errors > 0 && `${c.errors} failed`,
+      s.syncError && "Cards Cloud upload failed",
+      s.ebayError && "eBay job stopped",
+    ].filter(Boolean);
+    if (!notes.length) continue;
+    const filter = c.toReview > 0 ? "?filter=review" : c.errors > 0 ? "?filter=failed" : "";
+    rows.push(
+      <AttentionRow key={s.id} icon={SOURCE_ICONS[s.sourceKind]} title={s.name} text={notes.join(" · ")}>
+        {s.status === "paused" && (
+          <button className="btn px-2 py-1 text-xs" onClick={() => onResume(s.id)}>
+            <Play className="h-3 w-3" /> Resume
+          </button>
+        )}
+        <Link to={`/sessions/${s.id}${filter}`} className="btn px-2 py-1 text-xs">
+          {c.toReview > 0 ? "Review" : "Open"}
+        </Link>
+      </AttentionRow>,
+    );
+  }
+  if (!rows.length) return null;
+  return (
+    <Card title="Needs attention">
+      <ul className="-mx-2 max-h-72 overflow-y-auto">{rows.slice(0, 8)}</ul>
+    </Card>
+  );
+}
+
+function AttentionRow({
+  icon: Icon,
+  title,
+  text,
+  children,
+}: {
+  icon: typeof AlertTriangle;
+  title?: string;
+  text: string;
+  children: ReactNode;
+}) {
+  return (
+    <li className="flex items-center gap-3 rounded-md px-2 py-2">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-amber-50 text-amber-600 dark:bg-amber-950/40">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 flex-1">
+        {title && <span className="block truncate text-sm font-medium">{title}</span>}
+        <span className="block text-xs text-slate-500">{text}</span>
+      </span>
+      <span className="flex shrink-0 gap-2">{children}</span>
+    </li>
   );
 }
 

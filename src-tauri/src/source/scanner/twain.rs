@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 use tokio::sync::mpsc;
@@ -138,6 +138,47 @@ pub async fn list_devices(app: &AppHandle) -> Result<Vec<DeviceInfo>> {
     Err(Error::msg("TWAIN helper exited without listing scanners"))
 }
 
+/// Where the settings made in a scanner's own driver dialog are kept; every scan starts from them.
+fn driver_settings(app: &AppHandle, device: &str) -> Result<PathBuf> {
+    let name: String = device
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| Error::msg(e.to_string()))?
+        .join("twain");
+    Ok(dir.join(format!("{name}.bin")))
+}
+
+/// Opens the driver's own settings dialog (automatic cropping, deskew, …) and keeps what the user sets
+/// there. Returns whether settings were saved (false: cancelled, or the driver can't save them).
+pub async fn configure(app: &AppHandle, device: &str) -> Result<bool> {
+    let path = driver_settings(app, device)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut helper = Helper::spawn(app)?;
+    helper.send(&json!({"cmd": "configure", "device": device, "settings_path": path}))?;
+    // The dialog stays open as long as the user likes.
+    while let Some(event) = helper.next(Duration::from_secs(3600)).await? {
+        match event["event"].as_str() {
+            Some("configured") => return Ok(event["saved"].as_bool().unwrap_or(false)),
+            Some("error") if event["code"] == "custom_ds_data_unsupported" => {
+                tracing::warn!("scanner: {}", error_text(&event));
+            }
+            Some("error") if event["fatal"].as_bool().unwrap_or(true) => {
+                return Err(Error::msg(error_text(&event)))
+            }
+            _ => {}
+        }
+    }
+    Err(Error::msg(
+        "the TWAIN helper exited before the dialog closed",
+    ))
+}
+
 pub async fn scan(
     app: &AppHandle,
     device: &str,
@@ -164,6 +205,7 @@ pub async fn scan(
         "page_width_mm": s.page_width_mm,
         "page_height_mm": s.page_height_mm,
         "multifeed": if s.multifeed == MultifeedMode::Off { "off" } else { "default" },
+        "settings_path": driver_settings(app, device).ok().filter(|p| p.is_file()),
     }))?;
 
     let mut stop_sent = false;

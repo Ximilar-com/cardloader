@@ -128,6 +128,13 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
   `edited`; `notes` and `location` stay local (CSV only). Deleted cards' files go into `removed_files`, which
   `known_paths` includes, so running the folder again doesn't bring them back.
+- **Offline**: a card whose API call still fails after the retries with a network error, 429 or 5xx goes back to
+  the queue and the session pauses with the reason in `sessions.error` (`Runner::pause_with`); Resume clears it.
+  The dispatcher waits for cards in flight before a run ends, so a card put back is never stranded.
+- **TWAIN driver settings**: `scanner_driver_settings` opens the driver's own dialog through the sidecar's
+  `configure` (automatic crop, deskew, …) and keeps them in `<config>/twain/<device>.bin`; every scan replays
+  them (`settings_path`) before Cardloader sets resolution, colour and page size.
+- Settings left unsaved survive leaving the page (`useUnsavedSettings`, a dot on the sidebar).
 - A run that completes or fails (not one the user stopped) sends an OS notification when the window isn't focused
   (`EventSink::finished`, `tauri-plugin-notification` from Rust, so no capability).
 - The Windows scanner path never runs TWAIN in the app process: `cardloader-twain` is a sidecar speaking JSON lines

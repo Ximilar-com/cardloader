@@ -368,13 +368,14 @@ impl Db {
     pub fn analysed_per_day(&self, since: &str) -> Result<Vec<DayCount>> {
         self.with(|c| {
             let mut stmt = c.prepare(
-                "SELECT date(analyzed_at, 'localtime') AS day, COUNT(*) FROM items
+                "SELECT date(analyzed_at, 'localtime') AS day, COUNT(*), COALESCE(SUM(calls), 0) FROM items
                  WHERE analyzed_at >= ?1 GROUP BY day ORDER BY day",
             )?;
             let rows = stmt.query_map(params![since], |r| {
                 Ok(DayCount {
                     date: r.get(0)?,
                     cards: r.get(1)?,
+                    calls: r.get(2)?,
                 })
             })?;
             rows.collect()
@@ -1077,7 +1078,8 @@ mod tests {
             days,
             vec![DayCount {
                 date: "2026-10-20".into(),
-                cards: 2
+                cards: 2,
+                calls: 0
             }]
         );
         assert_eq!(

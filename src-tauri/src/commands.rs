@@ -413,6 +413,44 @@ pub fn delete_items(state: S, session_id: String, item_ids: Vec<i64>) -> Result<
     state.runner.delete_items(&session_id, &item_ids)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppInfo {
+    pub version: String,
+    /// Where sessions, thumbnails and the database are kept.
+    pub data_dir: String,
+    pub data_bytes: u64,
+}
+
+/// The app's version and its data folder with the space it takes.
+#[tauri::command]
+pub async fn app_info(app: AppHandle, state: S<'_>) -> Result<AppInfo> {
+    let dir = state.runner.data_dir.clone();
+    let walk = dir.clone();
+    let data_bytes = tokio::task::spawn_blocking(move || folder_size(&walk))
+        .await
+        .unwrap_or(0);
+    Ok(AppInfo {
+        version: app.package_info().version.to_string(),
+        data_dir: dir.to_string_lossy().into_owned(),
+        data_bytes,
+    })
+}
+
+fn folder_size(dir: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| match e.metadata() {
+            Ok(m) if m.is_dir() => folder_size(&e.path()),
+            Ok(m) => m.len(),
+            Err(_) => 0,
+        })
+        .sum()
+}
+
 /// How many images a folder holds — shown when picking it.
 #[tauri::command]
 pub fn count_images(path: String) -> Result<usize> {
@@ -552,6 +590,12 @@ pub fn scanner_support(app: AppHandle) -> scanner::ScannerSupport {
 #[tauri::command]
 pub async fn list_scanners(app: AppHandle) -> Result<Vec<scanner::DeviceInfo>> {
     scanner::list_devices(&app).await
+}
+
+/// Opens the scanner driver's own settings dialog (TWAIN); every later scan uses what is set there.
+#[tauri::command]
+pub async fn scanner_driver_settings(app: AppHandle, device: String) -> Result<bool> {
+    scanner::configure(&app, &device).await
 }
 
 // ---- eBay ----------------------------------------------------------------------------------------

@@ -41,7 +41,8 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   only. The grading overlays are saved alongside the session.
 - **Scanner.** Cardloader drives a RICOH/Fujitsu **fi-8170**, or any SANE/TWAIN document scanner, in duplex batches.
   Front and back are paired automatically, in the order you feed them (front or back first), and pages fed upside
-  down can be turned as they are scanned.
+  down can be turned as they are scanned. On Windows, **Settings → Scanner → Driver settings…** opens the scanner's
+  own options (such as automatic cropping and deskew), and every scan keeps them.
 - **Watch folder.** Cardloader can also analyse images as another app saves them into a folder, for example
   PaperStream Capture.
 - **Cards Cloud.** Sessions can be mirrored live to
@@ -69,8 +70,11 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   price, location or notes with **E**, and move with **J**/**K**; press **?** for all shortcuts. Tick cards (Shift
   for a range) to accept, analyse again, set where they are kept or delete them at once. Corrections are sent to
   Cards Cloud too. A notification tells you when a session has finished while you were in another app.
+- **Home.** Your cards, their total value, the cards to review and the API calls of the last 7 days; a list of
+  what needs attention (sessions to review, failed cards, interrupted sessions to resume, upload errors); and a year
+  of activity. **New session** estimates the API calls before you start.
 - **Pause, stop, resume.** You can pause, stop and resume a session, even after the app restarts. Failed cards can
-  be retried individually.
+  be retried individually. When the connection drops, the session pauses instead of failing its cards.
 
 ## Install
 

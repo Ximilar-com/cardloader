@@ -51,6 +51,17 @@ pub async fn list_devices(app: &AppHandle) -> Result<Vec<DeviceInfo>> {
     }
 }
 
+/// Opens the scanner driver's own settings dialog; TWAIN (Windows) only. Returns whether they were saved.
+pub async fn configure(app: &AppHandle, device: &str) -> Result<bool> {
+    if cfg!(windows) {
+        twain::configure(app, device).await
+    } else {
+        Err(Error::msg(
+            "the driver settings dialog is only available for TWAIN scanners on Windows",
+        ))
+    }
+}
+
 /// Scans one batch (until the feeder is empty or the session stops) and sends the cards.
 pub async fn scan(
     app: &AppHandle,

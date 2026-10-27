@@ -186,7 +186,8 @@ where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, ApiError>>,
 {
-    let mut delay = Duration::from_secs(1);
+    // Tests go through the same retries without the wait.
+    let mut delay = Duration::from_millis(if cfg!(test) { 10 } else { 1000 });
     let mut attempt = 1;
     loop {
         let result = tokio::select! {
