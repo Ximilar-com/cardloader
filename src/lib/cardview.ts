@@ -85,6 +85,16 @@ export interface CardView {
   local?: { model: string; seconds: number | null };
   /** How Ximilar read it, when not the usual way: "front + back", "Magic AI", a custom endpoint. */
   via?: string;
+  /** Ximilar found the card turned in the image (its `Rotation` tag wasn't `rotation_ok`). */
+  rotation?: Rotation | null;
+}
+
+export interface Rotation {
+  /** "Upside down", "Turned left". */
+  label: string;
+  /** The tag as Ximilar names it, e.g. `rotated_upside_down`. */
+  tag: string;
+  prob: number | null;
 }
 
 /** Another possible match, after the best one. */
@@ -275,16 +285,40 @@ function area(o: Json): number {
   return Array.isArray(b) && b.length === 4 ? Math.abs((b[2] - b[0]) * (b[3] - b[1])) : 0;
 }
 
-/** The identification of the main object of an id-endpoint response, and the slab label's, if any. */
 /** One record's main object: the largest identified object that isn't a slab label, else any identified one. */
-function recordIdent(record: Json): Json | null {
+function mainObject(record: Json): Json | null {
   const objects: Json[] = record?._objects ?? [];
   const sorted = [...objects].sort((a, b) => area(b) - area(a));
-  const main =
+  return (
     sorted.find((o) => o?.name !== "Slab Label" && o?._identification) ??
     objects.find((o) => o?._identification) ??
-    null;
-  return main?._identification ?? record?._identification ?? null;
+    sorted.find((o) => o?.name !== "Slab Label") ??
+    null
+  );
+}
+
+function recordIdent(record: Json): Json | null {
+  return mainObject(record)?._identification ?? record?._identification ?? null;
+}
+
+const ROTATION_LABELS: Record<string, string> = {
+  rotated_upside_down: "Upside down",
+  rotated_left: "Turned left",
+  rotated_right: "Turned right",
+};
+
+/** The front's card as Ximilar found it turned, if it did: its `Rotation` tag is anything but `rotation_ok`. */
+export function rotationOf(response: Json): Rotation | null {
+  const tag: Json = mainObject(response?.records?.[0])?._tags?.Rotation?.[0];
+  const name = typeof tag?.name === "string" ? tag.name : "";
+  if (!name || name === "rotation_ok") return null;
+  const label =
+    ROTATION_LABELS[name] ??
+    name
+      .replace(/^rotated_/, "")
+      .replace(/_/g, " ")
+      .replace(/^./, (c: string) => c.toUpperCase());
+  return { label, tag: name, prob: typeof tag.prob === "number" ? tag.prob : null };
 }
 
 export function matchOf(response: Json): { ident: Json | null; slab: Json | null } {
@@ -366,6 +400,7 @@ export function viewFromItem(i: ItemDetail): CardView {
     gradingImages: i.gradingImages.map((p) => ({ label: labelOf(p), src: fileUrl(p), path: p })),
     raw: { recognition: i.recognition, grading: i.grading },
     via: viaOf(i.recognition),
+    rotation: rotationOf(i.recognition?.response),
     local: String(i.recognition?.endpoint ?? "").startsWith("local/")
       ? { model: String(i.recognition.model ?? ""), seconds: i.recognition.seconds ?? null }
       : undefined,

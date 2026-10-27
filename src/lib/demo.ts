@@ -206,6 +206,10 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
             _objects: [
               {
                 name: "Card",
+                // Every fourth card was fed upside down.
+                ...(seq % 4 === 0
+                  ? { _tags: { Rotation: [{ id: "rot", name: "rotated_upside_down", prob: 0.99893 }] } }
+                  : {}),
                 _identification: {
                   best_match: {
                     name,

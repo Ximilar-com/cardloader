@@ -258,11 +258,12 @@ function SessionView({ id }: { id: string }) {
     <div className="flex h-full">
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b border-slate-200 px-6 pt-4 pb-3 dark:border-slate-800">
-          <div className="flex items-center gap-3">
+          {/* When the detail panel leaves too little room, the buttons go to their own line. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Link to="/sessions" className="btn btn-ghost px-1.5" aria-label="Back to sessions">
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-64 flex-1">
               <div className="flex items-center gap-2">
                 <EditableTitle
                   name={session.name}
@@ -275,7 +276,7 @@ function SessionView({ id }: { id: string }) {
                 />
                 <StatusChip status={status} />
               </div>
-              <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs whitespace-nowrap text-slate-500">
+              <p className="mt-0.5 flex min-w-0 items-center gap-1.5 overflow-hidden text-xs whitespace-nowrap text-slate-500">
                 <span>{SOURCE_LABELS[session.sourceKind]}</span>
                 {session.sourceKind !== "scanner" ? (
                   <button
@@ -300,7 +301,7 @@ function SessionView({ id }: { id: string }) {
                 <span>Created {dateTime(session.createdAt)}</span>
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               {running && (
                 <button className="btn" onClick={() => act(() => api.pauseSession(id))}>
                   <Pause className="h-4 w-4" /> Pause

@@ -4,6 +4,7 @@ import {
   filterRows,
   matchOf,
   needsReview,
+  rotationOf,
   representativePrice,
   sortRows,
   tier,
@@ -120,5 +121,29 @@ describe("review", () => {
     expect(filterRows(rows, "review").map((r) => r.seq)).toEqual([1]);
     expect(filterRows(rows, "failed").map((r) => r.seq)).toEqual([3]);
     expect(filterRows(rows, "all", "box 2").map((r) => r.seq)).toEqual([2]);
+  });
+});
+
+describe("rotationOf", () => {
+  const response = (rotation: string) => ({
+    records: [
+      {
+        _objects: [
+          { name: "Card", bound_box: [0, 0, 10, 10], _tags: { Rotation: [{ name: rotation, prob: 0.99893 }] } },
+        ],
+      },
+    ],
+  });
+
+  it("reports a turned card, not an upright one", () => {
+    expect(rotationOf(response("rotated_upside_down"))).toEqual({
+      label: "Upside down",
+      tag: "rotated_upside_down",
+      prob: 0.99893,
+    });
+    expect(rotationOf(response("rotated_left"))?.label).toBe("Turned left");
+    expect(rotationOf(response("rotation_ok"))).toBeNull();
+    expect(rotationOf({ records: [{ _objects: [{ name: "Card" }] }] })).toBeNull();
+    expect(rotationOf(null)).toBeNull();
   });
 });

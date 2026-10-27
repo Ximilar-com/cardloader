@@ -11,6 +11,7 @@ import {
   Loader2,
   Pencil,
   RotateCcw,
+  RotateCw,
   Trash2,
   X,
 } from "lucide-react";
@@ -92,6 +93,16 @@ export default function DetailPanel({
             {view.edited && <EditedChip />}
             {view.accepted && <AcceptedChip />}
             {view.toReview && <ReviewChip />}
+            {view.rotation && (
+              <span
+                className="inline-flex items-center gap-1 rounded bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+                title={`Ximilar found the card turned in the image (${view.rotation.tag}${
+                  view.rotation.prob != null ? `, ${Math.round(view.rotation.prob * 100)}%` : ""
+                }) and identified it upright.`}
+              >
+                <RotateCw className="h-3 w-3" /> {view.rotation.label}
+              </span>
+            )}
             {view.distance != null && (
               <span className="text-[11px] text-slate-400">distance {view.distance.toFixed(3)}</span>
             )}
