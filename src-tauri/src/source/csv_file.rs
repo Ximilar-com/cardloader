@@ -32,6 +32,8 @@ enum Column {
     Grade,
     Condition,
     Distance,
+    Notes,
+    Location,
 }
 
 /// Normalised header → column. The first matching header wins.
@@ -114,6 +116,8 @@ const ALIASES: &[(Column, &[&str])] = &[
     (Column::Grade, &["grade", "final_grade"]),
     (Column::Condition, &["condition"]),
     (Column::Distance, &["distance"]),
+    (Column::Notes, &["notes", "note", "comment", "comments"]),
+    (Column::Location, &["location", "storage", "box", "binder"]),
 ];
 
 /// One row of the file.
@@ -127,6 +131,8 @@ pub struct CsvRow {
     pub grade: Option<f64>,
     pub condition: Option<String>,
     pub distance: Option<f64>,
+    pub notes: String,
+    pub location: String,
 }
 
 impl CsvRow {
@@ -179,6 +185,8 @@ fn field_name(c: Column) -> &'static str {
         Column::Grade => "grade",
         Column::Condition => "condition",
         Column::Distance => "distance",
+        Column::Notes => "notes",
+        Column::Location => "location",
     }
 }
 
@@ -309,6 +317,8 @@ pub fn parse(text: &str, base: &Path) -> Result<CsvFile> {
                 Column::Distance => {
                     row.distance = parse_number(value, decimal_comma).filter(|d| *d >= 0.0)
                 }
+                Column::Notes => row.notes = text,
+                Column::Location => row.location = text,
             }
         }
         if row.card.full_name.is_empty() && !row.card.name.is_empty() {

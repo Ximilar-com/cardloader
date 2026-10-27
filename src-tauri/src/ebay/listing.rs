@@ -580,6 +580,10 @@ mod tests {
             synced: false,
             updated_at: String::new(),
             picked: false,
+            edited: false,
+            reviewed: false,
+            notes: String::new(),
+            location: String::new(),
             ebay: None,
         }
     }

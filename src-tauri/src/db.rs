@@ -17,6 +17,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/003_slab.sql"),
     include_str!("../migrations/004_ebay.sql"),
     include_str!("../migrations/005_hosted_images.sql"),
+    include_str!("../migrations/006_review.sql"),
 ];
 
 #[derive(Clone)]
@@ -27,7 +28,12 @@ const ITEM_SUMMARY_COLUMNS: &str =
      name, full_name, set_name, set_code, card_number, series, year, subcategory, \
      confidence, distance, price, grade, condition, error, synced_rev, rev, updated_at, \
      picks, picks_synced, slab_company, slab_grade, slab_certificate, \
-     ebay_status, ebay_price, ebay_listing_id, ebay_error";
+     ebay_status, ebay_price, ebay_listing_id, ebay_error, reviewed, edited, notes, location";
+
+/// An identified card whose match is unsure or missing, and that nobody has accepted or corrected yet (the
+/// same rule as `needsReview` in `src/lib/cardview.ts`). Columns of `items` as `i`.
+const TO_REVIEW: &str = "(i.status IN ('done', 'grading') AND i.reviewed = 0
+     AND (i.confidence IN ('low', 'medium') OR (COALESCE(i.name, '') = '' AND COALESCE(i.full_name, '') = '')))";
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
@@ -109,7 +115,9 @@ impl Db {
                     COALESCE(SUM(i.price), 0),
                     COALESCE(SUM(i.ebay_status = 'draft'), 0),
                     COALESCE(SUM(i.ebay_status = 'listed'), 0),
-                    COALESCE(SUM(i.ebay_status = 'sold'), 0)
+                    COALESCE(SUM(i.ebay_status = 'sold'), 0),
+                    COALESCE(SUM({TO_REVIEW}), 0),
+                    COALESCE(SUM(i.calls), 0)
              FROM sessions s LEFT JOIN items i ON i.session_id = s.id
              {filter} GROUP BY s.id {order}"
         );
@@ -144,6 +152,8 @@ impl Db {
                         ebay_drafts: r.get(23)?,
                         ebay_listed: r.get(24)?,
                         ebay_sold: r.get(25)?,
+                        to_review: r.get(26)?,
+                        calls: r.get(27)?,
                     },
                 })
             })?;
@@ -371,7 +381,8 @@ impl Db {
         })
     }
 
-    /// Source paths already in the session, so a re-run of a folder only adds new files.
+    /// Source paths already in the session (or whose cards were deleted from it), so a re-run of a folder
+    /// only adds new files.
     pub fn known_paths(&self, session_id: &str) -> Result<std::collections::HashSet<String>> {
         self.with(|c| {
             let mut stmt =
@@ -386,6 +397,10 @@ impl Db {
                 if let Some(back) = back {
                     set.insert(back);
                 }
+            }
+            let mut stmt = c.prepare("SELECT path FROM removed_files WHERE session_id = ?1")?;
+            for path in stmt.query_map(params![session_id], |r| r.get::<_, String>(0))? {
+                set.insert(path?);
             }
             Ok(set)
         })
@@ -458,7 +473,7 @@ impl Db {
                     card_number = ?7, series = ?8, year = ?9, subcategory = ?10, confidence = ?11,
                     distance = ?12, price = ?13, recognition = ?14, calls = calls + ?15, status = ?16,
                     error = NULL, analyzed_at = ?17, updated_at = ?17, rev = rev + 1, slab_company = ?18,
-                    slab_grade = ?19, slab_certificate = ?20
+                    slab_grade = ?19, slab_certificate = ?20, reviewed = 0, edited = 0
                  WHERE id = ?1",
                 params![
                     id,
@@ -503,7 +518,7 @@ impl Db {
             c.execute(
                 "UPDATE items SET name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6,
                     series = ?7, year = ?8, subcategory = ?9, confidence = ?10, distance = ?11, price = ?12,
-                    recognition = ?13, picks = picks + 1, updated_at = ?14
+                    recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14
                  WHERE id = ?1",
                 params![
                     id,
@@ -524,6 +539,107 @@ impl Db {
             )
         })?;
         Ok(())
+    }
+
+    /// The user typed the card's fields or price. Like a pick, it reaches Cards Cloud as a PATCH (`picks`
+    /// counts it); notes and the location stay local.
+    pub fn save_edit(&self, id: i64, edit: &ItemEdit) -> Result<()> {
+        let card = &edit.card;
+        self.with(|c| {
+            c.execute(
+                "WITH card AS (SELECT COALESCE(name, '') IS NOT ?2 OR COALESCE(full_name, '') IS NOT ?3
+                    OR COALESCE(set_name, '') IS NOT ?4 OR COALESCE(set_code, '') IS NOT ?5
+                    OR COALESCE(card_number, '') IS NOT ?6 OR COALESCE(series, '') IS NOT ?7
+                    OR COALESCE(year, '') IS NOT ?8 OR COALESCE(subcategory, '') IS NOT ?9
+                    OR price IS NOT ?10 AS changed FROM items WHERE id = ?1)
+                 UPDATE items SET
+                    picks = picks + (SELECT changed FROM card), edited = edited OR (SELECT changed FROM card),
+                    name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6, series = ?7,
+                    year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12, reviewed = 1,
+                    updated_at = ?13
+                 WHERE id = ?1",
+                params![
+                    id,
+                    card.name,
+                    card.full_name,
+                    card.set_name,
+                    card.set_code,
+                    card.card_number,
+                    card.series,
+                    card.year,
+                    card.subcategory,
+                    edit.price,
+                    edit.notes,
+                    edit.location,
+                    now()
+                ],
+            )
+        })?;
+        Ok(())
+    }
+
+    pub fn set_notes(&self, id: i64, notes: &str, location: &str) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET notes = ?2, location = ?3 WHERE id = ?1",
+                params![id, notes, location],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// Accepts the cards' matches (or takes that back); returns how many changed.
+    pub fn set_reviewed(&self, session_id: &str, ids: &[i64], reviewed: bool) -> Result<usize> {
+        self.with(|c| {
+            let mut n = 0;
+            for id in ids {
+                n += c.execute(
+                    "UPDATE items SET reviewed = ?3 WHERE id = ?1 AND session_id = ?2 AND reviewed != ?3",
+                    params![id, session_id, reviewed],
+                )?;
+            }
+            Ok(n)
+        })
+    }
+
+    /// Sets where the cards are kept; returns how many changed.
+    pub fn set_location(&self, session_id: &str, ids: &[i64], location: &str) -> Result<usize> {
+        self.with(|c| {
+            let mut n = 0;
+            for id in ids {
+                n += c.execute(
+                    "UPDATE items SET location = ?3 WHERE id = ?1 AND session_id = ?2",
+                    params![id, session_id, location],
+                )?;
+            }
+            Ok(n)
+        })
+    }
+
+    /// Deletes the session's cards and remembers their files, so running the folder again skips them.
+    /// Returns the deleted items, whose own files (thumbnails, previews) the caller removes.
+    pub fn delete_items(&self, session_id: &str, ids: &[i64]) -> Result<Vec<ItemDetail>> {
+        let mut deleted = Vec::new();
+        for &id in ids {
+            match self.item(id) {
+                Ok(item) if item.summary.session_id == session_id => deleted.push(item),
+                _ => {}
+            }
+        }
+        let mut conn = self.0.lock().unwrap();
+        let tx = conn.transaction()?;
+        for item in &deleted {
+            let s = &item.summary;
+            for path in std::iter::once(&s.front_path).chain(&s.back_path) {
+                tx.execute(
+                    "INSERT OR IGNORE INTO removed_files (session_id, path) VALUES (?1, ?2)",
+                    params![session_id, path],
+                )?;
+            }
+            tx.execute("DELETE FROM items WHERE id = ?1", params![s.id])?;
+        }
+        tx.commit()?;
+        Ok(deleted)
     }
 
     /// Picked items whose row is in Cards Cloud but doesn't have the latest pick yet: (id, picks).
@@ -876,6 +992,10 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         synced: synced_rev > 0 && synced_rev == rev && picks == picks_synced,
         updated_at: r.get(24)?,
         picked: picks > 0,
+        edited: r.get(35)?,
+        reviewed: r.get(34)?,
+        notes: text(36)?,
+        location: text(37)?,
         ebay: ebay_listing(r)?,
     })
 }
@@ -1103,6 +1223,51 @@ mod tests {
         assert!(item.summary.synced);
         assert_eq!(item.summary.card.name, "Charizard");
         assert_eq!(db.session(&s.id).unwrap().counts.total_price, 12.5);
+    }
+
+    #[test]
+    fn unsure_matches_wait_for_review() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let mut ids = Vec::new();
+        for (i, (name, confidence)) in [("Pikachu", "high"), ("Mew", "low"), ("", "high")]
+            .into_iter()
+            .enumerate()
+        {
+            let id = db
+                .insert_item(
+                    &s.id,
+                    &format!("/{i}.jpg"),
+                    None,
+                    &ItemImages::default(),
+                    None,
+                )
+                .unwrap();
+            db.claim_next(&s.id).unwrap();
+            let card = CardFields {
+                name: name.into(),
+                ..Default::default()
+            };
+            db.save_recognition(
+                id,
+                "tcg",
+                &card,
+                Some(confidence),
+                None,
+                None,
+                None,
+                &Value::Null,
+                3,
+                ItemStatus::Done,
+            )
+            .unwrap();
+            ids.push(id);
+        }
+        let counts = db.session(&s.id).unwrap().counts;
+        assert_eq!((counts.to_review, counts.calls), (2, 9), "low and no match");
+        assert_eq!(db.set_reviewed(&s.id, &ids, true).unwrap(), 3);
+        assert_eq!(db.session(&s.id).unwrap().counts.to_review, 0);
+        assert!(db.item_summary(ids[1]).unwrap().reviewed);
     }
 
     #[test]

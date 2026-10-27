@@ -123,6 +123,13 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   "Select" of another candidate is sent as `PATCH identification/{id}/` (`sync::push_picks`), tracked by
   `picks`/`picks_synced`.
 - Items: `rev` counts result changes, `synced_rev` what Cards Cloud has. Imported CSV cards start at `rev = 1`.
+- **Review**: a card is "to review" when identified with low/medium confidence or no match and not `reviewed`
+  (`db::TO_REVIEW` and `cardview::needsReview` must agree). Accepting, picking or editing sets `reviewed`; a new
+  recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
+  `edited`; `notes` and `location` stay local (CSV only). Deleted cards' files go into `removed_files`, which
+  `known_paths` includes, so running the folder again doesn't bring them back.
+- A run that completes or fails (not one the user stopped) sends an OS notification when the window isn't focused
+  (`EventSink::finished`, `tauri-plugin-notification` from Rust, so no capability).
 - The Windows scanner path never runs TWAIN in the app process: `cardloader-twain` is a sidecar speaking JSON lines
   over stdio. It must be built for `i686-pc-windows-msvc` (`scripts/prepare-sidecar.mjs`).
 - Vite 8 no longer bundles esbuild; `vite.config.ts` uses `minify: !process.env.TAURI_ENV_DEBUG`.

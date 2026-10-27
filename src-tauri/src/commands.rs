@@ -379,6 +379,40 @@ pub fn select_match(state: S, id: i64, index: usize) -> Result<ItemDetail> {
     state.runner.pick_match(id, index)
 }
 
+/// Saves what the user typed for a card: its fields and price (once identified), notes and location.
+#[tauri::command]
+pub fn update_item(state: S, id: i64, edit: ItemEdit) -> Result<ItemDetail> {
+    state.runner.edit_item(id, edit)
+}
+
+/// Accepts the cards' matches, or with `reviewed: false` takes that back.
+#[tauri::command]
+pub fn review_items(
+    state: S,
+    session_id: String,
+    item_ids: Vec<i64>,
+    reviewed: bool,
+) -> Result<usize> {
+    state.runner.review_items(&session_id, &item_ids, reviewed)
+}
+
+/// Sets where the cards are kept (empty clears it).
+#[tauri::command]
+pub fn locate_items(
+    state: S,
+    session_id: String,
+    item_ids: Vec<i64>,
+    location: String,
+) -> Result<usize> {
+    state.runner.locate_items(&session_id, &item_ids, &location)
+}
+
+/// Deletes cards from a stopped session; running the folder again doesn't bring them back.
+#[tauri::command]
+pub fn delete_items(state: S, session_id: String, item_ids: Vec<i64>) -> Result<usize> {
+    state.runner.delete_items(&session_id, &item_ids)
+}
+
 /// How many images a folder holds — shown when picking it.
 #[tauri::command]
 pub fn count_images(path: String) -> Result<usize> {

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import SetupWizard, { useSetupWizard } from "./components/SetupWizard";
 import Sidebar from "./components/Sidebar";
+import Toaster from "./components/Toast";
 import { api } from "./lib/api";
 import DashboardPage from "./pages/DashboardPage";
 import RemoteSessionPage from "./pages/RemoteSessionPage";
@@ -32,6 +33,7 @@ export default function App() {
         </Routes>
       </main>
       {settings && <SetupWizard settings={settings} />}
+      <Toaster />
     </div>
   );
 }

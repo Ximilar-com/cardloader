@@ -1,17 +1,35 @@
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
-import { Check, ExternalLink, FolderOpen, Loader2, RotateCcw, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import type { Json } from "../lib/api";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  FolderOpen,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, grade, price } from "../lib/format";
-import StatusChip, { ConfidenceChip, PickedChip } from "./StatusChip";
+import { ErrorNote } from "./Modal";
+import StatusChip, { ConfidenceChip, EditedChip, PickedChip } from "./StatusChip";
 
 export default function DetailPanel({
   view,
   onClose,
   onRetry,
   onPick,
+  onAccept,
+  onEdit,
+  onDelete,
+  onPrev,
+  onNext,
+  position,
   ebay,
 }: {
   view: CardView;
@@ -21,7 +39,37 @@ export default function DetailPanel({
   ebay?: ReactNode;
   /** Makes a candidate the match; without it, candidates are read-only. */
   onPick?: (index: number) => Promise<unknown>;
+  /** Accepts the match of a card to review. */
+  onAccept?: () => void;
+  /** Saves what the user typed; without it, the card can't be edited. */
+  onEdit?: (edit: ItemEdit) => Promise<unknown>;
+  onDelete?: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  /** "3 of 120" */
+  position?: string;
 }) {
+  const [editing, setEditing] = useState(false);
+
+  // Reviewing from the keyboard: A accepts, E edits, 1–9 pick a candidate, Delete deletes, Escape closes.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || editing) return;
+      if ((e.target as HTMLElement)?.closest("input, textarea, select") || document.querySelector("[role=dialog]"))
+        return;
+      const candidate = /^[1-9]$/.test(e.key) ? view.alternatives[Number(e.key) - 1] : undefined;
+      if (e.key === "Escape") onClose();
+      else if (e.key === "a" && view.toReview && onAccept) onAccept();
+      else if (e.key === "e" && onEdit && view.edit) setEditing(true);
+      else if ((e.key === "Delete" || e.key === "Backspace") && onDelete) onDelete();
+      else if (candidate && onPick) void onPick(candidate.index);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, editing, onClose, onAccept, onEdit, onDelete, onPick]);
+
   return (
     <aside className="flex h-full w-[400px] shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
       <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
@@ -31,7 +79,8 @@ export default function DetailPanel({
             {view.status && <StatusChip status={view.status} />}
             {view.idType && <span className="text-[11px] font-medium text-slate-500 uppercase">{view.idType}</span>}
             <ConfidenceChip value={view.confidence} />
-            {view.picked && <PickedChip />}
+            {view.picked && !view.edited && <PickedChip />}
+            {view.edited && <EditedChip />}
             {view.distance != null && (
               <span className="text-[11px] text-slate-400">distance {view.distance.toFixed(3)}</span>
             )}
@@ -44,10 +93,48 @@ export default function DetailPanel({
             )}
           </div>
         </div>
-        <button className="btn btn-ghost px-1.5" onClick={onClose} aria-label="Close detail">
+        {(onPrev || onNext) && (
+          <div className="flex items-center">
+            <button
+              className="btn btn-ghost px-1.5"
+              onClick={onPrev}
+              disabled={!onPrev}
+              title="Previous card (K or ↑)"
+              aria-label="Previous card"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+            <button
+              className="btn btn-ghost px-1.5"
+              onClick={onNext}
+              disabled={!onNext}
+              title="Next card (J or ↓)"
+              aria-label="Next card"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        <button className="btn btn-ghost px-1.5" onClick={onClose} aria-label="Close detail" title="Close (Esc)">
           <X className="h-4 w-4" />
         </button>
       </div>
+      {(view.toReview && onAccept) || position ? (
+        <div className="flex items-center gap-2 border-b border-slate-200 bg-amber-50/60 px-4 py-2 text-xs dark:border-slate-800 dark:bg-amber-950/20">
+          {view.toReview && onAccept ? (
+            <>
+              <span className="flex-1 text-amber-800 dark:text-amber-300">
+                Unsure match — accept it or pick another candidate below.
+              </span>
+              <button className="btn btn-primary px-2 py-0.5 text-xs" onClick={onAccept} title="Accept the match (A)">
+                <Check className="h-3 w-3" /> Accept
+              </button>
+            </>
+          ) : (
+            <span className="flex-1 text-slate-500">{position}</span>
+          )}
+        </div>
+      ) : null}
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
         {view.error && (
@@ -82,14 +169,39 @@ export default function DetailPanel({
 
         {ebay}
 
-        {view.fields.length > 0 && (
-          <Section title="Card">
-            <dl className="selectable grid grid-cols-[100px_1fr] gap-x-3 gap-y-1.5 text-sm">
-              {view.fields.map(([k, v]) => (
-                <Field key={k} label={k} value={v} />
-              ))}
-            </dl>
-          </Section>
+        {editing && view.edit && onEdit ? (
+          <EditForm
+            initial={view.edit}
+            identified={view.status === "done" || view.status === "grading"}
+            onCancel={() => setEditing(false)}
+            onSave={(edit) => onEdit(edit).then(() => setEditing(false))}
+          />
+        ) : (
+          (view.fields.length > 0 || view.edit?.notes || view.edit?.location || onEdit) && (
+            <Section
+              title="Card"
+              action={
+                onEdit &&
+                view.edit && (
+                  <button
+                    className="btn btn-ghost px-1.5 py-0.5 text-xs"
+                    onClick={() => setEditing(true)}
+                    title="Edit (E)"
+                  >
+                    <Pencil className="h-3 w-3" /> Edit
+                  </button>
+                )
+              }
+            >
+              <dl className="selectable grid grid-cols-[100px_1fr] gap-x-3 gap-y-1.5 text-sm">
+                {view.fields.map(([k, v]) => (
+                  <Field key={k} label={k} value={v} />
+                ))}
+                <Field label="Location" value={view.edit?.location} />
+                <Field label="Notes" value={view.edit?.notes} />
+              </dl>
+            </Section>
+          )
         )}
 
         {view.slab && Object.keys(view.slab).length > 0 && (
@@ -160,6 +272,15 @@ export default function DetailPanel({
             {JSON.stringify(view.raw, null, 2)}
           </pre>
         </details>
+
+        {onDelete && (
+          <button
+            className="btn btn-ghost w-full justify-center text-xs text-red-600 dark:text-red-400"
+            onClick={onDelete}
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Delete this card
+          </button>
+        )}
       </div>
     </aside>
   );
@@ -311,8 +432,13 @@ function Candidates({ list, onPick }: { list: Candidate[]; onPick?: (index: numb
   return (
     <Section title={`Other candidates (${list.length})`}>
       <div className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-        {list.map((c) => (
+        {list.map((c, i) => (
           <div key={`${c.index}:${c.fullName}`} className="flex items-center gap-2.5 px-2.5 py-1.5 text-sm">
+            {onPick && i < 9 && (
+              <kbd className="w-4 shrink-0 text-center text-[11px] text-slate-400" title={`Press ${i + 1} to select`}>
+                {i + 1}
+              </kbd>
+            )}
             <div className="selectable min-w-0 flex-1" title={c.fullName || undefined}>
               <div className="truncate font-medium">{c.name}</div>
               {c.detail && <div className="truncate text-xs text-slate-500">{c.detail}</div>}
@@ -342,12 +468,111 @@ function Candidates({ list, onPick }: { list: Candidate[]; onPick?: (index: numb
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">{title}</h3>
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-xs font-semibold tracking-wide text-slate-500 uppercase">{title}</h3>
+        {action}
+      </div>
       {children}
     </section>
+  );
+}
+
+const EDIT_FIELDS: [keyof ItemEdit, string][] = [
+  ["name", "Name"],
+  ["setName", "Set"],
+  ["setCode", "Set code"],
+  ["cardNumber", "Number"],
+  ["year", "Year"],
+];
+
+/** The card's fields, price, location and notes as a form; Enter saves, Escape cancels. */
+function EditForm({
+  initial,
+  identified,
+  onSave,
+  onCancel,
+}: {
+  initial: ItemEdit;
+  /** Card fields and price can be typed only once the card is identified. */
+  identified: boolean;
+  onSave: (edit: ItemEdit) => Promise<unknown>;
+  onCancel: () => void;
+}) {
+  const [edit, setEdit] = useState(initial);
+  const [priceText, setPriceText] = useState(initial.price != null ? String(initial.price) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const set = (k: keyof ItemEdit, v: string) => setEdit((e) => ({ ...e, [k]: v }));
+
+  const submit = () => {
+    const text = priceText.trim().replace(",", ".").replace(/^\$/, "");
+    const value = text === "" ? null : Number(text);
+    if (value != null && (!Number.isFinite(value) || value < 0))
+      return setError("The price must be a positive number.");
+    setBusy(true);
+    setError(null);
+    onSave({ ...edit, price: value }).catch((e) => {
+      setError(errorText(e));
+      setBusy(false);
+    });
+  };
+
+  const input = (label: string, value: string, onChange: (v: string) => void, disabled = false, autoFocus = false) => (
+    <label key={label} className="contents">
+      <span className="pt-1.5 text-slate-500">{label}</span>
+      <input
+        className="input py-1"
+        value={value}
+        disabled={disabled}
+        autoFocus={autoFocus}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
+  );
+
+  return (
+    <Section title="Edit card">
+      <form
+        className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 text-sm"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            e.stopPropagation();
+            onCancel();
+          }
+        }}
+      >
+        {EDIT_FIELDS.map(([k, label], i) =>
+          input(label, String(edit[k] ?? ""), (v) => set(k, v), !identified, identified && i === 0),
+        )}
+        {input("Price $", priceText, setPriceText, !identified)}
+        {input("Location", edit.location, (v) => set("location", v), false, !identified)}
+        <label className="contents">
+          <span className="pt-1.5 text-slate-500">Notes</span>
+          <textarea className="input min-h-14 py-1" value={edit.notes} onChange={(e) => set("notes", e.target.value)} />
+        </label>
+        <div className="col-span-2 mt-1 space-y-2">
+          {!identified && (
+            <p className="text-xs text-slate-500">The card fields can be edited once it is identified.</p>
+          )}
+          <ErrorNote>{error}</ErrorNote>
+          <div className="flex justify-end gap-2">
+            <button type="button" className="btn" onClick={onCancel}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              Save
+            </button>
+          </div>
+        </div>
+      </form>
+    </Section>
   );
 }
 

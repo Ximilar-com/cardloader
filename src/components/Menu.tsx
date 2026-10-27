@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export interface MenuItem {
   label: string;
@@ -12,13 +12,16 @@ export interface MenuItem {
   title?: string;
 }
 
-/** A "⋯" button with a dropdown. Fixed positioning, so scrolling tables don't clip it. */
+/** A "⋯" button (or one showing `children`) with a dropdown. Fixed positioning, so scrolling tables don't
+ * clip it. */
 export default function Menu({
   items,
   label = "More actions",
+  children,
 }: {
   items: (MenuItem | null | false)[];
   label?: string;
+  children?: ReactNode;
 }) {
   const [at, setAt] = useState<{ top: number; right: number; up: boolean } | null>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -52,15 +55,15 @@ export default function Menu({
     <>
       <button
         ref={button}
-        className={clsx("btn btn-ghost px-1.5", at && "bg-slate-100 dark:bg-slate-800")}
+        className={clsx(children ? "btn" : "btn btn-ghost px-1.5", at && "bg-slate-100 dark:bg-slate-800")}
         onClick={toggle}
         onMouseDown={(e) => e.stopPropagation()}
-        aria-label={label}
+        aria-label={children ? undefined : label}
         aria-haspopup="menu"
         aria-expanded={!!at}
         title={label}
       >
-        <MoreHorizontal className="h-4 w-4" />
+        {children ?? <MoreHorizontal className="h-4 w-4" />}
       </button>
       {at && (
         <div

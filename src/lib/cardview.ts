@@ -1,6 +1,16 @@
 // One shape for the table and detail panel, built from a local item or a Cards Cloud row.
 
-import type { EbayListing, ItemDetail, ItemStatus, ItemSummary, Json, RemoteItem, SlabLabel } from "./api";
+import type {
+  CardFields,
+  EbayListing,
+  ItemDetail,
+  ItemEdit,
+  ItemStatus,
+  ItemSummary,
+  Json,
+  RemoteItem,
+  SlabLabel,
+} from "./api";
 import { fileUrl } from "./format";
 
 export interface Row {
@@ -22,6 +32,10 @@ export interface Row {
   error?: string | null;
   synced?: boolean;
   picked?: boolean;
+  edited?: boolean;
+  /** The match is unsure or missing and nobody has accepted or corrected it. */
+  toReview?: boolean;
+  location?: string;
   ebay?: EbayListing | null;
 }
 
@@ -36,6 +50,11 @@ export interface CardView {
   title: string;
   /** The user picked the match. */
   picked?: boolean;
+  /** The user typed the card's fields or price. */
+  edited?: boolean;
+  toReview?: boolean;
+  /** What the edit form starts from (local cards only). */
+  edit?: ItemEdit;
   status?: ItemStatus;
   error?: string | null;
   fields: [string, string][];
@@ -118,6 +137,28 @@ export function candidates(alternatives: Json[] | null | undefined, distances?: 
   return list;
 }
 
+/** Same rule as the Rust side (`db::TO_REVIEW`): identified, unsure or no match, not accepted or corrected. */
+export function needsReview(i: Pick<ItemSummary, "status" | "reviewed" | "confidence" | "name" | "fullName">): boolean {
+  if ((i.status !== "done" && i.status !== "grading") || i.reviewed) return false;
+  return i.confidence === "low" || i.confidence === "medium" || (!i.name && !i.fullName);
+}
+
+const CARD_FIELDS: (keyof CardFields)[] = [
+  "name",
+  "fullName",
+  "setName",
+  "setCode",
+  "cardNumber",
+  "series",
+  "year",
+  "subcategory",
+];
+
+export function editOf(i: ItemSummary): ItemEdit {
+  const card = Object.fromEntries(CARD_FIELDS.map((k) => [k, i[k] ?? ""])) as unknown as CardFields;
+  return { ...card, price: i.price, notes: i.notes ?? "", location: i.location ?? "" };
+}
+
 export function rowFromItem(i: ItemSummary): Row {
   return {
     key: String(i.id),
@@ -137,8 +178,64 @@ export function rowFromItem(i: ItemSummary): Row {
     error: i.error,
     synced: i.synced,
     picked: i.picked,
+    edited: i.edited,
+    toReview: needsReview(i),
+    location: i.location,
     ebay: i.ebay,
   };
+}
+
+export type SortKey = "seq" | "name" | "set" | "confidence" | "price" | "grade";
+export interface Sort {
+  key: SortKey;
+  desc: boolean;
+}
+
+const CONFIDENCE_RANK: Record<string, number> = { high: 0, local: 1, medium: 2, low: 3 };
+
+function sortValue(r: Row, key: SortKey): string | number | null {
+  switch (key) {
+    case "seq":
+      return r.seq;
+    case "name":
+      return r.name.toLowerCase() || null;
+    case "set":
+      return r.setName.toLowerCase() || null;
+    case "confidence":
+      return r.confidence ? (CONFIDENCE_RANK[r.confidence] ?? null) : null;
+    case "price":
+      return r.price;
+    case "grade":
+      return r.grade;
+  }
+}
+
+/** The rows in `sort` order; cards without the value come last either way. */
+export function sortRows(rows: Row[], sort: Sort | null): Row[] {
+  if (!sort) return rows;
+  const dir = sort.desc ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const [x, y] = [sortValue(a, sort.key), sortValue(b, sort.key)];
+    if (x == null || y == null) return x == null ? (y == null ? a.seq - b.seq : 1) : -1;
+    if (x === y) return a.seq - b.seq;
+    return (x < y ? -1 : 1) * dir;
+  });
+}
+
+export type RowFilter = "all" | "review" | "failed" | "corrected";
+
+/** The rows a filter chip and the search box leave. */
+export function filterRows(rows: Row[], filter: RowFilter, query = ""): Row[] {
+  const q = query.trim().toLowerCase();
+  return rows.filter((r) => {
+    if (filter === "review" && !r.toReview) return false;
+    if (filter === "failed" && r.status !== "error") return false;
+    if (filter === "corrected" && !r.picked && !r.edited) return false;
+    if (!q) return true;
+    return [r.name, r.fullName, r.setName, r.cardNumber, r.location ?? "", String(r.seq)].some((v) =>
+      v.toLowerCase().includes(q),
+    );
+  });
 }
 
 export function rowFromRemote(r: RemoteItem, seq: number): Row {
@@ -232,6 +329,9 @@ export function viewFromItem(i: ItemDetail): CardView {
   return {
     title: i.fullName || i.name || (i.status === "done" ? "No match" : "—"),
     picked: i.picked,
+    edited: i.edited,
+    toReview: needsReview(i),
+    edit: editOf(i),
     status: i.status,
     error: i.error,
     fields: fields(i),

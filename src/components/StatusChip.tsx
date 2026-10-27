@@ -77,3 +77,25 @@ export function PickedChip() {
     </span>
   );
 }
+
+export function EditedChip() {
+  return (
+    <span
+      className="rounded bg-accent/10 px-1.5 py-0.5 text-[11px] font-medium text-accent dark:bg-accent/25 dark:text-blue-300"
+      title="You corrected this card by hand"
+    >
+      Edited
+    </span>
+  );
+}
+
+/** An unsure match nobody has looked at: a small dot next to the confidence. */
+export function ReviewDot() {
+  return (
+    <span
+      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+      title="To review: accept the match (A) or pick another candidate"
+      aria-label="To review"
+    />
+  );
+}

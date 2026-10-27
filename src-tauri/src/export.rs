@@ -30,6 +30,8 @@ const HEADER: &[&str] = &[
     "front",
     "back",
     "error",
+    "notes",
+    "location",
 ];
 
 /// Quotes a field when it holds a separator, quote or line break (RFC 4180).
@@ -78,6 +80,8 @@ pub fn csv(items: &[ItemSummary]) -> String {
             i.front_path.clone(),
             i.back_path.clone().unwrap_or_default(),
             i.error.clone().unwrap_or_default(),
+            i.notes.clone(),
+            i.location.clone(),
         ];
         out.push_str(&row.iter().map(|v| field(v)).collect::<Vec<_>>().join(","));
         out.push_str("\r\n");
@@ -127,6 +131,10 @@ mod tests {
             synced: true,
             updated_at: String::new(),
             picked: true,
+            edited: false,
+            reviewed: false,
+            notes: String::new(),
+            location: String::new(),
             ebay: None,
         };
         let text = csv(&[item]);

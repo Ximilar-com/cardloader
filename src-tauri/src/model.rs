@@ -236,6 +236,10 @@ pub struct SessionCounts {
     pub ebay_drafts: i64,
     pub ebay_listed: i64,
     pub ebay_sold: i64,
+    /// Identified cards whose match is unsure (or missing) that nobody has accepted or corrected yet.
+    pub to_review: i64,
+    /// Paid Ximilar API calls the cards took.
+    pub calls: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -283,6 +287,34 @@ pub struct CardFields {
     pub subcategory: String,
 }
 
+impl CardFields {
+    pub fn trim(&mut self) {
+        for field in [
+            &mut self.name,
+            &mut self.full_name,
+            &mut self.set_name,
+            &mut self.set_code,
+            &mut self.card_number,
+            &mut self.series,
+            &mut self.year,
+            &mut self.subcategory,
+        ] {
+            *field = field.trim().to_string();
+        }
+    }
+
+    /// "Name Set #number" from the fields there are.
+    pub fn composed_full_name(&self) -> String {
+        let number = (!self.card_number.is_empty()).then(|| format!("#{}", self.card_number));
+        [Some(self.name.clone()), Some(self.set_name.clone()), number]
+            .into_iter()
+            .flatten()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 /// What a graded slab's label says, when the card is in one.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -317,8 +349,26 @@ pub struct ItemSummary {
     pub updated_at: String,
     /// The user picked the match from the candidates.
     pub picked: bool,
+    /// The user typed the card's fields or price.
+    pub edited: bool,
+    /// The user accepted the match (or corrected it).
+    pub reviewed: bool,
+    pub notes: String,
+    /// Where the card is kept: a box, a binder page.
+    pub location: String,
     /// The card's eBay listing, once one was attempted.
     pub ebay: Option<EbayListing>,
+}
+
+/// What the user can change on a card by hand.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemEdit {
+    #[serde(flatten)]
+    pub card: CardFields,
+    pub price: Option<f64>,
+    pub notes: String,
+    pub location: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

@@ -4,7 +4,7 @@
 import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
 import { Copy, Cpu, FileDown, FileSpreadsheet, FolderOpen, Pencil, Settings2, Store, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { api, errorText, type ExportFormat, type RemoteSession, type Session } from "../lib/api";
 import type { MenuItem } from "./Menu";
 import Modal, { ErrorNote } from "./Modal";
@@ -13,6 +13,7 @@ import CompareDialog from "./CompareDialog";
 import { EbayListDialog } from "./Ebay";
 import { MarketExportDialog } from "./MarketExport";
 import NewSessionDialog from "./NewSessionDialog";
+import { toast, toastError as fail } from "./Toast";
 
 type Dialog =
   | { kind: "rename"; session: Session }
@@ -27,16 +28,7 @@ const isActive = (s: Session) => s.status === "running" || s.status === "paused"
 
 export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) => void } = {}) {
   const [dialog, setDialog] = useState<Dialog | null>(null);
-  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const close = useCallback(() => setDialog(null), []);
-
-  useEffect(() => {
-    if (!notice) return;
-    const t = setTimeout(() => setNotice(null), notice.error ? 8000 : 4000);
-    return () => clearTimeout(t);
-  }, [notice]);
-
-  const fail = (e: unknown) => setNotice({ text: errorText(e), error: true });
 
   const showFiles = (s: Session) =>
     api
@@ -52,13 +44,37 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       });
       if (!path) return;
       const n = await api.exportCsv(s.id, path);
-      setNotice({ text: `Exported ${n} card${n === 1 ? "" : "s"} to ${path}` });
+      toast(`Exported ${n} card${n === 1 ? "" : "s"} to ${path}`);
     } catch (e) {
       fail(e);
     }
   };
 
-  const menu = (s: Session, { open }: { open?: () => void } = {}): MenuItem[] =>
+  /** Files and marketplaces the session's cards can go to. */
+  const sellMenu = (s: Session): MenuItem[] => [
+    {
+      label: "List on eBay…",
+      icon: Store,
+      onClick: () => setDialog({ kind: "ebay", session: s }),
+      disabled: isActive(s) || s.counts.done === 0,
+      title: isActive(s) ? "Wait until the session has finished" : "Create eBay listings for the identified cards",
+    },
+    ...(["tcgplayer", "whatnot", "shopify"] as const).map((format) => ({
+      label: `Export for ${{ tcgplayer: "TCGplayer", whatnot: "Whatnot", shopify: "Shopify" }[format]}…`,
+      icon: FileSpreadsheet,
+      onClick: () => setDialog({ kind: "market", session: s, format }),
+      disabled: s.counts.done === 0,
+    })),
+    {
+      label: "Export CSV…",
+      icon: FileDown,
+      onClick: () => void exportCsv(s),
+      disabled: s.counts.total === 0,
+    },
+  ];
+
+  /** `sell: false` leaves out what `sellMenu` has, for a page that shows it on its own. */
+  const menu = (s: Session, { open, sell = true }: { open?: () => void; sell?: boolean } = {}): MenuItem[] =>
     [
       open && { label: "Open", icon: FolderOpen, onClick: open },
       { label: "Rename…", icon: Pencil, onClick: () => setDialog({ kind: "rename", session: s }) },
@@ -75,12 +91,6 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
         icon: FolderOpen,
         onClick: () => void showFiles(s),
       },
-      {
-        label: "Export CSV…",
-        icon: FileDown,
-        onClick: () => void exportCsv(s),
-        disabled: s.counts.total === 0,
-      },
       s.options.engine !== "local" && {
         label: "Compare with local model…",
         icon: Cpu,
@@ -88,19 +98,7 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
         disabled: s.counts.done === 0,
         title: "How often the on-device model reads the same card as Ximilar",
       },
-      {
-        label: "List on eBay…",
-        icon: Store,
-        onClick: () => setDialog({ kind: "ebay", session: s }),
-        disabled: isActive(s) || s.counts.done === 0,
-        title: isActive(s) ? "Wait until the session has finished" : "Create eBay listings for the identified cards",
-      },
-      ...(["tcgplayer", "whatnot", "shopify"] as const).map((format) => ({
-        label: `Export for ${{ tcgplayer: "TCGplayer", whatnot: "Whatnot", shopify: "Shopify" }[format]}…`,
-        icon: FileSpreadsheet,
-        onClick: () => setDialog({ kind: "market", session: s, format }),
-        disabled: s.counts.done === 0,
-      })),
+      ...(sell ? sellMenu(s) : []),
       { label: "Delete…", icon: Trash2, danger: true, onClick: () => setDialog({ kind: "delete", sessions: [s] }) },
     ].filter(Boolean) as MenuItem[];
 
@@ -125,22 +123,12 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       {dialog?.kind === "delete" && (
         <DeleteSessionsDialog sessions={dialog.sessions} onClose={close} onDeleted={(ids) => onDeleted?.(ids)} />
       )}
-      {notice && (
-        <div
-          className={
-            "selectable fixed right-6 bottom-6 z-50 max-w-md rounded-lg px-4 py-2.5 text-sm shadow-lg " +
-            (notice.error ? "bg-red-600 text-white" : "bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900")
-          }
-          role="status"
-        >
-          {notice.text}
-        </div>
-      )}
     </>
   );
 
   return {
     menu,
+    sellMenu,
     node,
     rename: (s: Session) => setDialog({ kind: "rename", session: s }),
     remove: (sessions: Session[]) => sessions.length && setDialog({ kind: "delete", sessions }),
@@ -151,12 +139,14 @@ export function RenameDialog({
   title,
   initial,
   hint,
+  confirm = "Rename",
   onClose,
   onSave,
 }: {
   title: string;
   initial: string;
   hint?: string;
+  confirm?: string;
   onClose: () => void;
   onSave: (name: string) => Promise<unknown>;
 }) {
@@ -185,7 +175,7 @@ export function RenameDialog({
             Cancel
           </button>
           <button className="btn btn-primary" onClick={submit} disabled={busy || !name.trim()}>
-            Rename
+            {confirm}
           </button>
         </>
       }

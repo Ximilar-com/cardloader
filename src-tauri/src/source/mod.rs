@@ -149,7 +149,8 @@ pub async fn csv(path: PathBuf, known: HashSet<String>, tx: mpsc::Sender<Unit>) 
 }
 
 /// A folder another app scans into (e.g. PaperStream Capture): what is there now, then every new image
-/// once its size has settled, until the session is stopped or paused.
+/// once its size has settled, until the session is stopped. A paused session keeps queueing new images,
+/// so none is missed; it only stops analysing them.
 pub async fn watch_folder(
     dir: PathBuf,
     pairing: Pairing,

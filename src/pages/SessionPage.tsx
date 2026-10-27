@@ -2,30 +2,37 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
   ArrowLeft,
+  Check,
+  ChevronDown,
   Cloud,
   CloudUpload,
   FolderOpen,
+  Keyboard,
+  MapPin,
   Pause,
   Play,
   RotateCcw,
+  Search,
   Square,
   Pencil,
   ArrowDownToLine,
   RefreshCw,
   Send,
   Store,
+  Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
 import { EbaySection } from "../components/Ebay";
 import Menu from "../components/Menu";
-import { ErrorNote } from "../components/Modal";
-import { ConfirmDialog, useSessionActions } from "../components/SessionActions";
+import Modal, { ErrorNote } from "../components/Modal";
+import { ConfirmDialog, RenameDialog, useSessionActions } from "../components/SessionActions";
 import ProgressBar from "../components/ProgressBar";
 import SessionTable from "../components/SessionTable";
 import StatusChip from "../components/StatusChip";
+import { toast, toastError } from "../components/Toast";
 import {
   api,
   errorText,
@@ -37,7 +44,15 @@ import {
   type ItemSummary,
   type Session,
 } from "../lib/api";
-import { rowFromItem, viewFromItem } from "../lib/cardview";
+import {
+  filterRows,
+  rowFromItem,
+  sortRows,
+  viewFromItem,
+  type RowFilter,
+  type Sort,
+  type SortKey,
+} from "../lib/cardview";
 import { dateTime, duration, eta, GRADING_LABELS, ID_MODE_LABELS, price, SOURCE_LABELS } from "../lib/format";
 
 export default function SessionPage() {
@@ -59,6 +74,16 @@ function SessionView({ id }: { id: string }) {
   const [ebayJob, setEbayJob] = useState<EbayProgress | null>(null);
   /** Cards to publish (all drafts: null), awaiting confirmation. */
   const [publishing, setPublishing] = useState<{ ids: number[] | null; count: number } | null>(null);
+  const [filter, setFilter] = useState<RowFilter>("all");
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<Sort | null>(null);
+  /** Cards ticked for a bulk action, and the last one ticked (Shift extends from it). */
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const anchor = useRef<string | null>(null);
+  /** Cards to delete, or to give a location, awaiting the dialog. */
+  const [deleting, setDeleting] = useState<number[] | null>(null);
+  const [locating, setLocating] = useState<number[] | null>(null);
+  const [keysHelp, setKeysHelp] = useState(false);
   const samples = useRef<[number, number][]>([]);
   const selectedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -127,6 +152,15 @@ function SessionView({ id }: { id: string }) {
     };
   }, [id]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "?" || (e.target as HTMLElement)?.closest("input, textarea, select")) return;
+      setKeysHelp(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const select = useCallback((key: string) => {
     setSelected(key);
     setFollow(false);
@@ -137,6 +171,68 @@ function SessionView({ id }: { id: string }) {
   }, []);
 
   const rows = useMemo(() => items.map(rowFromItem), [items]);
+  const shown = useMemo(() => sortRows(filterRows(rows, filter, query), sort), [rows, filter, query, sort]);
+  const tally = useMemo(
+    () => ({
+      review: rows.filter((r) => r.toReview).length,
+      failed: rows.filter((r) => r.status === "error").length,
+      corrected: rows.filter((r) => r.picked || r.edited).length,
+    }),
+    [rows],
+  );
+  const checkedIds = [...checked].map(Number);
+
+  const onSort = (key: SortKey) =>
+    setSort((s) =>
+      s?.key !== key ? { key, desc: key === "price" || key === "grade" } : s.desc ? null : { key, desc: true },
+    );
+
+  const onCheck = (key: string, range: boolean) => {
+    const next = new Set(checked);
+    const from = shown.findIndex((r) => r.key === anchor.current);
+    const to = shown.findIndex((r) => r.key === key);
+    if (range && from >= 0 && to >= 0) {
+      const on = !checked.has(key);
+      for (const r of shown.slice(Math.min(from, to), Math.max(from, to) + 1)) {
+        if (on) next.add(r.key);
+        else next.delete(r.key);
+      }
+    } else if (next.has(key)) next.delete(key);
+    else next.add(key);
+    anchor.current = key;
+    setChecked(next);
+  };
+  const allShownChecked = shown.length > 0 && shown.every((r) => checked.has(r.key));
+  const onCheckAll = () => setChecked(allShownChecked ? new Set() : new Set(shown.map((r) => r.key)));
+
+  /** Accepts the matches; one card at a time moves on to the next card. */
+  const accept = (ids: number[]) => {
+    const i = shown.findIndex((r) => r.key === selected);
+    const next = ids.length === 1 && String(ids[0]) === selected ? shown[i + 1]?.key : undefined;
+    api
+      .reviewItems(id, ids)
+      .then((n) => {
+        if (ids.length > 1) toast(`Accepted ${n} match${n === 1 ? "" : "es"}`);
+        if (next) select(next);
+      })
+      .catch(toastError);
+  };
+
+  const deleted = (ids: number[]) => {
+    const gone = new Set(ids);
+    setItems((list) => list.filter((i) => !gone.has(i.id)));
+    setChecked(new Set());
+    if (selected && gone.has(Number(selected))) {
+      setSelected(null);
+      setDetail(null);
+    }
+  };
+
+  const at = shown.findIndex((r) => r.key === selected);
+  const step = (d: number) => {
+    const r = shown[at + d];
+    return r ? () => select(r.key) : undefined;
+  };
   // Auto mode reads slab labels it sees even when the session didn't ask for them.
   const showSlab = session?.options.slab === true || session?.idMode === "slab" || rows.some((r) => r.slab);
   const act = (f: () => Promise<unknown>) => {
@@ -225,7 +321,7 @@ function SessionView({ id }: { id: string }) {
                   <RotateCcw className="h-4 w-4" /> Retry {counts.errors} failed
                 </button>
               )}
-              {!active && counts.done > 0 && (
+              {!active && counts.done > 0 && (counts.synced < counts.done || session.syncError) && (
                 <button
                   className="btn"
                   onClick={() => act(() => api.syncSession(id))}
@@ -244,7 +340,10 @@ function SessionView({ id }: { id: string }) {
                   <Send className="h-4 w-4" /> Publish on eBay
                 </button>
               )}
-              <Menu items={actions.menu(session)} label="Session actions" />
+              <Menu items={actions.sellMenu(session)} label="List or export the cards">
+                <Store className="h-4 w-4" /> Sell / Export <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              </Menu>
+              <Menu items={actions.menu(session, { sell: false })} label="Session actions" />
             </div>
           </div>
 
@@ -261,6 +360,9 @@ function SessionView({ id }: { id: string }) {
               {counts.queued > 0 && <span>{counts.queued} queued</span>}
               {running && secondsLeft != null && <span>~{duration(secondsLeft)} left</span>}
               {counts.totalPrice > 0 && <span>Total value {price(counts.totalPrice)}</span>}
+              {counts.calls > 0 && (
+                <span title="Paid Ximilar API calls these cards took">{counts.calls} API calls</span>
+              )}
               <span className="flex-1" />
               {(session.remoteSessionId || session.options.syncRemote) && (
                 <span
@@ -269,7 +371,7 @@ function SessionView({ id }: { id: string }) {
                 >
                   <Cloud className="h-3.5 w-3.5" />
                   {session.syncError
-                    ? `Cards Cloud: ${session.syncError}`
+                    ? "Cards Cloud: not synced"
                     : session.remoteSessionId
                       ? `Cards Cloud: ${counts.synced} synced`
                       : "Cards Cloud: waiting"}
@@ -294,6 +396,20 @@ function SessionView({ id }: { id: string }) {
                 <ErrorNote>{session.error}</ErrorNote>
               </div>
             )}
+            {session.syncError && !running && (
+              <Warning
+                text={`Cards Cloud: ${session.syncError}`}
+                action="Try again"
+                onAction={() => act(() => api.syncSession(id))}
+              />
+            )}
+            {session.ebayError && !ebayJob && (
+              <Warning
+                text={`eBay: ${session.ebayError}`}
+                action="Check again"
+                onAction={() => act(() => api.ebayRefresh(id, true))}
+              />
+            )}
             {error && (
               <div className="mt-2">
                 <ErrorNote>{error}</ErrorNote>
@@ -302,16 +418,122 @@ function SessionView({ id }: { id: string }) {
           </div>
         </header>
 
+        {rows.length > 0 &&
+          (checked.size > 0 ? (
+            <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
+              <span className="font-medium">{checked.size} selected</span>
+              <span className="flex-1" />
+              <button className="btn px-2 py-1 text-xs" onClick={() => accept(checkedIds)} title="Accept the matches">
+                <Check className="h-3.5 w-3.5" /> Accept
+              </button>
+              <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedIds)}>
+                <MapPin className="h-3.5 w-3.5" /> Set location…
+              </button>
+              <button
+                className="btn px-2 py-1 text-xs"
+                disabled={active}
+                title={active ? "Wait until the session has finished" : "Analyse these cards again (uses API calls)"}
+                onClick={() =>
+                  act(() =>
+                    api.retryItems(id, checkedIds).then(() => {
+                      setChecked(new Set());
+                      return api.runSession(id);
+                    }),
+                  )
+                }
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Analyse again
+              </button>
+              <button
+                className="btn px-2 py-1 text-xs text-red-600 dark:text-red-400"
+                disabled={active}
+                title={active ? "Stop the session to delete cards" : undefined}
+                onClick={() => setDeleting(checkedIds)}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete…
+              </button>
+              <button
+                className="btn btn-ghost px-1.5"
+                onClick={() => setChecked(new Set())}
+                aria-label="Clear the selection"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
+              <Chip on={filter === "all"} onClick={() => setFilter("all")}>
+                All {rows.length}
+              </Chip>
+              <Chip on={filter === "review"} onClick={() => setFilter("review")} disabled={!tally.review}>
+                To review {tally.review}
+              </Chip>
+              <Chip on={filter === "failed"} onClick={() => setFilter("failed")} disabled={!tally.failed}>
+                Failed {tally.failed}
+              </Chip>
+              <Chip on={filter === "corrected"} onClick={() => setFilter("corrected")} disabled={!tally.corrected}>
+                Corrected {tally.corrected}
+              </Chip>
+              {filter === "review" && shown.length > 0 && (
+                <button
+                  className="btn ml-1 px-2 py-0.5 text-xs"
+                  onClick={() => accept(shown.map((r) => Number(r.key)))}
+                  title="Accept every match in this list"
+                >
+                  <Check className="h-3 w-3" /> Accept all {shown.length}
+                </button>
+              )}
+              <span className="flex-1" />
+              <label className="relative">
+                <Search className="pointer-events-none absolute top-1/2 left-2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input w-52 py-1 pl-7 text-sm"
+                  placeholder="Find a card…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+                  aria-label="Find a card"
+                />
+              </label>
+              <button
+                className="btn btn-ghost px-1.5"
+                onClick={() => setKeysHelp(true)}
+                title="Keyboard shortcuts"
+                aria-label="Keyboard shortcuts"
+              >
+                <Keyboard className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+
         <div className="min-h-0 flex-1">
-          {rows.length > 0 ? (
+          {shown.length > 0 ? (
             <SessionTable
-              rows={rows}
+              rows={shown}
               selected={selected}
               onSelect={select}
               fresh={fresh}
-              follow={follow && running}
+              follow={follow && running && filter === "all" && !sort && !query}
               showSlab={showSlab}
+              checked={checked}
+              onCheck={onCheck}
+              onCheckAll={onCheckAll}
+              sort={sort}
+              onSort={onSort}
             />
+          ) : rows.length > 0 ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 text-sm text-slate-500">
+              {filter === "review" && !query ? "Nothing left to review." : "No cards match."}
+              <button
+                className="btn"
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                }}
+              >
+                Show all cards
+              </button>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-slate-500">
               {running ? "Waiting for the first card…" : "No cards yet — press Run."}
@@ -322,7 +544,14 @@ function SessionView({ id }: { id: string }) {
 
       {detail && selected && (
         <DetailPanel
+          key={selected}
           view={viewFromItem(detail)}
+          position={at >= 0 ? `Card ${at + 1} of ${shown.length}` : undefined}
+          onPrev={step(-1)}
+          onNext={step(1)}
+          onAccept={() => accept([detail.id])}
+          onEdit={(edit) => api.updateItem(detail.id, edit).then(setDetail)}
+          onDelete={active ? undefined : () => setDeleting([detail.id])}
           onClose={() => {
             setSelected(null);
             setDetail(null);
@@ -367,8 +596,111 @@ function SessionView({ id }: { id: string }) {
         </ConfirmDialog>
       )}
 
+      {deleting && (
+        <ConfirmDialog
+          title={deleting.length === 1 ? "Delete this card?" : `Delete ${deleting.length} cards?`}
+          confirm="Delete"
+          onClose={() => setDeleting(null)}
+          onConfirm={() => api.deleteItems(id, deleting).then(() => deleted(deleting))}
+        >
+          {deleting.length === 1 ? "The card is" : "The cards are"} removed from this session with their thumbnails;
+          your images stay where they are, and running the session again doesn’t bring{" "}
+          {deleting.length === 1 ? "it" : "them"} back.
+          {session.remoteSessionId && " The Cards Cloud copy keeps them."}
+        </ConfirmDialog>
+      )}
+
+      {locating && (
+        <RenameDialog
+          title={`Location of ${locating.length} card${locating.length === 1 ? "" : "s"}`}
+          initial=""
+          hint="Where they are kept, e.g. “Box 4” or “Binder 2, page 7”. It is searchable and goes into the CSV export."
+          confirm="Set location"
+          onClose={() => setLocating(null)}
+          onSave={(location) =>
+            api.locateItems(id, locating, location).then((n) => {
+              setChecked(new Set());
+              toast(`${n} card${n === 1 ? "" : "s"} now at ${location.trim()}`);
+            })
+          }
+        />
+      )}
+
+      {keysHelp && <KeysHelp onClose={() => setKeysHelp(false)} />}
+
       {actions.node}
     </div>
+  );
+}
+
+function Chip({
+  on,
+  disabled,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      className={clsx(
+        "rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums disabled:opacity-40",
+        on
+          ? "bg-accent text-white"
+          : "bg-slate-100 text-slate-600 enabled:hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:enabled:hover:bg-slate-700",
+      )}
+      disabled={disabled && !on}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Warning({ text, action, onAction }: { text: string; action: string; onAction: () => void }) {
+  return (
+    <div className="selectable mt-2 flex items-center gap-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
+      <span className="flex-1">{text}</span>
+      <button className="btn px-2 py-0.5 text-xs" onClick={onAction}>
+        {action}
+      </button>
+    </div>
+  );
+}
+
+const KEYS: [string, string][] = [
+  ["J  /  ↓", "Next card"],
+  ["K  /  ↑", "Previous card"],
+  ["A", "Accept the match"],
+  ["1 – 9", "Select that candidate"],
+  ["E", "Edit the card"],
+  ["Delete", "Delete the card"],
+  ["Esc", "Close the card"],
+  ["Shift + click", "Select a range of cards"],
+];
+
+function KeysHelp({ onClose }: { onClose: () => void }) {
+  return (
+    <Modal title="Keyboard shortcuts" width="max-w-sm" onClose={onClose}>
+      <dl className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
+        {KEYS.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt>
+              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-xs dark:border-slate-700 dark:bg-slate-900">
+                {k}
+              </kbd>
+            </dt>
+            <dd className="text-slate-600 dark:text-slate-300">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-4 text-xs text-slate-500">
+        Tip: the “To review” filter lists only unsure matches. Press A to accept one and go to the next.
+      </p>
+    </Modal>
   );
 }
 

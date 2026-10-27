@@ -33,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let config_dir = app.path().app_config_dir()?;
@@ -86,6 +87,10 @@ pub fn run() {
             commands::list_items,
             commands::get_item,
             commands::select_match,
+            commands::update_item,
+            commands::review_items,
+            commands::locate_items,
+            commands::delete_items,
             commands::list_models,
             commands::download_model,
             commands::cancel_model_download,

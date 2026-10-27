@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { candidates, matchOf, representativePrice, tier } from "./cardview";
+import {
+  candidates,
+  filterRows,
+  matchOf,
+  needsReview,
+  representativePrice,
+  sortRows,
+  tier,
+  type Row,
+} from "./cardview";
 
 describe("candidates", () => {
   it("normalizes alternatives with their distances", () => {
@@ -71,5 +80,46 @@ describe("matchOf", () => {
     expect(matchOf({ records: [side("Front", 0), side("Back", 0)] }).ident?.best_match.name).toBe("Front");
     const noBackMatch = { _objects: [{ name: "Card", _identification: { best_match: null } }] };
     expect(matchOf({ records: [side("Front", 0.4), noBackMatch] }).ident?.best_match.name).toBe("Front");
+  });
+});
+
+describe("review", () => {
+  const row = (seq: number, extra: Partial<Row>): Row => ({
+    key: String(seq),
+    seq,
+    name: "",
+    fullName: "",
+    setName: "",
+    cardNumber: "",
+    idType: "tcg",
+    confidence: null,
+    price: null,
+    grade: null,
+    condition: null,
+    ...extra,
+  });
+
+  it("asks to review unsure matches and cards without one", () => {
+    const base = { status: "done", reviewed: false, name: "Mew", fullName: "Mew" } as const;
+    expect(needsReview({ ...base, confidence: "high" })).toBe(false);
+    expect(needsReview({ ...base, confidence: "medium" })).toBe(true);
+    expect(needsReview({ ...base, confidence: "low", reviewed: true })).toBe(false);
+    expect(needsReview({ ...base, confidence: "high", name: "", fullName: "" })).toBe(true);
+    expect(needsReview({ ...base, confidence: "low", status: "error" })).toBe(false);
+  });
+
+  it("sorts with missing values last and filters by chip and text", () => {
+    const rows = [
+      row(1, { name: "Mew", price: 5, confidence: "low", toReview: true }),
+      row(2, { name: "Abra", price: null, confidence: "high", location: "Box 2" }),
+      row(3, { name: "Zubat", price: 20, confidence: "medium", status: "error" }),
+    ];
+    expect(sortRows(rows, { key: "price", desc: true }).map((r) => r.seq)).toEqual([3, 1, 2]);
+    expect(sortRows(rows, { key: "price", desc: false }).map((r) => r.seq)).toEqual([1, 3, 2]);
+    expect(sortRows(rows, { key: "name", desc: false }).map((r) => r.seq)).toEqual([2, 1, 3]);
+    expect(sortRows(rows, { key: "confidence", desc: false }).map((r) => r.seq)).toEqual([2, 3, 1]);
+    expect(filterRows(rows, "review").map((r) => r.seq)).toEqual([1]);
+    expect(filterRows(rows, "failed").map((r) => r.seq)).toEqual([3]);
+    expect(filterRows(rows, "all", "box 2").map((r) => r.seq)).toEqual([2]);
   });
 });

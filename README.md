@@ -64,6 +64,11 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Manage sessions.** Search and filter them, rename them (the Cards Cloud copy follows), change their settings,
   duplicate them to analyse the same source again, export the cards to CSV, and delete one or several at once,
   optionally with their Cards Cloud copies. Remote sessions can be renamed and deleted from the Cards Cloud tab.
+- **Review.** Filter a session to the cards to review (unsure matches and cards without one), failed or corrected
+  ones, or search it. Accept a match with **A**, pick a candidate with **1–9**, edit a card's name, set, number,
+  price, location or notes with **E**, and move with **J**/**K**; press **?** for all shortcuts. Tick cards (Shift
+  for a range) to accept, analyse again, set where they are kept or delete them at once. Corrections are sent to
+  Cards Cloud too. A notification tells you when a session has finished while you were in another app.
 - **Pause, stop, resume.** You can pause, stop and resume a session, even after the app restarts. Failed cards can
   be retried individually.
 

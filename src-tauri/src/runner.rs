@@ -44,6 +44,8 @@ pub trait EventSink: Send + Sync {
     fn session(&self, session: Session);
     fn item(&self, item: ItemSummary);
     fn ebay(&self, _progress: &EbayProgress) {}
+    /// A run ended on its own (not stopped): tell the user if they are looking elsewhere.
+    fn finished(&self, _session: &Session) {}
 }
 
 impl EventSink for AppHandle {
@@ -58,6 +60,49 @@ impl EventSink for AppHandle {
     fn ebay(&self, progress: &EbayProgress) {
         let _ = self.emit(EVENT_EBAY, progress);
     }
+
+    fn finished(&self, session: &Session) {
+        use tauri::Manager;
+        use tauri_plugin_notification::NotificationExt;
+        let focused = self
+            .get_webview_window("main")
+            .and_then(|w| w.is_focused().ok())
+            .unwrap_or(false);
+        if !focused {
+            let _ = self
+                .notification()
+                .builder()
+                .title(&session.name)
+                .body(finished_text(session))
+                .show();
+        }
+    }
+}
+
+/// "Done: 412 cards, $1,284.50 · 23 to review · 2 failed", or why the run failed.
+fn finished_text(session: &Session) -> String {
+    let c = &session.counts;
+    if session.status == SessionStatus::Failed {
+        return format!(
+            "Stopped: {}",
+            session.error.as_deref().unwrap_or("an error")
+        );
+    }
+    let mut text = format!(
+        "Done: {} card{}",
+        c.done,
+        if c.done == 1 { "" } else { "s" }
+    );
+    if c.total_price > 0.0 {
+        text += &format!(", ${:.2}", c.total_price);
+    }
+    if c.to_review > 0 {
+        text += &format!(" · {} to review", c.to_review);
+    }
+    if c.errors > 0 {
+        text += &format!(" · {} failed", c.errors);
+    }
+    text
 }
 
 struct EbayJob {
@@ -160,18 +205,113 @@ impl Runner {
             &raw,
         )?;
         self.emit_item(item_id);
-        let session_id = item.summary.session_id;
-        self.emit_session(&session_id);
-        if self.db.session(&session_id)?.remote_session_id.is_some() {
+        self.emit_session(&item.summary.session_id);
+        self.push_corrections(&item.summary.session_id)?;
+        self.db.item(item_id)
+    }
+
+    /// Saves the fields, price, notes and location the user typed for a card. The card fields and price
+    /// are kept only once it is identified; a correction reaches Cards Cloud like a pick.
+    pub fn edit_item(self: &Arc<Self>, item_id: i64, mut edit: ItemEdit) -> Result<ItemDetail> {
+        let item = self.db.item(item_id)?;
+        let before = &item.summary;
+        if let Some(p) = edit.price {
+            if !p.is_finite() || p < 0.0 {
+                return Err(Error::Msg("the price must be a positive number".into()));
+            }
+        }
+        if matches!(before.status, ItemStatus::Done | ItemStatus::Grading) {
+            edit.card.trim();
+            let renamed = edit.card.name != before.card.name
+                || edit.card.set_name != before.card.set_name
+                || edit.card.card_number != before.card.card_number;
+            // The full name repeats the others; one left as it was would still name the old card.
+            if renamed && edit.card.full_name == before.card.full_name {
+                edit.card.full_name = edit.card.composed_full_name();
+            }
+        } else {
+            edit.card = before.card.clone();
+            edit.price = before.price;
+        }
+        edit.notes = edit.notes.trim().to_string();
+        edit.location = edit.location.trim().to_string();
+        self.db.save_edit(item_id, &edit)?;
+        self.emit_item(item_id);
+        self.emit_session(&before.session_id);
+        self.push_corrections(&before.session_id)?;
+        self.db.item(item_id)
+    }
+
+    /// Accepts the cards' matches (or takes that back); returns how many changed.
+    pub fn review_items(&self, session_id: &str, ids: &[i64], reviewed: bool) -> Result<usize> {
+        let n = self.db.set_reviewed(session_id, ids, reviewed)?;
+        self.emit_items(session_id, ids);
+        Ok(n)
+    }
+
+    /// Sets where the cards are kept; returns how many changed.
+    pub fn locate_items(&self, session_id: &str, ids: &[i64], location: &str) -> Result<usize> {
+        let n = self.db.set_location(session_id, ids, location.trim())?;
+        self.emit_items(session_id, ids);
+        Ok(n)
+    }
+
+    fn emit_items(&self, session_id: &str, ids: &[i64]) {
+        for &id in ids {
+            self.emit_item(id);
+        }
+        self.emit_session(session_id);
+    }
+
+    /// Deletes cards from a stopped session with the files cardloader made for them (never the scans or the
+    /// user's images). Their Cards Cloud rows stay.
+    pub fn delete_items(&self, session_id: &str, ids: &[i64]) -> Result<usize> {
+        if self.is_running(session_id) {
+            return Err(Error::msg("stop the session before deleting cards"));
+        }
+        if self.ebay_job(session_id).is_some() {
+            return Err(Error::msg("wait until the eBay job has finished"));
+        }
+        for &id in ids {
+            let Ok(item) = self.db.item_summary(id) else {
+                continue;
+            };
+            let on_ebay = item.ebay.as_ref().and_then(|e| e.status);
+            if matches!(on_ebay, Some(EbayStatus::Draft | EbayStatus::Listed)) {
+                return Err(Error::msg(format!(
+                    "card {} is on eBay — remove it from eBay first",
+                    item.seq
+                )));
+            }
+        }
+        let deleted = self.db.delete_items(session_id, ids)?;
+        let dir = self.session_dir(session_id);
+        for item in &deleted {
+            let s = &item.summary;
+            let own = [&s.thumb_path, &item.preview_path, &item.back_preview_path]
+                .into_iter()
+                .flatten()
+                .chain(&item.grading_images);
+            for path in own.map(PathBuf::from).filter(|p| p.starts_with(&dir)) {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        self.emit_session(session_id);
+        Ok(deleted.len())
+    }
+
+    /// Sends picks and edits to the session's Cards Cloud copy, if it has one, in the background.
+    fn push_corrections(self: &Arc<Self>, session_id: &str) -> Result<()> {
+        if self.db.session(session_id)?.remote_session_id.is_some() {
             if let Ok(client) = self.client() {
                 tauri::async_runtime::spawn(crate::sync::push_picks_now(
                     self.clone(),
-                    session_id,
+                    session_id.to_string(),
                     client,
                 ));
             }
         }
-        self.db.item(item_id)
+        Ok(())
     }
 
     /// Waits (a few seconds at most) until the session's run and sync have ended, e.g. after `stop`.
@@ -275,6 +415,11 @@ impl Runner {
             };
             let _ = runner.db.set_session_status(&id, status, error.as_deref());
             runner.emit_session(&id);
+            if status != SessionStatus::Stopped {
+                if let Ok(session) = runner.db.session(&id) {
+                    runner.events.finished(&session);
+                }
+            }
         });
         Ok(())
     }
@@ -669,7 +814,7 @@ impl Runner {
                     {"grades": {"final": row.grade, "condition": row.condition}}]}})
             });
             let path = |p: &Option<PathBuf>| p.as_ref().map(|p| p.to_string_lossy().into_owned());
-            self.db.insert_imported(
+            let id = self.db.insert_imported(
                 session_id,
                 &path(&row.front).unwrap_or_default(),
                 path(&row.back).as_deref(),
@@ -683,6 +828,9 @@ impl Runner {
                 row.condition.as_deref(),
                 grading.as_ref(),
             )?;
+            if !row.notes.is_empty() || !row.location.is_empty() {
+                self.db.set_notes(id, &row.notes, &row.location)?;
+            }
             imported += 1;
         }
         self.emit_session(session_id);
@@ -1434,7 +1582,77 @@ mod tests {
         // Picking the original back restores it.
         let back = runner.pick_match(first, 0).unwrap();
         assert_eq!(back.summary.card.card_number, "125");
+        assert!(back.summary.reviewed, "a pick is a review");
         assert!(runner.pick_match(first, 7).is_err());
+        let wait_synced = || async {
+            let started = Instant::now();
+            while !db.item_summary(first).unwrap().synced {
+                assert!(started.elapsed() < Duration::from_secs(10), "edit not sent");
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        };
+        wait_synced().await;
+
+        // A typed correction travels as a PATCH too; notes and the location stay local.
+        let card = back.summary.card.clone();
+        let edit = ItemEdit {
+            card: CardFields {
+                name: " Charizard ".into(),
+                card_number: "4".into(),
+                ..card.clone()
+            },
+            price: Some(300.0),
+            notes: " crease ".into(),
+            location: "Box 1".into(),
+        };
+        let edited = runner.edit_item(first, edit.clone()).unwrap().summary;
+        assert!(edited.edited && edited.reviewed && !edited.synced);
+        assert_eq!(edited.card.name, "Charizard");
+        assert_eq!(
+            edited.card.full_name,
+            format!("Charizard {} #4", card.set_name),
+            "the full name follows"
+        );
+        assert_eq!((&*edited.notes, &*edited.location), ("crease", "Box 1"));
+        wait_synced().await;
+        let requests = server.received_requests().await.unwrap();
+        let patches = bodies(&requests, "/cards-cloud/v2/identification/row-1/");
+        assert_eq!(patches.len(), 3);
+        assert_eq!(
+            (&patches[2]["name"], &patches[2]["price"]),
+            (&json!("Charizard"), &json!(300.0))
+        );
+        let notes_only = ItemEdit {
+            card: edited.card.clone(),
+            notes: "no crease".into(),
+            ..edit
+        };
+        runner.edit_item(first, notes_only).unwrap();
+        assert!(db.item_summary(first).unwrap().synced, "nothing to send");
+
+        // A deleted card takes its thumbnails along and stays deleted when the folder runs again.
+        let second = db.item(items[1].id).unwrap();
+        assert_eq!(
+            runner
+                .delete_items(&session.id, &[second.summary.id])
+                .unwrap(),
+            1
+        );
+        assert!(!Path::new(second.summary.thumb_path.as_deref().unwrap()).exists());
+        assert!(
+            Path::new(&second.summary.front_path).exists(),
+            "never the user's images"
+        );
+        runner.start(&session.id).unwrap();
+        let started = Instant::now();
+        while runner.is_running(&session.id) {
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "rerun did not finish"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(db.session(&session.id).unwrap().counts.total, 1);
     }
 
     /// A session continued from Cards Cloud: the files whose cards are there already are skipped, the rest

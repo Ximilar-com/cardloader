@@ -8,13 +8,14 @@ import type {
   EbayPreview,
   EbayProgress,
   ItemDetail,
+  ItemEdit,
   ItemSummary,
   Json,
   ModelStatus,
   Session,
   SettingsView,
 } from "./api";
-import { matchOf, representativePrice, tier } from "./cardview";
+import { matchOf, needsReview, representativePrice, tier } from "./cardview";
 
 const CARDS = [
   ["Charizard ex", "Obsidian Flames", "OBF", "125", "2023", "Pokemon", 0.12, 24.99, 9.0, "Mint", "#f97316"],
@@ -130,6 +131,8 @@ function counts(id: string) {
     ebayDrafts: list.filter((i) => i.ebay?.status === "draft").length,
     ebayListed: list.filter((i) => i.ebay?.status === "listed").length,
     ebaySold: list.filter((i) => i.ebay?.status === "sold").length,
+    toReview: list.filter(needsReview).length,
+    calls: list.reduce((a, i) => a + i.calls, 0),
   };
 }
 
@@ -181,6 +184,10 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     error: null,
     synced: true,
     picked: false,
+    edited: false,
+    reviewed: false,
+    notes: "",
+    location: seq <= 6 ? "Box 1" : "",
     updatedAt: now(),
     eventId: `demo${seq}`,
     remoteId: null,
@@ -331,11 +338,39 @@ function selectMatch(id: number, index: number): ItemDetail {
     confidence: tier(dist),
     price: representativePrice(picked.price_stats),
     picked: true,
+    edited: false,
+    reviewed: true,
     updatedAt: now(),
   });
   void emit("item-updated", summary(item));
   void emit("session-updated", session(item.sessionId));
   return item;
+}
+
+/** What `update_item` does in Rust (without the full name rebuilt). */
+function updateItem(id: number, edit: ItemEdit): ItemDetail {
+  const item = [...items.values()].flat().find((i) => i.id === id)!;
+  const { notes, location, ...card } = edit;
+  const changed = (Object.keys(card) as (keyof typeof card)[]).some((k) => (item[k] ?? "") !== (card[k] ?? ""));
+  Object.assign(item, changed ? { ...card, edited: true } : {}, {
+    notes: notes.trim(),
+    location: location.trim(),
+    reviewed: true,
+    updatedAt: now(),
+  });
+  void emit("item-updated", summary(item));
+  void emit("session-updated", session(item.sessionId));
+  return item;
+}
+
+function changeItems(sessionId: string, ids: number[], change: (i: ItemDetail) => void): number {
+  const list = (items.get(sessionId) ?? []).filter((i) => ids.includes(i.id));
+  for (const i of list) {
+    change(i);
+    void emit("item-updated", summary(i));
+  }
+  void emit("session-updated", session(sessionId));
+  return list.length;
 }
 
 const DETAIL_ONLY = [
@@ -990,6 +1025,22 @@ export function installDemo() {
           return selectMatch(a.id, a.index);
         case "get_item":
           return [...items.values()].flat().find((i) => i.id === a.id);
+        case "update_item":
+          return updateItem(a.id, a.edit);
+        case "review_items":
+          return changeItems(a.sessionId, a.itemIds, (i) => (i.reviewed = a.reviewed));
+        case "locate_items":
+          return changeItems(a.sessionId, a.itemIds, (i) => (i.location = String(a.location).trim()));
+        case "delete_items": {
+          const list = items.get(a.sessionId) ?? [];
+          const ids = new Set<number>(a.itemIds);
+          items.set(
+            a.sessionId,
+            list.filter((i) => !ids.has(i.id)),
+          );
+          void emit("session-updated", session(a.sessionId));
+          return list.length - (items.get(a.sessionId) ?? []).length;
+        }
         case "count_images":
           return 42;
         case "scanner_support":

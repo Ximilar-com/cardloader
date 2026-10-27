@@ -82,6 +82,10 @@ export interface SessionCounts {
   ebayDrafts: number;
   ebayListed: number;
   ebaySold: number;
+  /** Identified cards whose match is unsure (or missing) that nobody has accepted or corrected yet. */
+  toReview: number;
+  /** Paid Ximilar API calls the cards took. */
+  calls: number;
 }
 
 export interface Session {
@@ -160,9 +164,23 @@ export interface ItemSummary extends CardFields {
   synced: boolean;
   /** The user picked the match from the candidates. */
   picked: boolean;
+  /** The user typed the card's fields or price. */
+  edited: boolean;
+  /** The user accepted the match (or corrected it). */
+  reviewed: boolean;
+  notes: string;
+  /** Where the card is kept: a box, a binder page. */
+  location: string;
   updatedAt: string;
   /** The card's eBay listing, once one was attempted. */
   ebay: EbayListing | null;
+}
+
+/** What the user can change on a card by hand. */
+export interface ItemEdit extends CardFields {
+  price: number | null;
+  notes: string;
+  location: string;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -490,6 +508,16 @@ export const api = {
   getItem: (id: number) => invoke<ItemDetail>("get_item", { id }),
   /** Makes candidate `index` (into the response's alternatives) the card's match. */
   selectMatch: (id: number, index: number) => invoke<ItemDetail>("select_match", { id, index }),
+  /** Saves what the user typed: the card fields and price (once identified), notes and location. */
+  updateItem: (id: number, edit: ItemEdit) => invoke<ItemDetail>("update_item", { id, edit }),
+  /** Accepts the cards' matches, or with `reviewed: false` takes that back. */
+  reviewItems: (sessionId: string, itemIds: number[], reviewed = true) =>
+    invoke<number>("review_items", { sessionId, itemIds, reviewed }),
+  /** Sets where the cards are kept; empty clears it. */
+  locateItems: (sessionId: string, itemIds: number[], location: string) =>
+    invoke<number>("locate_items", { sessionId, itemIds, location }),
+  /** Deletes cards from a stopped session; running the folder again doesn't bring them back. */
+  deleteItems: (sessionId: string, itemIds: number[]) => invoke<number>("delete_items", { sessionId, itemIds }),
   countImages: (path: string) => invoke<number>("count_images", { path }),
 
   listModels: () => invoke<ModelStatus[]>("list_models"),
