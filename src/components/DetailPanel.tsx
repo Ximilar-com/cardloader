@@ -45,7 +45,7 @@ export default function DetailPanel({
   onPick?: (index: number) => Promise<unknown>;
   /** Accepts the match of a card to review. */
   onAccept?: () => void;
-  /** Takes an accept back: the card is to review again (if its match is unsure). */
+  /** Takes an accept back: the card is to review again. */
   onUnaccept?: () => void;
   /** Saves what the user typed; without it, the card can't be edited. */
   onEdit?: (edit: ItemEdit) => Promise<unknown>;
@@ -142,7 +142,9 @@ export default function DetailPanel({
             <>
               <span className="flex flex-1 items-center gap-1.5 text-orange-800 dark:text-orange-300">
                 <CircleQuestionMark className="h-4 w-4 shrink-0 text-orange-500" strokeWidth={2.5} />
-                Unsure match — accept it or pick another candidate below.
+                {view.confidence === "low" || view.confidence === "medium"
+                  ? "Unsure match — accept it or pick another candidate below."
+                  : "Check the match — accept it, or pick another candidate below."}
               </span>
               <button className="btn btn-primary px-2 py-0.5 text-xs" onClick={onAccept} title="Accept the match (A)">
                 <Check className="h-3 w-3" /> Accept

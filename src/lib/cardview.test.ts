@@ -99,13 +99,12 @@ describe("review", () => {
     ...extra,
   });
 
-  it("asks to review unsure matches and cards without one", () => {
-    const base = { status: "done", reviewed: false, name: "Mew", fullName: "Mew" } as const;
-    expect(needsReview({ ...base, confidence: "high" })).toBe(false);
-    expect(needsReview({ ...base, confidence: "medium" })).toBe(true);
-    expect(needsReview({ ...base, confidence: "low", reviewed: true })).toBe(false);
-    expect(needsReview({ ...base, confidence: "high", name: "", fullName: "" })).toBe(true);
-    expect(needsReview({ ...base, confidence: "low", status: "error" })).toBe(false);
+  it("asks to review every identified card until it is accepted", () => {
+    expect(needsReview({ status: "done", reviewed: false })).toBe(true);
+    expect(needsReview({ status: "grading", reviewed: false })).toBe(true);
+    expect(needsReview({ status: "done", reviewed: true })).toBe(false);
+    expect(needsReview({ status: "error", reviewed: false })).toBe(false);
+    expect(needsReview({ status: "queued", reviewed: false })).toBe(false);
   });
 
   it("sorts with missing values last and filters by chip and text", () => {

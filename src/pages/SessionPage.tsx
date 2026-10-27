@@ -722,7 +722,8 @@ function KeysHelp({ onClose }: { onClose: () => void }) {
         ))}
       </dl>
       <p className="mt-4 text-xs text-slate-500">
-        Tip: the “To review” filter lists only unsure matches. Press A to accept one and go to the next.
+        Tip: the “To review” filter lists the cards you haven’t accepted yet. Press A to accept one and go to the next;
+        sort by Match to see the unsure ones first.
       </p>
     </Modal>
   );

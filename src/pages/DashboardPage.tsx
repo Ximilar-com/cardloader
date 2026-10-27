@@ -295,7 +295,7 @@ function Totals({ sessions, calls }: { sessions: Session[]; calls: number }) {
   const tiles: [string, string, string?][] = [
     ["Cards", sum((s) => s.counts.done).toLocaleString(), `in ${plural(sessions.length, "session")}`],
     ["Total value", price(sum((s) => s.counts.totalPrice)), "market prices when analysed"],
-    ["To review", sum((s) => s.counts.toReview).toLocaleString(), "unsure or missing matches"],
+    ["To review", sum((s) => s.counts.toReview).toLocaleString(), "not accepted yet"],
     ["API calls", calls.toLocaleString(), "last 7 days"],
   ];
   return (

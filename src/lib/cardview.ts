@@ -33,7 +33,7 @@ export interface Row {
   synced?: boolean;
   picked?: boolean;
   edited?: boolean;
-  /** The match is unsure or missing and nobody has accepted or corrected it. */
+  /** Identified, and nobody has accepted or corrected it yet. */
   toReview?: boolean;
   /** The user accepted the match as it was (picked and edited cards show that instead). */
   accepted?: boolean;
@@ -145,10 +145,9 @@ export function candidates(alternatives: Json[] | null | undefined, distances?: 
   return list;
 }
 
-/** Same rule as the Rust side (`db::TO_REVIEW`): identified, unsure or no match, not accepted or corrected. */
-export function needsReview(i: Pick<ItemSummary, "status" | "reviewed" | "confidence" | "name" | "fullName">): boolean {
-  if ((i.status !== "done" && i.status !== "grading") || i.reviewed) return false;
-  return i.confidence === "low" || i.confidence === "medium" || (!i.name && !i.fullName);
+/** Same rule as the Rust side (`db::TO_REVIEW`): identified, and not accepted or corrected yet. */
+export function needsReview(i: Pick<ItemSummary, "status" | "reviewed">): boolean {
+  return (i.status === "done" || i.status === "grading") && !i.reviewed;
 }
 
 /** Accepted as Ximilar matched it: reviewed, without a pick or an edit. */

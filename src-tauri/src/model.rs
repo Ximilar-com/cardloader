@@ -236,7 +236,7 @@ pub struct SessionCounts {
     pub ebay_drafts: i64,
     pub ebay_listed: i64,
     pub ebay_sold: i64,
-    /// Identified cards whose match is unsure (or missing) that nobody has accepted or corrected yet.
+    /// Identified cards nobody has accepted or corrected yet.
     pub to_review: i64,
     /// Paid Ximilar API calls the cards took.
     pub calls: i64,

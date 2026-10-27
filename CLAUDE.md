@@ -124,8 +124,9 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   "Select" of another candidate is sent as `PATCH identification/{id}/` (`sync::push_picks`), tracked by
   `picks`/`picks_synced`.
 - Items: `rev` counts result changes, `synced_rev` what Cards Cloud has. Imported CSV cards start at `rev = 1`.
-- **Review**: a card is "to review" when identified with low/medium confidence or no match and not `reviewed`
-  (`db::TO_REVIEW` and `cardview::needsReview` must agree). Accepting, picking or editing sets `reviewed`; a new
+- **Review**: every identified card (`done`/`grading`) is "to review" until `reviewed`, whatever its confidence
+  (`db::TO_REVIEW` and `cardview::needsReview` must agree). Imported CSV cards start reviewed. Accepting, picking
+  or editing sets `reviewed`; a new
   recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
   `edited`; `notes` and `location` stay local (CSV only). Deleted cards' files go into `removed_files`, which
   `known_paths` includes, so running the folder again doesn't bring them back.

@@ -82,7 +82,7 @@ export interface SessionCounts {
   ebayDrafts: number;
   ebayListed: number;
   ebaySold: number;
-  /** Identified cards whose match is unsure (or missing) that nobody has accepted or corrected yet. */
+  /** Identified cards nobody has accepted or corrected yet. */
   toReview: number;
   /** Paid Ximilar API calls the cards took. */
   calls: number;

@@ -30,10 +30,9 @@ const ITEM_SUMMARY_COLUMNS: &str =
      picks, picks_synced, slab_company, slab_grade, slab_certificate, \
      ebay_status, ebay_price, ebay_listing_id, ebay_error, reviewed, edited, notes, location";
 
-/// An identified card whose match is unsure or missing, and that nobody has accepted or corrected yet (the
-/// same rule as `needsReview` in `src/lib/cardview.ts`). Columns of `items` as `i`.
-const TO_REVIEW: &str = "(i.status IN ('done', 'grading') AND i.reviewed = 0
-     AND (i.confidence IN ('low', 'medium') OR (COALESCE(i.name, '') = '' AND COALESCE(i.full_name, '') = '')))";
+/// An identified card nobody has accepted or corrected yet, whatever its confidence (the same rule as
+/// `needsReview` in `src/lib/cardview.ts`). Columns of `items` as `i`.
+const TO_REVIEW: &str = "(i.status IN ('done', 'grading') AND i.reviewed = 0)";
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
@@ -305,7 +304,8 @@ impl Db {
         })
     }
 
-    /// A card identified elsewhere (an imported CSV row): stored as done, ready to sync.
+    /// A card identified elsewhere (an imported CSV row): stored as done, ready to sync, and reviewed — it is
+    /// the user's own list.
     #[allow(clippy::too_many_arguments)]
     pub fn insert_imported(
         &self,
@@ -330,10 +330,10 @@ impl Db {
                 "INSERT INTO items (session_id, seq, event_id, front_path, back_path, thumb_path, preview_path,
                     back_preview_path, status, id_type, name, full_name, set_name, set_code, card_number, series,
                     year, subcategory, confidence, distance, price, grade, condition, grading, rev,
-                    analyzed_at, created_at, updated_at)
+                    analyzed_at, created_at, updated_at, reviewed)
                  VALUES (?1, (SELECT COALESCE(MAX(seq), 0) + 1 FROM items WHERE session_id = ?1),
                     ?2, ?3, ?4, ?5, ?6, ?7, 'done', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, 1, ?23, ?23, ?23)",
+                    ?20, ?21, ?22, 1, ?23, ?23, ?23, 1)",
                 params![
                     session_id,
                     event_id,
@@ -1285,7 +1285,7 @@ mod tests {
     }
 
     #[test]
-    fn unsure_matches_wait_for_review() {
+    fn identified_cards_wait_for_review() {
         let db = Db::memory().unwrap();
         let s = session(&db);
         let mut ids = Vec::new();
@@ -1323,7 +1323,11 @@ mod tests {
             ids.push(id);
         }
         let counts = db.session(&s.id).unwrap().counts;
-        assert_eq!((counts.to_review, counts.calls), (2, 9), "low and no match");
+        assert_eq!(
+            (counts.to_review, counts.calls),
+            (3, 9),
+            "every card until accepted"
+        );
         assert_eq!(db.set_reviewed(&s.id, &ids, true).unwrap(), 3);
         assert_eq!(db.session(&s.id).unwrap().counts.to_review, 0);
         assert!(db.item_summary(ids[1]).unwrap().reviewed);
@@ -1368,7 +1372,7 @@ mod tests {
         };
         let pikachu = add(&a, "Pikachu", "58", 4.0, "high");
         add(&b, "pikachu", "58", 5.0, "low");
-        add(&b, "Charizard", "4", 300.0, "high");
+        let charizard = add(&b, "Charizard", "4", 300.0, "high");
         db.set_location(&a.id, &[pikachu], "Box 7").unwrap();
 
         let all = db.search_cards("", "", 100).unwrap();
@@ -1383,7 +1387,8 @@ mod tests {
         assert_eq!(found.cards[0].item.id, pikachu);
         assert_eq!(found.cards[0].session_name, "Test");
         assert_eq!(db.search_cards("", "duplicates", 100).unwrap().total, 2);
-        assert_eq!(db.search_cards("", "review", 100).unwrap().total, 1);
+        db.set_reviewed(&b.id, &[charizard], true).unwrap();
+        assert_eq!(db.search_cards("", "review", 100).unwrap().total, 2);
         let first = db.search_cards("", "", 1).unwrap();
         assert_eq!(
             (first.cards.len(), first.total),

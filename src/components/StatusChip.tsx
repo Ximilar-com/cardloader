@@ -99,7 +99,7 @@ export function EditedChip() {
   );
 }
 
-/** An unsure (or missing) match nobody has accepted or corrected yet. */
+/** An identified card nobody has accepted or corrected yet. */
 export function ReviewMark() {
   return (
     <span className="shrink-0" title="To review: accept the match (A) or pick another candidate" aria-label="To review">
@@ -112,7 +112,7 @@ export function ReviewChip() {
   return (
     <span
       className="inline-flex items-center gap-1 rounded bg-orange-50 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950 dark:text-orange-300"
-      title="Unsure match: accept it or pick another candidate"
+      title="Not accepted yet: accept the match or pick another candidate"
     >
       <CircleQuestionMark className="h-3 w-3" /> To review
     </span>
