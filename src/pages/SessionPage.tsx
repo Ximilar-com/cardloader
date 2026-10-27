@@ -2,6 +2,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
   ArrowLeft,
+  BadgeQuestionMark,
   Check,
   ChevronDown,
   Cloud,
@@ -20,6 +21,7 @@ import {
   Send,
   Store,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -430,6 +432,20 @@ function SessionView({ id }: { id: string }) {
               <button className="btn px-2 py-1 text-xs" onClick={() => accept(checkedIds)} title="Accept the matches">
                 <Check className="h-3.5 w-3.5" /> Accept
               </button>
+              {rows.some((r) => r.accepted && checked.has(r.key)) && (
+                <button
+                  className="btn px-2 py-1 text-xs"
+                  onClick={() =>
+                    api
+                      .reviewItems(id, checkedIds, false)
+                      .then((n) => toast(`Unaccepted ${n} match${n === 1 ? "" : "es"}`))
+                      .catch(toastError)
+                  }
+                  title="Take the accepts back"
+                >
+                  <Undo2 className="h-3.5 w-3.5" /> Unaccept
+                </button>
+              )}
               <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedIds)}>
                 <MapPin className="h-3.5 w-3.5" /> Set location…
               </button>
@@ -470,7 +486,7 @@ function SessionView({ id }: { id: string }) {
                 All {rows.length}
               </Chip>
               <Chip on={filter === "review"} onClick={() => setFilter("review")} disabled={!tally.review}>
-                To review {tally.review}
+                <BadgeQuestionMark className="h-3.5 w-3.5" /> To review {tally.review}
               </Chip>
               <Chip on={filter === "failed"} onClick={() => setFilter("failed")} disabled={!tally.failed}>
                 Failed {tally.failed}
@@ -652,7 +668,7 @@ function Chip({
   return (
     <button
       className={clsx(
-        "rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums disabled:opacity-40",
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium tabular-nums disabled:opacity-40",
         on
           ? "bg-accent text-white"
           : "bg-slate-100 text-slate-600 enabled:hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:enabled:hover:bg-slate-700",
@@ -679,7 +695,7 @@ function Warning({ text, action, onAction }: { text: string; action: string; onA
 const KEYS: [string, string][] = [
   ["J  /  ↓", "Next card"],
   ["K  /  ↑", "Previous card"],
-  ["A", "Accept the match"],
+  ["A", "Accept the match (again: unaccept)"],
   ["1 – 9", "Select that candidate"],
   ["E", "Edit the card"],
   ["Delete", "Delete the card"],

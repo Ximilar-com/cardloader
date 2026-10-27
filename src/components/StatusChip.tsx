@@ -1,5 +1,15 @@
 import clsx from "clsx";
-import { AlertCircle, BadgeCheck, CheckCircle2, Clock, Loader2, Pause, Square, Star } from "lucide-react";
+import {
+  AlertCircle,
+  BadgeCheck,
+  BadgeQuestionMark,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Pause,
+  Square,
+  Star,
+} from "lucide-react";
 import type { ItemStatus, SessionStatus } from "../lib/api";
 
 const STYLES: Record<string, string> = {
@@ -89,14 +99,23 @@ export function EditedChip() {
   );
 }
 
-/** An unsure match nobody has looked at: a small dot next to the confidence. */
-export function ReviewDot() {
+/** An unsure (or missing) match nobody has accepted or corrected yet. */
+export function ReviewMark() {
+  return (
+    <span className="shrink-0" title="To review: accept the match (A) or pick another candidate" aria-label="To review">
+      <BadgeQuestionMark className="h-4 w-4 text-amber-500" />
+    </span>
+  );
+}
+
+export function ReviewChip() {
   return (
     <span
-      className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
-      title="To review: accept the match (A) or pick another candidate"
-      aria-label="To review"
-    />
+      className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+      title="Unsure match: accept it or pick another candidate"
+    >
+      <BadgeQuestionMark className="h-3 w-3" /> To review
+    </span>
   );
 }
 

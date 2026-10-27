@@ -2,7 +2,7 @@
 // each there are.
 
 import clsx from "clsx";
-import { Check, ExternalLink, MapPin, Search, X } from "lucide-react";
+import { BadgeQuestionMark, Check, ExternalLink, MapPin, Search, Undo2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
@@ -140,6 +140,19 @@ export default function CardsPage() {
             >
               <Check className="h-3.5 w-3.5" /> Accept
             </button>
+            {rows.some((r) => r.accepted && checked.has(r.key)) && (
+              <button
+                className="btn px-2 py-1 text-xs"
+                onClick={() =>
+                  perSession(checkedCards, (s, ids) => api.reviewItems(s, ids, false))
+                    .then((n) => toast(`Unaccepted ${n} match${n === 1 ? "" : "es"}`))
+                    .catch(toastError)
+                }
+                title="Take the accepts back"
+              >
+                <Undo2 className="h-3.5 w-3.5" /> Unaccept
+              </button>
+            )}
             <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedCards)}>
               <MapPin className="h-3.5 w-3.5" /> Set location…
             </button>
@@ -155,6 +168,7 @@ export default function CardsPage() {
           <div className="flex items-center gap-1.5 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
             {FILTERS.map(([key, label]) => (
               <Chip key={key} on={filter === key} onClick={() => setFilter(key)}>
+                {key === "review" && <BadgeQuestionMark className="h-3.5 w-3.5" />}
                 {label}
               </Chip>
             ))}
@@ -288,7 +302,7 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
   return (
     <button
       className={clsx(
-        "rounded-full px-2.5 py-0.5 text-xs font-medium",
+        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium",
         on
           ? "bg-accent text-white"
           : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700",

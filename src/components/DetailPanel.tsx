@@ -1,6 +1,8 @@
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
+  BadgeCheck,
+  BadgeQuestionMark,
   Check,
   ChevronDown,
   ChevronUp,
@@ -17,7 +19,7 @@ import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, grade, price } from "../lib/format";
 import { ErrorNote } from "./Modal";
-import StatusChip, { AcceptedChip, ConfidenceChip, EditedChip, PickedChip } from "./StatusChip";
+import StatusChip, { AcceptedChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
 export default function DetailPanel({
   view,
@@ -65,7 +67,8 @@ export default function DetailPanel({
         return;
       const candidate = /^[1-9]$/.test(e.key) ? view.alternatives[Number(e.key) - 1] : undefined;
       if (e.key === "Escape") onClose();
-      else if (e.key === "a" && view.toReview && onAccept) onAccept();
+      else if (e.key === "a" && view.accepted && onUnaccept) onUnaccept();
+      else if (e.key === "a" && !view.accepted && onAccept) onAccept();
       else if (e.key === "e" && onEdit && view.edit) setEditing(true);
       else if ((e.key === "Delete" || e.key === "Backspace") && onDelete) onDelete();
       else if (candidate && onPick) void onPick(candidate.index);
@@ -74,7 +77,7 @@ export default function DetailPanel({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [view, editing, onClose, onAccept, onEdit, onDelete, onPick]);
+  }, [view, editing, onClose, onAccept, onUnaccept, onEdit, onDelete, onPick]);
 
   return (
     <aside className="flex h-full w-[400px] shrink-0 flex-col border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
@@ -88,6 +91,7 @@ export default function DetailPanel({
             {view.picked && !view.edited && <PickedChip />}
             {view.edited && <EditedChip />}
             {view.accepted && <AcceptedChip />}
+            {view.toReview && <ReviewChip />}
             {view.distance != null && (
               <span className="text-[11px] text-slate-400">distance {view.distance.toFixed(3)}</span>
             )}
@@ -136,7 +140,8 @@ export default function DetailPanel({
         >
           {view.toReview && onAccept ? (
             <>
-              <span className="flex-1 text-amber-800 dark:text-amber-300">
+              <span className="flex flex-1 items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                <BadgeQuestionMark className="h-4 w-4 shrink-0" />
                 Unsure match — accept it or pick another candidate below.
               </span>
               <button className="btn btn-primary px-2 py-0.5 text-xs" onClick={onAccept} title="Accept the match (A)">
@@ -145,12 +150,13 @@ export default function DetailPanel({
             </>
           ) : view.accepted ? (
             <>
-              <span className="flex-1 text-emerald-800 dark:text-emerald-300">
+              <span className="flex flex-1 items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+                <BadgeCheck className="h-4 w-4 shrink-0" />
                 You accepted this match{position && ` · ${position}`}
               </span>
               {onUnaccept && (
-                <button className="btn px-2 py-0.5 text-xs" onClick={onUnaccept} title="Take the accept back">
-                  Undo
+                <button className="btn px-2 py-0.5 text-xs" onClick={onUnaccept} title="Take the accept back (A)">
+                  Unaccept
                 </button>
               )}
             </>
