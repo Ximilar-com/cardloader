@@ -29,7 +29,7 @@ tauri-plugin-shell = "2"
 tauri-plugin-notification = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util", "io-std", "fs", "net"] }
 tokio-util = "0.7"
 futures = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["json", "query", "form", "multipart", "rustls", "http2", "charset", "stream"] }
@@ -46,6 +46,12 @@ notify = "8"
 thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# The MCP server agents (Claude Desktop, Claude Code, …) drive the app through, on localhost.
+rmcp = { version = "3.8", default-features = false, features = ["server", "transport-streamable-http-server"] }
+schemars = "1"
+# Where the `mcp` bridge finds the app's config folder without Tauri (the same place Tauri resolves).
+dirs = "7"
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

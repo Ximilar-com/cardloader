@@ -6,6 +6,7 @@ mod export;
 mod imaging;
 mod local;
 mod market;
+mod mcp;
 mod model;
 mod pairing;
 mod runner;
@@ -21,6 +22,11 @@ use tauri::Manager;
 use commands::AppState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// `cardloader mcp`: relays an AI agent's stdio to the running app's MCP server (see `mcp::bridge`).
+pub fn mcp_bridge() -> i32 {
+    mcp::bridge::run()
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -56,11 +62,15 @@ pub fn run() {
                 use tauri::Emitter;
                 let _ = events.emit("model-updated", status);
             });
-            app.manage(AppState {
+            let state = AppState {
                 db,
                 settings,
                 runner,
-            });
+            };
+            let mcp = mcp::McpServer::new(state.clone(), config_dir);
+            app.manage(state);
+            app.manage(mcp.clone());
+            tauri::async_runtime::spawn(async move { mcp.apply().await });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -68,6 +78,8 @@ pub fn run() {
             commands::save_settings,
             commands::set_token,
             commands::test_connection,
+            commands::mcp_status,
+            commands::regenerate_mcp_token,
             commands::list_sessions,
             commands::dashboard_activity,
             commands::get_session,
@@ -136,6 +148,7 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 app.state::<AppState>().runner.stop_all();
+                app.state::<Arc<mcp::McpServer>>().forget_endpoint();
             }
         });
 }

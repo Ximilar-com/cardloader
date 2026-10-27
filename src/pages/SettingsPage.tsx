@@ -2,7 +2,9 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { openPath, openUrl } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
+  Bot,
   CheckCircle2,
+  Copy,
   Cloud,
   Cpu,
   FolderOpen,
@@ -26,6 +28,7 @@ import { create } from "zustand";
 import { ebayReady } from "../components/Ebay";
 import { ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
+import { toast } from "../components/Toast";
 import {
   Check,
   DPI_OPTIONS,
@@ -45,11 +48,13 @@ import {
   type DeviceInfo,
   type EbaySettings,
   type EbaySetup,
+  type McpSettings,
+  type McpStatus,
   type ScannerSupport,
   type Settings,
   type SettingsView,
 } from "../lib/api";
-import { bytes, GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
+import { bytes, dateTime, GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS } from "../lib/format";
 
 const DEFAULT_API = "https://api.ximilar.com";
 
@@ -69,11 +74,12 @@ export function isUnsaved(saved: Settings | null, draft: Settings | null): boole
 }
 
 /** What is wrong with the settings, by field; empty when they can be saved. */
-function problems(s: Settings): Partial<Record<"apiBaseUrl" | "page", string>> {
-  const out: Partial<Record<"apiBaseUrl" | "page", string>> = {};
+function problems(s: Settings): Partial<Record<"apiBaseUrl" | "page" | "port", string>> {
+  const out: Partial<Record<"apiBaseUrl" | "page" | "port", string>> = {};
   if (!/^https?:\/\/[^\s/]+/.test(s.apiBaseUrl.trim())) out.apiBaseUrl = "An address starting with https://";
   const mm = [s.scan.pageWidthMm, s.scan.pageHeightMm];
   if (mm.some((v) => !Number.isFinite(v) || v < 20 || v > 400)) out.page = "Between 20 and 400 mm";
+  if (!Number.isInteger(s.mcp.port) || s.mcp.port < 1024 || s.mcp.port > 65535) out.port = "Between 1024 and 65535";
   return out;
 }
 
@@ -93,6 +99,7 @@ export default function SettingsPage() {
   const [findingScanners, setFindingScanners] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [mcp, setMcp] = useState<McpStatus | null>(null);
   const models = useModels();
   const showSetup = useSetupWizard((s) => s.show);
   // Another page can open Settings at a tab: navigate("/settings", { state: { section } }).
@@ -125,6 +132,7 @@ export default function SettingsPage() {
       }
     });
     api.scannerSupport().then(setSupport);
+    api.mcpStatus().then(setMcp);
   }, []);
 
   if (!view || !draft) return null;
@@ -144,6 +152,7 @@ export default function SettingsPage() {
     setView(v);
     setDraft((d) => d && { ...d, ebay: { ...d.ebay, username: v.ebay.username } });
   };
+  const setMcpSettings = (patch: Partial<McpSettings>) => set("mcp", { ...draft.mcp, ...patch });
   const setScan = <K extends keyof Settings["scan"]>(key: K, value: Settings["scan"][K]) =>
     set("scan", { ...draft.scan, [key]: value });
 
@@ -154,6 +163,8 @@ export default function SettingsPage() {
       setView(v);
       setDraft(strip(v));
       setSaved(true);
+      // Saving starts or stops the agents' server.
+      api.mcpStatus().then(setMcp);
     } catch (e) {
       setError(errorText(e));
     }
@@ -240,6 +251,9 @@ export default function SettingsPage() {
               )}
               {key === "ebay" && view.ebayConnected && ebayReady(view.ebay) && (
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="eBay connected" />
+              )}
+              {key === "agents" && mcp?.running && (
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label="agents can connect" />
               )}
             </button>
           ))}
@@ -597,6 +611,16 @@ export default function SettingsPage() {
                 </p>
               </Section>
             )}
+            {tab === "agents" && (
+              <AgentsTab
+                draft={draft.mcp}
+                set={setMcpSettings}
+                status={mcp}
+                setStatus={setMcp}
+                portProblem={invalid.port}
+                setError={setError}
+              />
+            )}
             {tab === "about" && <About />}
           </div>
         </div>
@@ -606,6 +630,159 @@ export default function SettingsPage() {
 }
 
 /** The TWAIN driver's own dialog: automatic cropping, deskew and the like, kept for every later scan. */
+const PERMISSIONS: { key: keyof McpSettings; label: string; hint: string }[] = [
+  {
+    key: "allowRun",
+    label: "Run and review",
+    hint: "create, run and stop sessions; accept, pick and edit cards; sync to Cards Cloud; CSV and TCGplayer exports",
+  },
+  { key: "allowDelete", label: "Delete", hint: "cards and sessions, also in Cards Cloud" },
+  {
+    key: "allowMarket",
+    label: "Marketplaces",
+    hint: "eBay drafts, publishing and removing listings; Whatnot and Shopify exports (they upload pictures)",
+  },
+  { key: "allowSettings", label: "Settings", hint: "the defaults of new sessions (never your tokens or keys)" },
+];
+
+/** AI agents (Claude Desktop, Claude Code, Cursor, …) working with Cardloader over MCP. */
+function AgentsTab({
+  draft,
+  set,
+  status,
+  setStatus,
+  portProblem,
+  setError,
+}: {
+  draft: McpSettings;
+  set: (patch: Partial<McpSettings>) => void;
+  status: McpStatus | null;
+  setStatus: (s: McpStatus) => void;
+  portProblem?: string;
+  setError: (e: string | null) => void;
+}) {
+  const command = status?.command ?? "";
+  const desktop = JSON.stringify({ mcpServers: { cardloader: { command, args: ["mcp"] } } }, null, 2);
+  const claudeCode = `claude mcp add cardloader -- "${command}" mcp`;
+  const newToken = () =>
+    api
+      .regenerateMcpToken()
+      .then((s) => {
+        setStatus(s);
+        toast("New token: apps connected over HTTP need it");
+      })
+      .catch((e) => setError(errorText(e)));
+  return (
+    <>
+      <Section
+        title="AI agents"
+        done={status?.running}
+        text={
+          <>
+            Let AI apps such as Claude Desktop, Claude Code or Cursor work with Cardloader through MCP: start sessions
+            on a folder, read the results, and review cards by looking at their pictures. They connect on this computer
+            only, with a token, while Cardloader is open. What they do shows up here as it happens, and cards they
+            accept get an AI mark until you confirm them.
+          </>
+        }
+      >
+        <Check label="Let AI agents use Cardloader" checked={draft.enabled} onChange={(v) => set({ enabled: v })} />
+        <div className="space-y-2">
+          <div className="label">Agents may</div>
+          <Check label="Read sessions, cards and their pictures (always)" checked disabled onChange={() => {}} />
+          {PERMISSIONS.map((p) => (
+            <div key={p.key}>
+              <Check
+                label={p.label}
+                checked={draft[p.key] as boolean}
+                disabled={!draft.enabled}
+                onChange={(v) => set({ [p.key]: v })}
+              />
+              <p className="ml-6 text-xs text-slate-500">{p.hint}</p>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-end gap-3">
+          <div>
+            <div className="label">Port</div>
+            <input
+              className="input w-28"
+              type="number"
+              value={draft.port}
+              disabled={!draft.enabled}
+              onChange={(e) => set({ port: Number(e.target.value) })}
+            />
+          </div>
+          <p className="pb-2 text-xs text-slate-500">
+            {portProblem ?? "On 127.0.0.1 only; the next free one is used when it is taken."}
+          </p>
+        </div>
+        {status?.error ? (
+          <Status ok={false} text={status.error} />
+        ) : status?.running ? (
+          <Status
+            ok
+            text={`Running at ${status.url}${status.lastUsed ? ` · last used ${dateTime(status.lastUsed)}` : ""}`}
+          />
+        ) : (
+          draft.enabled && <p className="text-sm text-slate-500">Save to start it.</p>
+        )}
+      </Section>
+      {status?.running && (
+        <Section
+          title="Connect an app"
+          text="Apps start Cardloader’s own program with the argument mcp; it finds the open app and its token by itself."
+        >
+          <Snippet
+            label="Claude Desktop"
+            hint="Settings → Developer → Edit Config: add this, then restart Claude."
+            text={desktop}
+          />
+          <Snippet label="Claude Code" hint="Run this in a terminal." text={claudeCode} />
+          <div className="space-y-2">
+            <Snippet
+              label="Other apps"
+              hint="Apps that connect over HTTP: the address, and the header they send."
+              text={status.url ?? ""}
+            />
+            <Snippet label="Header" text={`Authorization: Bearer ${status.token ?? ""}`} />
+            <button className="btn px-2 py-1 text-xs" onClick={newToken}>
+              <RefreshCw className="h-3.5 w-3.5" /> New token
+            </button>
+          </div>
+          <p className="text-xs text-slate-500">
+            Try asking: “Run a new Cardloader session on my folder ~/Cards/pokemon — English Pokémon, fronts only, store
+            it in Ximilar”, or “Review the latest Cardloader session and accept the cards that match their pictures”.
+          </p>
+        </Section>
+      )}
+    </>
+  );
+}
+
+/** Text to copy into another app. */
+function Snippet({ label, hint, text }: { label: string; hint?: string; text: string }) {
+  const copy = () =>
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast("Copied"))
+      .catch(() => toast("Couldn’t copy: select the text instead"));
+  return (
+    <div>
+      <div className="label">{label}</div>
+      {hint && <p className="mb-1 text-xs text-slate-500">{hint}</p>}
+      <div className="flex items-start gap-2">
+        <pre className="selectable min-w-0 flex-1 overflow-x-auto rounded-md bg-slate-100 px-3 py-2 font-mono text-xs dark:bg-slate-900">
+          {text}
+        </pre>
+        <button className="btn px-2 py-1 text-xs" onClick={copy} aria-label={`Copy: ${label}`}>
+          <Copy className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DriverSettings({ device, disabled }: { device: string | null; disabled: boolean }) {
   const [state, setState] = useState<"open" | "saved" | "unchanged" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -687,7 +864,7 @@ function About() {
   );
 }
 
-type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "about";
+type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "agents" | "about";
 
 const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "ximilar", label: "Ximilar API", icon: KeyRound },
@@ -695,6 +872,7 @@ const TABS: { key: Tab; label: string; icon: LucideIcon }[] = [
   { key: "sessions", label: "New sessions", icon: SlidersHorizontal },
   { key: "ebay", label: "Selling", icon: Store },
   { key: "scanner", label: "Scanner", icon: ScanLine },
+  { key: "agents", label: "AI agents", icon: Bot },
   { key: "about", label: "About", icon: Info },
 ];
 

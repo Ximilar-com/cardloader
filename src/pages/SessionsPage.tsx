@@ -19,7 +19,15 @@ import { ErrorNote } from "../components/Modal";
 import { useRemoteSessionActions, useSessionActions } from "../components/SessionActions";
 import NewSessionDialog from "../components/NewSessionDialog";
 import StatusChip from "../components/StatusChip";
-import { api, errorText, onSessionUpdated, type RemoteSession, type Session, type SourceKind } from "../lib/api";
+import {
+  api,
+  errorText,
+  onSessionDeleted,
+  onSessionUpdated,
+  type RemoteSession,
+  type Session,
+  type SourceKind,
+} from "../lib/api";
 import { basename, dateTime, price } from "../lib/format";
 import Select, { type SelectOption } from "../components/Select";
 
@@ -124,7 +132,11 @@ function LocalSessions() {
         return next;
       }),
     );
-    return () => void unlisten.then((f) => f());
+    const unDeleted = onSessionDeleted((id) => setSessions((list) => list && list.filter((x) => x.id !== id)));
+    return () => {
+      void unlisten.then((f) => f());
+      void unDeleted.then((f) => f());
+    };
   }, []);
 
   const shown = useMemo(() => {

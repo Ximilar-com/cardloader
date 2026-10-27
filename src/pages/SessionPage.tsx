@@ -2,6 +2,7 @@ import { openPath } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
   ArrowLeft,
+  Bot,
   CircleQuestionMark,
   Check,
   ChevronDown,
@@ -40,6 +41,7 @@ import {
   errorText,
   onEbayProgress,
   onItemUpdated,
+  onSessionDeleted,
   onSessionUpdated,
   type EbayProgress,
   type ItemDetail,
@@ -79,7 +81,7 @@ function SessionView({ id }: { id: string }) {
   const [params] = useSearchParams();
   const [filter, setFilter] = useState<RowFilter>(() => {
     const f = params.get("filter");
-    return f === "review" || f === "failed" || f === "corrected" ? f : "all";
+    return f === "review" || f === "failed" || f === "corrected" || f === "agent" ? f : "all";
   });
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<Sort | null>(null);
@@ -151,12 +153,17 @@ function SessionView({ id }: { id: string }) {
     const unEbay = onEbayProgress((p) => {
       if (p.sessionId === id) setEbayJob(p.running ? p : null);
     });
+    // Deleted elsewhere (an agent): nothing left to show here.
+    const unDeleted = onSessionDeleted((deleted) => {
+      if (deleted === id) navigate("/sessions");
+    });
     return () => {
       void unSession.then((f) => f());
       void unItem.then((f) => f());
       void unEbay.then((f) => f());
+      void unDeleted.then((f) => f());
     };
-  }, [id]);
+  }, [id, navigate]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -183,6 +190,7 @@ function SessionView({ id }: { id: string }) {
       review: rows.filter((r) => r.toReview).length,
       failed: rows.filter((r) => r.status === "error").length,
       corrected: rows.filter((r) => r.picked || r.edited).length,
+      agent: rows.filter((r) => r.byAgent).length,
     }),
     [rows],
   );
@@ -434,7 +442,7 @@ function SessionView({ id }: { id: string }) {
               <span className="font-medium">{checked.size} selected</span>
               <span className="flex-1" />
               {/* Accept and Unaccept share the first place: a card shows the one it can do. */}
-              {rows.some((r) => !r.reviewed && checked.has(r.key)) && (
+              {rows.some((r) => (!r.reviewed || r.byAgent) && checked.has(r.key)) && (
                 <button className="btn px-2 py-1 text-xs" onClick={() => accept(checkedIds)} title="Accept the matches">
                   <Check className="h-3.5 w-3.5" /> Accept
                 </button>
@@ -501,6 +509,11 @@ function SessionView({ id }: { id: string }) {
               <Chip on={filter === "corrected"} onClick={() => setFilter("corrected")} disabled={!tally.corrected}>
                 Corrected {tally.corrected}
               </Chip>
+              {(tally.agent > 0 || filter === "agent") && (
+                <Chip on={filter === "agent"} onClick={() => setFilter("agent")} disabled={!tally.agent}>
+                  <Bot className="h-3.5 w-3.5" /> By AI {tally.agent}
+                </Chip>
+              )}
               {filter === "review" && shown.length > 0 && (
                 <button
                   className="btn ml-1 px-2 py-0.5 text-xs"
@@ -508,6 +521,15 @@ function SessionView({ id }: { id: string }) {
                   title="Accept every match in this list"
                 >
                   <Check className="h-3 w-3" /> Accept all {shown.length}
+                </button>
+              )}
+              {filter === "agent" && shown.length > 0 && (
+                <button
+                  className="btn ml-1 px-2 py-0.5 text-xs"
+                  onClick={() => accept(shown.map((r) => Number(r.key)))}
+                  title="You checked what the agent did: the reviews become yours"
+                >
+                  <Check className="h-3 w-3" /> Confirm all {shown.length}
                 </button>
               )}
               <span className="flex-1" />

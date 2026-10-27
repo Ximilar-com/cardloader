@@ -6,7 +6,7 @@ use serde_json::Value;
 macro_rules! str_enum {
     ($(#[$meta:meta])* $name:ident { $($variant:ident = $text:literal),+ $(,)? } default $default:ident) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
         #[serde(rename_all = "snake_case")]
         pub enum $name {
             $(#[serde(rename = $text)] $variant,)+
@@ -353,11 +353,36 @@ pub struct ItemSummary {
     pub edited: bool,
     /// The user accepted the match (or corrected it).
     pub reviewed: bool,
+    /// An AI agent (over MCP) accepted, picked or corrected it, not the user.
+    pub agent_reviewed: bool,
+    /// What the agent said about the card when it did.
+    pub review_note: String,
     pub notes: String,
     /// Where the card is kept: a box, a binder page.
     pub location: String,
     /// The card's eBay listing, once one was attempted.
     pub ebay: Option<EbayListing>,
+}
+
+/// Who accepts, picks or corrects a card: the user in the app, or an AI agent over MCP saying why.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Reviewer {
+    User,
+    Agent { note: String },
+}
+
+impl Reviewer {
+    pub fn is_agent(&self) -> bool {
+        matches!(self, Reviewer::Agent { .. })
+    }
+
+    /// The agent's note; none for the user.
+    pub fn note(&self) -> Option<&str> {
+        match self {
+            Reviewer::User => None,
+            Reviewer::Agent { note } => Some(note.trim()).filter(|n| !n.is_empty()),
+        }
+    }
 }
 
 /// A card on the Cards page: an identified card of any session, with how many such cards there are.

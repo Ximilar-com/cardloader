@@ -18,6 +18,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/004_ebay.sql"),
     include_str!("../migrations/005_hosted_images.sql"),
     include_str!("../migrations/006_review.sql"),
+    include_str!("../migrations/007_agent_review.sql"),
 ];
 
 #[derive(Clone)]
@@ -28,7 +29,8 @@ const ITEM_SUMMARY_COLUMNS: &str =
      name, full_name, set_name, set_code, card_number, series, year, subcategory, \
      confidence, distance, price, grade, condition, error, synced_rev, rev, updated_at, \
      picks, picks_synced, slab_company, slab_grade, slab_certificate, \
-     ebay_status, ebay_price, ebay_listing_id, ebay_error, reviewed, edited, notes, location";
+     ebay_status, ebay_price, ebay_listing_id, ebay_error, reviewed, edited, notes, location, \
+     agent_reviewed, review_note";
 
 /// An identified card nobody has accepted or corrected yet, whatever its confidence (the same rule as
 /// `needsReview` in `src/lib/cardview.ts`). Columns of `items` as `i`.
@@ -388,6 +390,7 @@ impl Db {
         let condition = match filter {
             "review" => TO_REVIEW.to_string(),
             "graded" => "(i.grade IS NOT NULL OR i.slab_company IS NOT NULL)".into(),
+            "agent" => "(i.reviewed = 1 AND i.agent_reviewed = 1)".into(),
             "duplicates" => "copies > 1".into(),
             _ => "1".into(),
         };
@@ -422,11 +425,11 @@ impl Db {
                 Ok((
                     CardRow {
                         item: item_summary(r)?,
-                        session_name: r.get(38)?,
-                        copies: r.get(39)?,
+                        session_name: r.get(40)?,
+                        copies: r.get(41)?,
                     },
-                    r.get::<_, i64>(40)?,
-                    r.get::<_, f64>(41)?,
+                    r.get::<_, i64>(42)?,
+                    r.get::<_, f64>(43)?,
                 ))
             })?;
             for row in rows {
@@ -531,7 +534,8 @@ impl Db {
                     card_number = ?7, series = ?8, year = ?9, subcategory = ?10, confidence = ?11,
                     distance = ?12, price = ?13, recognition = ?14, calls = calls + ?15, status = ?16,
                     error = NULL, analyzed_at = ?17, updated_at = ?17, rev = rev + 1, slab_company = ?18,
-                    slab_grade = ?19, slab_certificate = ?20, reviewed = 0, edited = 0
+                    slab_grade = ?19, slab_certificate = ?20, reviewed = 0, edited = 0,
+                    agent_reviewed = 0, review_note = NULL
                  WHERE id = ?1",
                 params![
                     id,
@@ -560,8 +564,9 @@ impl Db {
         Ok(())
     }
 
-    /// The user picked another candidate: the card fields follow it. The revision stays (re-uploading a
-    /// known row changes nothing in Cards Cloud); the pick reaches Cards Cloud as a PATCH instead.
+    /// The user (or an agent) picked another candidate: the card fields follow it. The revision stays
+    /// (re-uploading a known row changes nothing in Cards Cloud); the pick reaches Cards Cloud as a PATCH instead.
+    #[allow(clippy::too_many_arguments)]
     pub fn save_pick(
         &self,
         id: i64,
@@ -570,13 +575,15 @@ impl Db {
         distance: Option<f64>,
         price: Option<f64>,
         raw: &Value,
+        by: &Reviewer,
     ) -> Result<()> {
         let ts = now();
         self.with(|c| {
             c.execute(
                 "UPDATE items SET name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6,
                     series = ?7, year = ?8, subcategory = ?9, confidence = ?10, distance = ?11, price = ?12,
-                    recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14
+                    recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14,
+                    agent_reviewed = ?15, review_note = ?16
                  WHERE id = ?1",
                 params![
                     id,
@@ -592,7 +599,9 @@ impl Db {
                     distance,
                     price,
                     raw.to_string(),
-                    ts
+                    ts,
+                    by.is_agent(),
+                    by.note()
                 ],
             )
         })?;
@@ -601,7 +610,7 @@ impl Db {
 
     /// The user typed the card's fields or price. Like a pick, it reaches Cards Cloud as a PATCH (`picks`
     /// counts it); notes and the location stay local.
-    pub fn save_edit(&self, id: i64, edit: &ItemEdit) -> Result<()> {
+    pub fn save_edit(&self, id: i64, edit: &ItemEdit, by: &Reviewer) -> Result<()> {
         let card = &edit.card;
         self.with(|c| {
             c.execute(
@@ -614,7 +623,7 @@ impl Db {
                     picks = picks + (SELECT changed FROM card), edited = edited OR (SELECT changed FROM card),
                     name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6, series = ?7,
                     year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12, reviewed = 1,
-                    updated_at = ?13
+                    updated_at = ?13, agent_reviewed = ?14, review_note = ?15
                  WHERE id = ?1",
                 params![
                     id,
@@ -629,7 +638,9 @@ impl Db {
                     edit.price,
                     edit.notes,
                     edit.location,
-                    now()
+                    now(),
+                    by.is_agent(),
+                    by.note()
                 ],
             )
         })?;
@@ -660,15 +671,31 @@ impl Db {
         Ok(())
     }
 
-    /// Accepts the cards' matches (or takes that back); returns how many changed.
-    pub fn set_reviewed(&self, session_id: &str, ids: &[i64], reviewed: bool) -> Result<usize> {
+    /// Accepts the cards' matches (or takes that back); returns how many changed. The user accepting a card an
+    /// agent accepted makes it theirs; an agent never takes over the user's accept.
+    pub fn set_reviewed(
+        &self,
+        session_id: &str,
+        ids: &[i64],
+        reviewed: bool,
+        by: &Reviewer,
+    ) -> Result<usize> {
         self.with(|c| {
             let mut n = 0;
             for id in ids {
-                n += c.execute(
-                    "UPDATE items SET reviewed = ?3 WHERE id = ?1 AND session_id = ?2 AND reviewed != ?3",
-                    params![id, session_id, reviewed],
-                )?;
+                n += if reviewed {
+                    c.execute(
+                        "UPDATE items SET reviewed = 1, agent_reviewed = ?3, review_note = ?4
+                         WHERE id = ?1 AND session_id = ?2 AND (reviewed = 0 OR agent_reviewed = 1)",
+                        params![id, session_id, by.is_agent(), by.note()],
+                    )?
+                } else {
+                    c.execute(
+                        "UPDATE items SET reviewed = 0, agent_reviewed = 0, review_note = NULL
+                         WHERE id = ?1 AND session_id = ?2 AND reviewed = 1",
+                        params![id, session_id],
+                    )?
+                };
             }
             Ok(n)
         })
@@ -1066,6 +1093,8 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         picked: picks > 0,
         edited: r.get(35)?,
         reviewed: r.get(34)?,
+        agent_reviewed: r.get(38)?,
+        review_note: text(39)?,
         notes: text(36)?,
         location: text(37)?,
         ebay: ebay_listing(r)?,
@@ -1342,7 +1371,10 @@ mod tests {
             (3, 9),
             "every card until accepted"
         );
-        assert_eq!(db.set_reviewed(&s.id, &ids, true).unwrap(), 3);
+        assert_eq!(
+            db.set_reviewed(&s.id, &ids, true, &Reviewer::User).unwrap(),
+            3
+        );
         assert_eq!(db.session(&s.id).unwrap().counts.to_review, 0);
         assert!(db.item_summary(ids[1]).unwrap().reviewed);
     }
@@ -1401,7 +1433,8 @@ mod tests {
         assert_eq!(found.cards[0].item.id, pikachu);
         assert_eq!(found.cards[0].session_name, "Test");
         assert_eq!(db.search_cards("", "duplicates", 100).unwrap().total, 2);
-        db.set_reviewed(&b.id, &[charizard], true).unwrap();
+        db.set_reviewed(&b.id, &[charizard], true, &Reviewer::User)
+            .unwrap();
         assert_eq!(db.search_cards("", "review", 100).unwrap().total, 2);
         let first = db.search_cards("", "", 1).unwrap();
         assert_eq!(

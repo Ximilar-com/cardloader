@@ -37,6 +37,8 @@ use crate::ximilar::recognition::{self, RecognitionOptions};
 pub const EVENT_SESSION: &str = "session-updated";
 pub const EVENT_ITEM: &str = "item-updated";
 pub const EVENT_EBAY: &str = "ebay-progress";
+/// A session was deleted (the payload is its id): pages showing it drop it.
+pub const EVENT_SESSION_DELETED: &str = "session-deleted";
 const GRADING_POLL: Duration = Duration::from_secs(3);
 
 /// Where progress goes: the webview in the app, a recorder in tests.
@@ -44,6 +46,7 @@ pub trait EventSink: Send + Sync {
     fn session(&self, session: Session);
     fn item(&self, item: ItemSummary);
     fn ebay(&self, _progress: &EbayProgress) {}
+    fn session_deleted(&self, _id: &str) {}
     /// A run ended on its own (not stopped): tell the user if they are looking elsewhere.
     fn finished(&self, _session: &Session) {}
 }
@@ -59,6 +62,10 @@ impl EventSink for AppHandle {
 
     fn ebay(&self, progress: &EbayProgress) {
         let _ = self.emit(EVENT_EBAY, progress);
+    }
+
+    fn session_deleted(&self, id: &str) {
+        let _ = self.emit(EVENT_SESSION_DELETED, id);
     }
 
     fn finished(&self, session: &Session) {
@@ -176,6 +183,10 @@ impl Runner {
         }
     }
 
+    pub fn emit_session_deleted(&self, id: &str) {
+        self.events.session_deleted(id);
+    }
+
     pub fn emit_item(&self, id: i64) {
         if let Ok(item) = self.db.item_summary(id) {
             self.events.item(item);
@@ -184,7 +195,12 @@ impl Runner {
 
     /// Makes candidate `index` (into the stored response's alternatives) the item's match, and sends the
     /// correction to Cards Cloud when the session has a remote copy.
-    pub fn pick_match(self: &Arc<Self>, item_id: i64, index: usize) -> Result<ItemDetail> {
+    pub fn pick_match(
+        self: &Arc<Self>,
+        item_id: i64,
+        index: usize,
+        by: &Reviewer,
+    ) -> Result<ItemDetail> {
         let item = self.db.item(item_id)?;
         if !matches!(item.summary.status, ItemStatus::Done | ItemStatus::Grading) {
             return Err(Error::Msg("this card hasn't been identified yet".into()));
@@ -203,6 +219,7 @@ impl Runner {
             parsed.distance,
             parsed.price,
             &raw,
+            by,
         )?;
         self.emit_item(item_id);
         self.emit_session(&item.summary.session_id);
@@ -212,7 +229,12 @@ impl Runner {
 
     /// Saves the fields, price, notes and location the user typed for a card. The card fields and price
     /// are kept only once it is identified; a correction reaches Cards Cloud like a pick.
-    pub fn edit_item(self: &Arc<Self>, item_id: i64, mut edit: ItemEdit) -> Result<ItemDetail> {
+    pub fn edit_item(
+        self: &Arc<Self>,
+        item_id: i64,
+        mut edit: ItemEdit,
+        by: &Reviewer,
+    ) -> Result<ItemDetail> {
         let item = self.db.item(item_id)?;
         let before = &item.summary;
         if let Some(p) = edit.price {
@@ -235,7 +257,7 @@ impl Runner {
         }
         edit.notes = edit.notes.trim().to_string();
         edit.location = edit.location.trim().to_string();
-        self.db.save_edit(item_id, &edit)?;
+        self.db.save_edit(item_id, &edit, by)?;
         self.emit_item(item_id);
         self.emit_session(&before.session_id);
         self.push_corrections(&before.session_id)?;
@@ -288,8 +310,14 @@ impl Runner {
     }
 
     /// Accepts the cards' matches (or takes that back); returns how many changed.
-    pub fn review_items(&self, session_id: &str, ids: &[i64], reviewed: bool) -> Result<usize> {
-        let n = self.db.set_reviewed(session_id, ids, reviewed)?;
+    pub fn review_items(
+        &self,
+        session_id: &str,
+        ids: &[i64],
+        reviewed: bool,
+        by: &Reviewer,
+    ) -> Result<usize> {
+        let n = self.db.set_reviewed(session_id, ids, reviewed, by)?;
         self.emit_items(session_id, ids);
         Ok(n)
     }
@@ -1324,7 +1352,7 @@ fn with_scanner(options: &SessionOptions, scan: &ScanSettings) -> SessionOptions
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::settings::Settings;
     use image::{Rgb, RgbImage};
@@ -1334,7 +1362,7 @@ mod tests {
     use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
     #[derive(Default)]
-    struct Recorder {
+    pub(crate) struct Recorder {
         sessions: Mutex<Vec<Session>>,
         items: Mutex<Vec<ItemSummary>>,
     }
@@ -1348,7 +1376,7 @@ mod tests {
         }
     }
 
-    async fn mock_ximilar() -> MockServer {
+    pub(crate) async fn mock_ximilar() -> MockServer {
         let server = MockServer::start().await;
         let ok = |body: Value| ResponseTemplate::new(200).set_body_json(body);
         // Auto mode's /analyze tags and identifies the card in one call.
@@ -1646,7 +1674,7 @@ mod tests {
 
         // The user picks the other candidate: the card follows it and Cards Cloud gets a PATCH.
         let first = items[0].id;
-        let picked = runner.pick_match(first, 0).unwrap();
+        let picked = runner.pick_match(first, 0, &Reviewer::User).unwrap();
         assert_eq!(picked.summary.card.card_number, "223");
         assert_eq!(picked.summary.price, Some(80.0));
         assert_eq!(picked.summary.confidence.as_deref(), Some("medium"));
@@ -1665,10 +1693,10 @@ mod tests {
         assert_eq!(patches[0]["price"], 80.0);
         assert_eq!(db.session(&session.id).unwrap().counts.total_price, 92.5);
         // Picking the original back restores it.
-        let back = runner.pick_match(first, 0).unwrap();
+        let back = runner.pick_match(first, 0, &Reviewer::User).unwrap();
         assert_eq!(back.summary.card.card_number, "125");
         assert!(back.summary.reviewed, "a pick is a review");
-        assert!(runner.pick_match(first, 7).is_err());
+        assert!(runner.pick_match(first, 7, &Reviewer::User).is_err());
         let wait_synced = || async {
             let started = Instant::now();
             while !db.item_summary(first).unwrap().synced {
@@ -1690,7 +1718,10 @@ mod tests {
             notes: " crease ".into(),
             location: "Box 1".into(),
         };
-        let edited = runner.edit_item(first, edit.clone()).unwrap().summary;
+        let edited = runner
+            .edit_item(first, edit.clone(), &Reviewer::User)
+            .unwrap()
+            .summary;
         assert!(edited.edited && edited.reviewed && !edited.synced);
         assert_eq!(edited.card.name, "Charizard");
         assert_eq!(
@@ -1712,7 +1743,9 @@ mod tests {
             notes: "no crease".into(),
             ..edit
         };
-        runner.edit_item(first, notes_only).unwrap();
+        runner
+            .edit_item(first, notes_only, &Reviewer::User)
+            .unwrap();
         assert!(db.item_summary(first).unwrap().synced, "nothing to send");
 
         // A deleted card takes its thumbnails along and stays deleted when the folder runs again.

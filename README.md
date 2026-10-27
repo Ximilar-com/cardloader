@@ -81,6 +81,9 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Upside-down cards.** When Ximilar finds a card upside down in its image, the card shows an **Upside down**
   badge; click it and **Turn upright** to turn the picture the app shows and exports upload (and the scan, for
   scanner sessions). Images in your own folders are never changed.
+- **AI agents.** Claude Desktop, Claude Code, Cursor and other AI apps can work with Cardloader over MCP: start a
+  session on a folder, wait for it, and review its cards by looking at their pictures. Cards an agent accepts get an
+  AI mark until you confirm them. See [AI agents](#ai-agents-mcp).
 - **Pause, stop, resume.** You can pause, stop and resume a session, even after the app restarts. Failed cards can
   be retried individually. When the connection drops, the session pauses instead of failing its cards.
 
@@ -211,6 +214,44 @@ graded.
   - *Inventory update*: sets each product's stock at a location (named exactly as in Shopify) to the number of
     copies — for stores with several locations, or to restock products imported before (choose the same grouping).
 
+## AI agents (MCP)
+
+Cardloader includes an [MCP](https://modelcontextprotocol.io) server, so AI apps can drive it. Turn it on in
+**Settings → AI agents**, choose what agents may do, and copy the setup for your app from the same page:
+
+- **Claude Desktop:** Settings → Developer → Edit Config, then add the server and restart Claude:
+
+  ```json
+  { "mcpServers": { "cardloader": { "command": "/Applications/Cardloader.app/Contents/MacOS/cardloader", "args": ["mcp"] } } }
+  ```
+
+- **Claude Code:** `claude mcp add cardloader -- /Applications/Cardloader.app/Contents/MacOS/cardloader mcp`
+- **Other apps** connect over HTTP to the address Settings shows (`http://127.0.0.1:47821/mcp`) with the header
+  `Authorization: Bearer <token>`.
+
+The program path differs on Windows and Linux; Settings shows the right one. `cardloader mcp` passes messages
+to the open app. On macOS it opens the app if it isn't running; elsewhere, open Cardloader first. The server listens
+on 127.0.0.1 only and needs the token.
+
+Then ask, for example:
+
+- “Run a new Cardloader session on ~/Cards/pokemon-en: English Pokémon, fronts only, store it in Ximilar.”
+- “Review the latest Cardloader session: check each card against its picture and accept the right ones.”
+
+Agents can always read sessions, cards and their pictures. Everything else needs a switch in Settings:
+
+| Switch | Lets agents |
+| --- | --- |
+| **Run and review** (on by default) | Create, run, pause and stop sessions, wait for them, accept cards, pick another candidate, edit cards, analyse cards again, sync to Cards Cloud, and export CSV and TCGplayer files |
+| **Delete** | Delete cards and sessions, and Cards Cloud sessions |
+| **Marketplaces** | Create eBay drafts, publish and remove listings, and export Whatnot and Shopify files (these upload pictures) |
+| **Settings** | Change the defaults of new sessions |
+
+No tool reads or changes your API token or other keys, and agents can't start scanner sessions. Everything an agent
+does shows up in the app as it happens. Cards it accepted, picked or edited show a robot icon and its note. Use
+the session's **By AI** filter, or **By AI** on the Cards page, to check them. Press **Confirm** (or **A**) to make a
+review your own.
+
 ## CSV import and export
 
 **Export:** a session's **⋯** menu → **Export CSV…** writes one row per card (UTF-8, comma-separated, readable
@@ -314,6 +355,7 @@ src-tauri/src/
   market/                 TCGplayer, Whatnot and Shopify CSV exports, ImgBB picture hosting
   ximilar/                HTTP client, recognition, grading, Cards Cloud API
   local/                  on-device models: catalog, downloads, llama.cpp engine, prompts, comparison
+  mcp/                    MCP server for AI agents (tools, prompts), and the `cardloader mcp` stdio bridge
   source/                 folder, watch folder, CSV file, scanners (SANE CLI, TWAIN sidecar)
   export.rs               CSV export
   db.rs, migrations/      SQLite session store

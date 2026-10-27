@@ -72,7 +72,7 @@ const CATEGORY_ROOT: &str =
     "Arts & Entertainment > Hobbies & Creative Arts > Collectibles > Collectible Trading Cards";
 const MAX_HANDLE: usize = 120;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FileKind {
     /// New (or updated) products with their variants.
@@ -82,7 +82,7 @@ pub enum FileKind {
     Inventory,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Grouping {
     /// One product per card; its conditions are variants.
@@ -92,7 +92,7 @@ pub enum Grouping {
     PerCard,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Options {
     pub file: FileKind,

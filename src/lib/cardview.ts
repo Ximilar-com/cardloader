@@ -39,6 +39,9 @@ export interface Row {
   accepted?: boolean;
   /** Accepted, picked or edited. */
   reviewed?: boolean;
+  /** An AI agent accepted, picked or edited it (not the user), and what it said. */
+  byAgent?: boolean;
+  reviewNote?: string;
   location?: string;
   /** Cards page: the session it is in, and how many identified cards are the same card. */
   sessionName?: string;
@@ -61,6 +64,9 @@ export interface CardView {
   edited?: boolean;
   toReview?: boolean;
   accepted?: boolean;
+  /** An AI agent accepted, picked or edited it (not the user), and what it said. */
+  byAgent?: boolean;
+  reviewNote?: string;
   /** What the edit form starts from (local cards only). */
   edit?: ItemEdit;
   status?: ItemStatus;
@@ -165,6 +171,11 @@ export function isAccepted(i: Pick<ItemSummary, "reviewed" | "picked" | "edited"
   return i.reviewed && !i.picked && !i.edited;
 }
 
+/** Reviewed by an AI agent over MCP: the user hasn't looked at it themselves. */
+export function byAgent(i: Pick<ItemSummary, "reviewed" | "agentReviewed">): boolean {
+  return i.reviewed && i.agentReviewed;
+}
+
 const CARD_FIELDS: (keyof CardFields)[] = [
   "name",
   "fullName",
@@ -204,6 +215,8 @@ export function rowFromItem(i: ItemSummary): Row {
     toReview: needsReview(i),
     accepted: isAccepted(i),
     reviewed: i.reviewed,
+    byAgent: byAgent(i),
+    reviewNote: i.reviewNote,
     location: i.location,
     ebay: i.ebay,
   };
@@ -246,7 +259,7 @@ export function sortRows(rows: Row[], sort: Sort | null): Row[] {
   });
 }
 
-export type RowFilter = "all" | "review" | "failed" | "corrected";
+export type RowFilter = "all" | "review" | "failed" | "corrected" | "agent";
 
 /** The rows a filter chip and the search box leave. */
 export function filterRows(rows: Row[], filter: RowFilter, query = ""): Row[] {
@@ -255,6 +268,7 @@ export function filterRows(rows: Row[], filter: RowFilter, query = ""): Row[] {
     if (filter === "review" && !r.toReview) return false;
     if (filter === "failed" && r.status !== "error") return false;
     if (filter === "corrected" && !r.picked && !r.edited) return false;
+    if (filter === "agent" && !r.byAgent) return false;
     if (!q) return true;
     return [r.name, r.fullName, r.setName, r.cardNumber, r.location ?? "", String(r.seq)].some((v) =>
       v.toLowerCase().includes(q),
@@ -380,6 +394,8 @@ export function viewFromItem(i: ItemDetail): CardView {
     edited: i.edited,
     toReview: needsReview(i),
     accepted: isAccepted(i),
+    byAgent: byAgent(i),
+    reviewNote: i.reviewNote,
     edit: editOf(i),
     status: i.status,
     error: i.error,

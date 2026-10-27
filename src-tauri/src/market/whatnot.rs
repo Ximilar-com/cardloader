@@ -39,7 +39,7 @@ pub const HEADER: &[&str] = &[
 ];
 const MAX_IMAGES: usize = 8;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ListingType {
     /// The price is the starting bid; the auction runs in a show.
@@ -57,7 +57,7 @@ impl ListingType {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Options {
     pub listing_type: ListingType,

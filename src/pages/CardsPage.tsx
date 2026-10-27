@@ -2,7 +2,7 @@
 // each there are.
 
 import clsx from "clsx";
-import { CircleQuestionMark, Check, ExternalLink, MapPin, Search, Undo2, X } from "lucide-react";
+import { Bot, CircleQuestionMark, Check, ExternalLink, MapPin, Search, Undo2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
@@ -27,6 +27,7 @@ const FILTERS: [CardFilter, string][] = [
   ["review", "To review"],
   ["graded", "Graded"],
   ["duplicates", "Duplicates"],
+  ["agent", "By AI"],
 ];
 
 export default function CardsPage() {
@@ -130,7 +131,7 @@ export default function CardsPage() {
           <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
             <span className="font-medium">{checked.size} selected</span>
             <span className="flex-1" />
-            {rows.some((r) => !r.reviewed && checked.has(r.key)) && (
+            {rows.some((r) => (!r.reviewed || r.byAgent) && checked.has(r.key)) && (
               <button
                 className="btn px-2 py-1 text-xs"
                 onClick={() =>
@@ -171,6 +172,7 @@ export default function CardsPage() {
             {FILTERS.map(([key, label]) => (
               <Chip key={key} on={filter === key} onClick={() => setFilter(key)}>
                 {key === "review" && <CircleQuestionMark className="h-3.5 w-3.5" />}
+                {key === "agent" && <Bot className="h-3.5 w-3.5" />}
                 {label}
               </Chip>
             ))}

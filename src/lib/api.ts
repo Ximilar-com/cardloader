@@ -168,6 +168,10 @@ export interface ItemSummary extends CardFields {
   edited: boolean;
   /** The user accepted the match (or corrected it). */
   reviewed: boolean;
+  /** An AI agent (over MCP) accepted, picked or corrected it, not the user. */
+  agentReviewed: boolean;
+  /** What the agent said about the card when it did. */
+  reviewNote: string;
   notes: string;
   /** Where the card is kept: a box, a binder page. */
   location: string;
@@ -183,7 +187,7 @@ export interface CardRow extends ItemSummary {
   copies: number;
 }
 
-export type CardFilter = "all" | "review" | "graded" | "duplicates";
+export type CardFilter = "all" | "review" | "graded" | "duplicates" | "agent";
 
 /** The cards matching a search: the first ones, and the totals of all of them. */
 export interface CardSearch {
@@ -241,6 +245,35 @@ export interface Settings {
   engine: Engine;
   localModel: string;
   ebay: EbaySettings;
+  mcp: McpSettings;
+}
+
+/** AI agents driving the app over MCP (on this computer only) and what they may do; reading is always allowed. */
+export interface McpSettings {
+  enabled: boolean;
+  port: number;
+  /** Create, run and stop sessions; accept, pick, edit, retry and turn cards; sync; CSV exports. */
+  allowRun: boolean;
+  /** Delete cards and sessions (also in Cards Cloud). */
+  allowDelete: boolean;
+  /** eBay drafts and listings, Whatnot and Shopify exports. */
+  allowMarket: boolean;
+  /** Change the defaults of new sessions. */
+  allowSettings: boolean;
+}
+
+export interface McpStatus {
+  enabled: boolean;
+  running: boolean;
+  /** The server's address, while it runs. */
+  url: string | null;
+  /** What agents send as `Authorization: Bearer …`. */
+  token: string | null;
+  /** This app's program: clients that start a program run it with the argument `mcp`. */
+  command: string;
+  error: string | null;
+  /** When an agent last called a tool. */
+  lastUsed: string | null;
 }
 
 /** The user's eBay developer keyset (the Cert ID is kept apart, like the API token) and what listings use. */
@@ -506,6 +539,9 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<SettingsView>("save_settings", { settings }),
   setToken: (token: string) => invoke<SettingsView>("set_token", { token }),
   testConnection: () => invoke<ConnectionCheck>("test_connection"),
+  mcpStatus: () => invoke<McpStatus>("mcp_status"),
+  /** A new token for agents; the old one stops working. */
+  regenerateMcpToken: () => invoke<McpStatus>("regenerate_mcp_token"),
 
   listSessions: () => invoke<Session[]>("list_sessions"),
   dashboardActivity: (days: number) => invoke<DayCount[]>("dashboard_activity", { days }),
@@ -627,6 +663,11 @@ export const api = {
 
 export function onSessionUpdated(cb: (s: Session) => void): Promise<UnlistenFn> {
   return listen<Session>("session-updated", (e) => cb(e.payload));
+}
+
+/** A session was deleted (by an agent, or elsewhere in the app). */
+export function onSessionDeleted(cb: (id: string) => void): Promise<UnlistenFn> {
+  return listen<string>("session-deleted", (e) => cb(e.payload));
 }
 
 export function onModelUpdated(cb: (m: ModelStatus) => void): Promise<UnlistenFn> {

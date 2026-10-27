@@ -26,7 +26,7 @@ use crate::ximilar::http::{errors_text, ApiError, Failure};
 /// Listings are read back at most this often unless asked.
 const REFRESH_EVERY: chrono::TimeDelta = chrono::TimeDelta::minutes(10);
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct DraftItem {
     pub item_id: i64,

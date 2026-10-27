@@ -54,6 +54,9 @@ src-tauri/src/
   market/         files for other marketplaces: tcgplayer.rs (list of ungraded cards), whatnot.rs (bulk listing
                   CSV), shopify.rs (product CSV with condition variants, inventory CSV), imgbb.rs (public picture
                   hosting, `Hosting`); shares eBay's card typing and titles
+  mcp/            MCP server for AI agents: mod.rs (axum on 127.0.0.1, bearer token, start/stop from Settings,
+                  <config>/mcp.json), tools.rs (tools by permission group, compact JSON, card pictures), prompts.rs,
+                  bridge.rs (`cardloader mcp`: stdio ↔ the running app's HTTP server)
   local/          on-device identification: catalog.rs (pinned model files + SHA-256), download.rs (resumable),
                   llama.rs (llama.cpp engine, feature-gated), identify.rs (prompts, GBNF grammars, parsing),
                   compare.rs (agreement with Ximilar), mod.rs (LocalModels: status, downloads, loaded model)
@@ -69,8 +72,9 @@ src/
                   (virtualized), DetailPanel, NewSessionDialog, SessionActions, Menu, …
 ```
 
-Events from Rust: `session-updated` (Session), `item-updated` (ItemSummary), `model-updated` (ModelStatus, download
-progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch their state from them.
+Events from Rust: `session-updated` (Session), `session-deleted` (id), `item-updated` (ItemSummary), `model-updated`
+(ModelStatus, download progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch their state from
+them.
 
 ## Rules for changes
 
@@ -81,6 +85,10 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   released migration.
 - **Pipeline changes** (runner, sync, sources, Ximilar clients) need a test; extend the wiremock end-to-end tests in
   `runner.rs` (`folder_session_end_to_end`, `csv_import_end_to_end`) rather than calling real APIs.
+- **Operations with logic beyond one `Db`/`Runner` call** (create/delete/import a session, exports, eBay jobs,
+  Cards Cloud) are `AppState` methods in `commands.rs`, so the Tauri command and the MCP tool do the same thing; keep
+  the `#[tauri::command]` fns thin. A new capability agents should have is a tool in `mcp/tools.rs` (`specs()` +
+  `call()`) in the right `Group`; extend `mcp::tests::agent_runs_and_reviews_a_folder`.
 - New Tauri plugin APIs need a permission in `src-tauri/capabilities/default.json`.
 - Match the surrounding style: Rust via `cargo fmt`, frontend via Prettier (`.prettierrc.json`, width 120). Comments
   explain why, not what. User-facing text is plain and short.
@@ -130,6 +138,16 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
   recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
   `edited`; `notes` and `location` stay local (CSV only). Deleted cards' files go into `removed_files`, which
   `known_paths` includes, so running the folder again doesn't bring them back.
+- **AI agents (MCP)**: the server runs inside the app, never in a second process: a second `Db::open` would pause
+  running sessions (`recover_interrupted`). `McpServer::apply` starts/stops it on `save_settings` (`settings.mcp`);
+  what agents may do (`allow_run`, `allow_delete`, `allow_market`, `allow_settings`; reading always) is read on each
+  call, and tools of a disabled group are left out of `tools/list` and refused. Requests need `Authorization: Bearer`
+  with `Secret::McpToken`; hosts are loopback, browser origins only localhost. It answers stateless JSON (no MCP
+  sessions). `cardloader mcp` (checked in `main.rs` before Tauri starts) reads `<config>/mcp.json` (port, pid) and
+  the token, relays stdin lines concurrently, and opens the app only from a macOS bundle (`open`), since starting a
+  second exe would share the database. `wait_for_session` long-polls ≤ 120 s. Agents' reviews go through
+  `Reviewer::Agent { note }`: `items.agent_reviewed` + `review_note`; the user accepting such a card makes it theirs,
+  an agent never takes over a user's accept, a new recognition clears both (`byAgent` in `cardview.ts`).
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail
@@ -199,6 +217,8 @@ progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch th
 
 ## Not verified automatically
 
-Real Ximilar API calls, real eBay calls (use a sandbox keyset), real scanners (SANE/TWAIN), signed release builds, and
-the real local model (CI uses a fake `VisionModel`; see the opt-in tests above). Say so when a change depends on
+Real Ximilar API calls, real eBay calls (use a sandbox keyset), real scanners (SANE/TWAIN), signed release builds,
+the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), and real MCP clients (Claude Desktop,
+Claude Code; the tests speak JSON-RPC over HTTP and through the bridge, and `npx @modelcontextprotocol/inspector`
+can call the tools by hand). Say so when a change depends on
 them, and describe how it was checked.

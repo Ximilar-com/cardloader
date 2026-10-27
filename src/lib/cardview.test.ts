@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  byAgent,
   candidates,
   filterRows,
   matchOf,
@@ -121,6 +122,14 @@ describe("review", () => {
     expect(filterRows(rows, "review").map((r) => r.seq)).toEqual([1]);
     expect(filterRows(rows, "failed").map((r) => r.seq)).toEqual([3]);
     expect(filterRows(rows, "all", "box 2").map((r) => r.seq)).toEqual([2]);
+  });
+
+  it("tells what an AI agent reviewed from what the user did", () => {
+    expect(byAgent({ reviewed: true, agentReviewed: true })).toBe(true);
+    expect(byAgent({ reviewed: true, agentReviewed: false })).toBe(false);
+    expect(byAgent({ reviewed: false, agentReviewed: true })).toBe(false);
+    const rows = [row(1, { reviewed: true, byAgent: true }), row(2, { reviewed: true }), row(3, { toReview: true })];
+    expect(filterRows(rows, "agent").map((r) => r.seq)).toEqual([1]);
   });
 });
 

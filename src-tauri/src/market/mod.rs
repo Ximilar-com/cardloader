@@ -21,7 +21,7 @@ use crate::ximilar::http::ApiError;
 use crate::ximilar::recognition;
 
 /// A card to export, at the price the user set.
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PricedItem {
     pub item_id: i64,
@@ -154,6 +154,8 @@ pub fn test_item(id_type: &str, game: &str) -> ItemDetail {
             picked: false,
             edited: false,
             reviewed: false,
+            agent_reviewed: false,
+            review_note: String::new(),
             notes: String::new(),
             location: String::new(),
             ebay: None,

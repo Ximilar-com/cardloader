@@ -16,6 +16,7 @@ use crate::export;
 use crate::local::compare::{self, CompareReport, CompareRow};
 use crate::local::{self, ModelStatus};
 use crate::market::{self, shopify, tcgplayer, whatnot, Format, PricedItem};
+use crate::mcp::{McpServer, McpStatus};
 use crate::model::*;
 use crate::runner::Runner;
 use crate::settings::{Secret, Settings, SettingsStore, SettingsView};
@@ -24,6 +25,9 @@ use crate::source::{self, scanner};
 use crate::ximilar::cards_cloud::{CardsCloudApi, MAX_SESSION_NAME};
 use tokio_util::sync::CancellationToken;
 
+/// The app's state. Tauri commands and the MCP server both work through it; the operations with more to them
+/// than one `Db` or `Runner` call are its methods, so both do them alike.
+#[derive(Clone)]
 pub struct AppState {
     pub db: Db,
     pub settings: Arc<SettingsStore>,
@@ -39,10 +43,29 @@ pub fn get_settings(state: S) -> SettingsView {
     state.settings.view()
 }
 
+/// Saves the settings; the MCP server starts, stops or moves as they say.
 #[tauri::command]
-pub fn save_settings(state: S, settings: Settings) -> Result<SettingsView> {
+pub async fn save_settings(
+    state: S<'_>,
+    mcp: State<'_, Arc<McpServer>>,
+    settings: Settings,
+) -> Result<SettingsView> {
     state.settings.update(settings)?;
+    mcp.apply().await;
     Ok(state.settings.view())
+}
+
+/// Whether the MCP server runs, where, and the token agents send.
+#[tauri::command]
+pub async fn mcp_status(mcp: State<'_, Arc<McpServer>>) -> Result<McpStatus> {
+    Ok(mcp.status().await)
+}
+
+/// A new token for agents; the old one stops working.
+#[tauri::command]
+pub async fn regenerate_mcp_token(mcp: State<'_, Arc<McpServer>>) -> Result<McpStatus> {
+    mcp.regenerate_token()?;
+    Ok(mcp.status().await)
 }
 
 #[tauri::command]
@@ -63,24 +86,30 @@ pub struct ConnectionCheck {
 
 #[tauri::command]
 pub async fn test_connection(state: S<'_>) -> Result<ConnectionCheck> {
-    let client = state.runner.client()?;
-    let account = client
-        .request(Method::GET, "account/v2/details/", &[], None)
-        .await;
-    let cards_cloud = CardsCloudApi::new(client).ping().await;
-    Ok(ConnectionCheck {
-        ok: account.is_ok(),
-        account: account.as_ref().ok().map(|a| {
-            a["email"]
-                .as_str()
-                .or(a["username"].as_str())
-                .unwrap_or("authenticated")
-                .to_string()
-        }),
-        error: account.err().map(|e| e.to_string()),
-        cards_cloud: cards_cloud.is_ok(),
-        cards_cloud_error: cards_cloud.err().map(|e| e.to_string()),
-    })
+    state.connection().await
+}
+
+impl AppState {
+    pub async fn connection(&self) -> Result<ConnectionCheck> {
+        let client = self.runner.client()?;
+        let account = client
+            .request(Method::GET, "account/v2/details/", &[], None)
+            .await;
+        let cards_cloud = CardsCloudApi::new(client).ping().await;
+        Ok(ConnectionCheck {
+            ok: account.is_ok(),
+            account: account.as_ref().ok().map(|a| {
+                a["email"]
+                    .as_str()
+                    .or(a["username"].as_str())
+                    .unwrap_or("authenticated")
+                    .to_string()
+            }),
+            error: account.err().map(|e| e.to_string()),
+            cards_cloud: cards_cloud.is_ok(),
+            cards_cloud_error: cards_cloud.err().map(|e| e.to_string()),
+        })
+    }
 }
 
 // ---- sessions ------------------------------------------------------------------------------------
@@ -115,45 +144,58 @@ pub fn get_session(state: S, id: String) -> Result<Session> {
 #[tauri::command]
 pub async fn create_session(
     state: S<'_>,
-    mut session: NewSession,
+    session: NewSession,
     remote_session: Option<String>,
 ) -> Result<Session> {
-    if session.name.trim().is_empty() {
-        return Err(Error::msg("the session needs a name"));
-    }
-    if session.source_ref.trim().is_empty() {
-        return Err(Error::msg(match session.source_kind {
-            SourceKind::Scanner => "pick a scanner",
-            _ => "pick a folder",
-        }));
-    }
-    valid_options(&session.options)?;
-    let remote = match remote_session.as_deref().map(str::trim) {
-        None | Some("") => None,
-        Some(text) => {
-            let id = remote_session_id(text).ok_or_else(|| {
-                Error::msg(
-                    "the Cards Cloud session ID looks like 1b4e28ba-2fa1-11d2-883f-0016d3cca427",
-                )
-            })?;
-            match cards_cloud(&state)?.get(&id).await {
-                Ok(_) => Some(id),
-                Err(e) if e.status() == Some(404) => {
-                    return Err(Error::msg(
-                        "no Cards Cloud session has this ID (check the workspace in Settings)",
-                    ))
-                }
-                Err(e) => return Err(e.into()),
-            }
+    state.create_session(session, remote_session).await
+}
+
+impl AppState {
+    pub async fn create_session(
+        &self,
+        mut session: NewSession,
+        remote_session: Option<String>,
+    ) -> Result<Session> {
+        if session.name.trim().is_empty() {
+            return Err(Error::msg("the session needs a name"));
         }
-    };
-    if remote.is_none() {
-        return state.db.create_session(&session);
+        if session.source_ref.trim().is_empty() {
+            return Err(Error::msg(match session.source_kind {
+                SourceKind::Scanner => "pick a scanner",
+                _ => "pick a folder",
+            }));
+        }
+        valid_options(&session.options)?;
+        let remote = match remote_session.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(text) => {
+                let id = remote_session_id(text).ok_or_else(|| {
+                    Error::msg(
+                        "the Cards Cloud session ID looks like 1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+                    )
+                })?;
+                match self.cards_cloud()?.get(&id).await {
+                    Ok(_) => Some(id),
+                    Err(e) if e.status() == Some(404) => {
+                        return Err(Error::msg(
+                            "no Cards Cloud session has this ID (check the workspace in Settings)",
+                        ))
+                    }
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        };
+        if remote.is_some() {
+            session.options.sync_remote = true;
+        }
+        let created = self.db.create_session(&session)?;
+        if remote.is_some() {
+            self.db.set_remote(&created.id, remote.as_deref(), None)?;
+        }
+        // Sessions an agent creates show up in the open app too.
+        self.runner.emit_session(&created.id);
+        self.db.session(&created.id)
     }
-    session.options.sync_remote = true;
-    let created = state.db.create_session(&session)?;
-    state.db.set_remote(&created.id, remote.as_deref(), None)?;
-    state.db.session(&created.id)
 }
 
 /// The session ID in what was pasted: the ID itself or a link to the session.
@@ -236,27 +278,36 @@ pub fn rename_session(state: S, id: String, name: String) -> Result<Session> {
 /// its Cards Cloud copy — first, so a failure there keeps the local session.
 #[tauri::command]
 pub async fn delete_session(state: S<'_>, id: String, delete_remote: Option<bool>) -> Result<()> {
-    let session = state.db.session(&id)?;
-    state.runner.stop(&id)?;
-    state.runner.wait_idle(&id).await;
-    if let (true, Some(remote)) = (delete_remote.unwrap_or(false), &session.remote_session_id) {
-        match cards_cloud(&state)?.delete(remote).await {
-            Err(e) if e.status() != Some(404) => {
-                return Err(Error::msg(format!(
-                    "could not delete the Cards Cloud copy, nothing was deleted: {e}"
-                )))
-            }
-            _ => {
-                state.db.unlink_remote(remote)?;
+    state
+        .delete_session(&id, delete_remote.unwrap_or(false))
+        .await
+}
+
+impl AppState {
+    pub async fn delete_session(&self, id: &str, delete_remote: bool) -> Result<()> {
+        let session = self.db.session(id)?;
+        self.runner.stop(id)?;
+        self.runner.wait_idle(id).await;
+        if let (true, Some(remote)) = (delete_remote, &session.remote_session_id) {
+            match self.cards_cloud()?.delete(remote).await {
+                Err(e) if e.status() != Some(404) => {
+                    return Err(Error::msg(format!(
+                        "could not delete the Cards Cloud copy, nothing was deleted: {e}"
+                    )))
+                }
+                _ => {
+                    self.db.unlink_remote(remote)?;
+                }
             }
         }
+        self.db.delete_session(id)?;
+        let dir = self.runner.session_dir(id);
+        if dir.exists() {
+            std::fs::remove_dir_all(dir)?;
+        }
+        self.runner.emit_session_deleted(id);
+        Ok(())
     }
-    state.db.delete_session(&id)?;
-    let dir = state.runner.session_dir(&id);
-    if dir.exists() {
-        std::fs::remove_dir_all(dir)?;
-    }
-    Ok(())
 }
 
 /// Where a session's images are: the folder, or for scanner sessions the scans cardloader saved.
@@ -290,35 +341,40 @@ pub async fn preview_csv(path: String) -> Result<CsvPreview> {
 /// with `reanalyze`, identified rows with an image) are analysed when the session runs.
 #[tauri::command]
 pub async fn import_csv(state: S<'_>, session: NewSession, reanalyze: bool) -> Result<Session> {
-    valid_name(&session.name)?;
-    if session.source_kind != SourceKind::Csv {
-        return Err(Error::msg("not a CSV session"));
+    state.import_csv(session, reanalyze).await
+}
+
+impl AppState {
+    pub async fn import_csv(&self, session: NewSession, reanalyze: bool) -> Result<Session> {
+        valid_name(&session.name)?;
+        if session.source_kind != SourceKind::Csv {
+            return Err(Error::msg("not a CSV session"));
+        }
+        let path = std::path::PathBuf::from(&session.source_ref);
+        let file = tokio::task::spawn_blocking(move || csv_file::read(&path))
+            .await
+            .map_err(|e| Error::msg(e.to_string()))??;
+        if file.rows.is_empty() {
+            return Err(Error::msg("the CSV has no cards or images"));
+        }
+        let created = self.db.create_session(&session)?;
+        if let Err(e) = self
+            .runner
+            .import_rows(&created.id, file.rows, reanalyze)
+            .await
+        {
+            let _ = self.db.delete_session(&created.id);
+            return Err(e);
+        }
+        let imported = self.db.session(&created.id)?;
+        // Nothing left to analyse: the session is complete as imported.
+        if imported.counts.total > 0 && !reanalyze && !has_images_to_analyse(&session.source_ref)? {
+            self.db
+                .set_session_status(&imported.id, SessionStatus::Completed, None)?;
+        }
+        self.runner.emit_session(&imported.id);
+        self.db.session(&imported.id)
     }
-    let path = std::path::PathBuf::from(&session.source_ref);
-    let file = tokio::task::spawn_blocking(move || csv_file::read(&path))
-        .await
-        .map_err(|e| Error::msg(e.to_string()))??;
-    if file.rows.is_empty() {
-        return Err(Error::msg("the CSV has no cards or images"));
-    }
-    let created = state.db.create_session(&session)?;
-    if let Err(e) = state
-        .runner
-        .import_rows(&created.id, file.rows, reanalyze)
-        .await
-    {
-        let _ = state.db.delete_session(&created.id);
-        return Err(e);
-    }
-    let imported = state.db.session(&created.id)?;
-    // Nothing left to analyse: the session is complete as imported.
-    if imported.counts.total > 0 && !reanalyze && !has_images_to_analyse(&session.source_ref)? {
-        state
-            .db
-            .set_session_status(&imported.id, SessionStatus::Completed, None)?;
-    }
-    state.runner.emit_session(&imported.id);
-    state.db.session(&imported.id)
 }
 
 fn has_images_to_analyse(path: &str) -> Result<bool> {
@@ -358,9 +414,15 @@ pub fn stop_session(state: S, id: String) -> Result<()> {
 /// Re-queues failed items (or the given ones) so the next run analyses them again.
 #[tauri::command]
 pub fn retry_items(state: S, id: String, item_ids: Option<Vec<i64>>) -> Result<usize> {
-    let n = state.db.requeue(&id, item_ids.as_deref())?;
-    state.runner.emit_session(&id);
-    Ok(n)
+    state.retry_items(&id, item_ids.as_deref())
+}
+
+impl AppState {
+    pub fn retry_items(&self, id: &str, item_ids: Option<&[i64]>) -> Result<usize> {
+        let n = self.db.requeue(id, item_ids)?;
+        self.runner.emit_session(id);
+        Ok(n)
+    }
 }
 
 #[tauri::command]
@@ -381,7 +443,7 @@ pub fn get_item(state: S, id: i64) -> Result<ItemDetail> {
 /// The user picked candidate `index` as the card's match.
 #[tauri::command]
 pub fn select_match(state: S, id: i64, index: usize) -> Result<ItemDetail> {
-    state.runner.pick_match(id, index)
+    state.runner.pick_match(id, index, &Reviewer::User)
 }
 
 /// Identified cards of every session for the Cards page (see `Db::search_cards`).
@@ -400,7 +462,7 @@ pub fn search_cards(
 /// Saves what the user typed for a card: its fields and price (once identified), notes and location.
 #[tauri::command]
 pub fn update_item(state: S, id: i64, edit: ItemEdit) -> Result<ItemDetail> {
-    state.runner.edit_item(id, edit)
+    state.runner.edit_item(id, edit, &Reviewer::User)
 }
 
 /// Turns a card's image upright when Ximilar found it upside down (cardloader's copies, never the user's files).
@@ -417,7 +479,9 @@ pub fn review_items(
     item_ids: Vec<i64>,
     reviewed: bool,
 ) -> Result<usize> {
-    state.runner.review_items(&session_id, &item_ids, reviewed)
+    state
+        .runner
+        .review_items(&session_id, &item_ids, reviewed, &Reviewer::User)
 }
 
 /// Sets where the cards are kept (empty clears it).
@@ -730,24 +794,7 @@ pub async fn ebay_create_location(
 /// How each identified card of a session would be listed.
 #[tauri::command]
 pub fn ebay_preview(state: S, session_id: String) -> Result<Vec<ebay_listing::Preview>> {
-    Ok(state
-        .db
-        .items(&session_id)?
-        .iter()
-        .filter(|i| i.status == ItemStatus::Done)
-        .map(ebay_listing::preview)
-        .collect())
-}
-
-fn ebay_ready(state: &S) -> Result<()> {
-    let view = state.settings.view();
-    if !view.ebay_connected {
-        return Err(Error::msg("connect your eBay account in Settings first"));
-    }
-    match ebay_listing::setup_missing(&view.settings.ebay) {
-        Some(missing) => Err(Error::msg(missing)),
-        None => Ok(()),
-    }
+    state.ebay_preview(&session_id)
 }
 
 /// Creates (or updates) unpublished offers for the cards at the given prices.
@@ -758,47 +805,81 @@ pub fn ebay_create_drafts(
     items: Vec<DraftItem>,
     condition: CardCondition,
 ) -> Result<()> {
-    ebay_ready(&state)?;
-    if items.is_empty() {
-        return Err(Error::msg("choose the cards to list"));
-    }
-    if let Some(bad) = items
-        .iter()
-        .find(|i| !(i.price.is_finite() && i.price > 0.0))
-    {
-        let seq = state
-            .db
-            .item_summary(bad.item_id)
-            .map(|i| i.seq)
-            .unwrap_or(0);
-        return Err(Error::msg(format!("card #{seq} needs a price")));
-    }
-    state
-        .runner
-        .ebay_start(&session_id, Job::Drafts { items, condition })?;
-    Ok(())
+    state.ebay_create_drafts(&session_id, items, condition)
 }
 
 /// Publishes the session's drafts (or the given cards'): they go live on eBay.
 #[tauri::command]
 pub fn ebay_publish(state: S, session_id: String, item_ids: Option<Vec<i64>>) -> Result<()> {
-    ebay_ready(&state)?;
+    state.ebay_ready()?;
     state
         .runner
-        .ebay_start(&session_id, Job::Publish(item_ids))?;
-    Ok(())
+        .ebay_start(&session_id, Job::Publish(item_ids))
+        .map(|_| ())
 }
 
 /// Reads the session's listings back from eBay (at most every few minutes unless `force`).
 #[tauri::command]
 pub fn ebay_refresh(state: S, session_id: String, force: bool) -> Result<()> {
-    if !state.settings.view().ebay_connected {
-        return Err(Error::msg("connect your eBay account in Settings first"));
+    state.ebay_refresh(&session_id, force)
+}
+
+impl AppState {
+    pub fn ebay_preview(&self, session_id: &str) -> Result<Vec<ebay_listing::Preview>> {
+        Ok(self
+            .db
+            .items(session_id)?
+            .iter()
+            .filter(|i| i.status == ItemStatus::Done)
+            .map(ebay_listing::preview)
+            .collect())
     }
-    state
-        .runner
-        .ebay_start(&session_id, Job::Refresh { force })?;
-    Ok(())
+
+    pub fn ebay_ready(&self) -> Result<()> {
+        let view = self.settings.view();
+        if !view.ebay_connected {
+            return Err(Error::msg("connect your eBay account in Settings first"));
+        }
+        match ebay_listing::setup_missing(&view.settings.ebay) {
+            Some(missing) => Err(Error::msg(missing)),
+            None => Ok(()),
+        }
+    }
+
+    pub fn ebay_create_drafts(
+        &self,
+        session_id: &str,
+        items: Vec<DraftItem>,
+        condition: CardCondition,
+    ) -> Result<()> {
+        self.ebay_ready()?;
+        if items.is_empty() {
+            return Err(Error::msg("choose the cards to list"));
+        }
+        if let Some(bad) = items
+            .iter()
+            .find(|i| !(i.price.is_finite() && i.price > 0.0))
+        {
+            let seq = self
+                .db
+                .item_summary(bad.item_id)
+                .map(|i| i.seq)
+                .unwrap_or(0);
+            return Err(Error::msg(format!("card #{seq} needs a price")));
+        }
+        self.runner
+            .ebay_start(session_id, Job::Drafts { items, condition })
+            .map(|_| ())
+    }
+
+    pub fn ebay_refresh(&self, session_id: &str, force: bool) -> Result<()> {
+        if !self.settings.view().ebay_connected {
+            return Err(Error::msg("connect your eBay account in Settings first"));
+        }
+        self.runner
+            .ebay_start(session_id, Job::Refresh { force })
+            .map(|_| ())
+    }
 }
 
 /// Takes the cards off eBay: drafts are deleted, live listings end.
@@ -855,19 +936,6 @@ pub fn export_preview(
         .collect())
 }
 
-/// The session's cards among `items`, in session order.
-fn session_cards(state: &S, session_id: &str, items: &[PricedItem]) -> Result<Vec<PricedItem>> {
-    if items.is_empty() {
-        return Err(Error::msg("choose the cards to export"));
-    }
-    Ok(state
-        .db
-        .items(session_id)?
-        .iter()
-        .filter_map(|i| items.iter().find(|p| p.item_id == i.id).copied())
-        .collect())
-}
-
 /// Writes the TCGplayer list of the chosen ungraded cards.
 #[tauri::command]
 pub fn export_tcgplayer(
@@ -877,13 +945,20 @@ pub fn export_tcgplayer(
     condition: CardCondition,
     path: String,
 ) -> Result<tcgplayer::Export> {
-    let cards = session_cards(&state, &session_id, &items)?
-        .into_iter()
-        .map(|p| Ok((state.db.item(p.item_id)?, p)))
-        .collect::<Result<Vec<_>>>()?;
-    let (text, export) = tcgplayer::csv(&cards, condition);
-    market::write(std::path::Path::new(&path), &text, true)?;
-    Ok(export)
+    state.export_tcgplayer(&session_id, &items, condition, &path)
+}
+
+/// `export-progress` events for the UI's progress bar.
+fn export_progress(app: &AppHandle, session_id: &str) -> impl Fn(usize, usize) {
+    use tauri::Emitter;
+    let app = app.clone();
+    let session_id = session_id.to_string();
+    move |done, total| {
+        let _ = app.emit(
+            "export-progress",
+            serde_json::json!({"sessionId": session_id, "done": done, "total": total}),
+        );
+    }
 }
 
 /// Writes Whatnot's bulk listing CSV, uploading the pictures first; `export-progress` events tell how far.
@@ -896,27 +971,10 @@ pub async fn export_whatnot(
     options: whatnot::Options,
     path: String,
 ) -> Result<whatnot::Export> {
-    use tauri::Emitter;
-    let cards = session_cards(&state, &session_id, &items)?;
-    let cancel = CancellationToken::new();
+    let progress = export_progress(&app, &session_id);
     state
-        .runner
-        .exports
-        .lock()
-        .unwrap()
-        .insert(session_id.clone(), cancel.clone());
-    let result = whatnot::export(&state.runner, &cards, &options, &cancel, |done, total| {
-        let _ = app.emit(
-            "export-progress",
-            serde_json::json!({"sessionId": session_id, "done": done, "total": total}),
-        );
-    })
-    .await;
-    state.runner.exports.lock().unwrap().remove(&session_id);
-    let (text, export) = result?;
-    // No byte-order mark: Whatnot would read it as part of the first header.
-    market::write(std::path::Path::new(&path), &text, false)?;
-    Ok(export)
+        .export_whatnot(&session_id, &items, &options, &path, progress)
+        .await
 }
 
 /// Writes Shopify's product CSV (uploading the pictures first) or its inventory CSV; `export-progress` events tell
@@ -930,27 +988,89 @@ pub async fn export_shopify(
     options: shopify::Options,
     path: String,
 ) -> Result<shopify::Export> {
-    use tauri::Emitter;
-    let cards = session_cards(&state, &session_id, &items)?;
-    let cancel = CancellationToken::new();
+    let progress = export_progress(&app, &session_id);
     state
-        .runner
-        .exports
-        .lock()
-        .unwrap()
-        .insert(session_id.clone(), cancel.clone());
-    let result = shopify::export(&state.runner, &cards, &options, &cancel, |done, total| {
-        let _ = app.emit(
-            "export-progress",
-            serde_json::json!({"sessionId": session_id, "done": done, "total": total}),
-        );
-    })
-    .await;
-    state.runner.exports.lock().unwrap().remove(&session_id);
-    let (text, export) = result?;
-    // UTF-8 without a byte-order mark, as Shopify's importer expects.
-    market::write(std::path::Path::new(&path), &text, false)?;
-    Ok(export)
+        .export_shopify(&session_id, &items, &options, &path, progress)
+        .await
+}
+
+impl AppState {
+    /// The session's cards among `items`, in session order.
+    fn session_cards(&self, session_id: &str, items: &[PricedItem]) -> Result<Vec<PricedItem>> {
+        if items.is_empty() {
+            return Err(Error::msg("choose the cards to export"));
+        }
+        Ok(self
+            .db
+            .items(session_id)?
+            .iter()
+            .filter_map(|i| items.iter().find(|p| p.item_id == i.id).copied())
+            .collect())
+    }
+
+    pub fn export_tcgplayer(
+        &self,
+        session_id: &str,
+        items: &[PricedItem],
+        condition: CardCondition,
+        path: &str,
+    ) -> Result<tcgplayer::Export> {
+        let cards = self
+            .session_cards(session_id, items)?
+            .into_iter()
+            .map(|p| Ok((self.db.item(p.item_id)?, p)))
+            .collect::<Result<Vec<_>>>()?;
+        let (text, export) = tcgplayer::csv(&cards, condition);
+        market::write(std::path::Path::new(path), &text, true)?;
+        Ok(export)
+    }
+
+    pub async fn export_whatnot(
+        &self,
+        session_id: &str,
+        items: &[PricedItem],
+        options: &whatnot::Options,
+        path: &str,
+        progress: impl Fn(usize, usize),
+    ) -> Result<whatnot::Export> {
+        let cards = self.session_cards(session_id, items)?;
+        let cancel = self.export_started(session_id);
+        let result = whatnot::export(&self.runner, &cards, options, &cancel, progress).await;
+        self.runner.exports.lock().unwrap().remove(session_id);
+        let (text, export) = result?;
+        // No byte-order mark: Whatnot would read it as part of the first header.
+        market::write(std::path::Path::new(path), &text, false)?;
+        Ok(export)
+    }
+
+    pub async fn export_shopify(
+        &self,
+        session_id: &str,
+        items: &[PricedItem],
+        options: &shopify::Options,
+        path: &str,
+        progress: impl Fn(usize, usize),
+    ) -> Result<shopify::Export> {
+        let cards = self.session_cards(session_id, items)?;
+        let cancel = self.export_started(session_id);
+        let result = shopify::export(&self.runner, &cards, options, &cancel, progress).await;
+        self.runner.exports.lock().unwrap().remove(session_id);
+        let (text, export) = result?;
+        // UTF-8 without a byte-order mark, as Shopify's importer expects.
+        market::write(std::path::Path::new(path), &text, false)?;
+        Ok(export)
+    }
+
+    /// A running export of the session, which `cancel_export` can stop.
+    fn export_started(&self, session_id: &str) -> CancellationToken {
+        let cancel = CancellationToken::new();
+        self.runner
+            .exports
+            .lock()
+            .unwrap()
+            .insert(session_id.to_string(), cancel.clone());
+        cancel
+    }
 }
 
 #[tauri::command]
@@ -962,8 +1082,30 @@ pub fn cancel_export(state: S, session_id: String) {
 
 // ---- remote (Cards Cloud) ----------------------------------------------------------------------
 
-fn cards_cloud(state: &S) -> Result<CardsCloudApi> {
-    Ok(CardsCloudApi::new(state.runner.client()?))
+impl AppState {
+    pub fn cards_cloud(&self) -> Result<CardsCloudApi> {
+        Ok(CardsCloudApi::new(self.runner.client()?))
+    }
+
+    /// Deletes a session in Cards Cloud; local sessions linked to it keep their cards and forget the link.
+    pub async fn delete_remote_session(&self, id: &str) -> Result<()> {
+        match self.cards_cloud()?.delete(id).await {
+            Err(e) if e.status() != Some(404) => return Err(e.into()),
+            _ => {}
+        }
+        for local in self.db.unlink_remote(id)? {
+            self.runner.emit_session(&local);
+        }
+        Ok(())
+    }
+
+    /// A Cards Cloud session with its summary.
+    pub async fn remote_session(&self, id: &str) -> Result<Value> {
+        let api = self.cards_cloud()?;
+        let session = api.get(id).await?;
+        let summary = api.summary(id).await.unwrap_or(Value::Null);
+        Ok(serde_json::json!({"session": session, "summary": summary}))
+    }
 }
 
 #[tauri::command]
@@ -972,7 +1114,8 @@ pub async fn list_remote_sessions(
     page: u32,
     search: Option<String>,
 ) -> Result<Value> {
-    Ok(cards_cloud(&state)?
+    Ok(state
+        .cards_cloud()?
         .list_sessions(page.max(1), search.as_deref().unwrap_or_default())
         .await?)
 }
@@ -980,33 +1123,24 @@ pub async fn list_remote_sessions(
 #[tauri::command]
 pub async fn rename_remote_session(state: S<'_>, id: String, name: String) -> Result<Value> {
     let name = valid_name(&name)?;
-    Ok(cards_cloud(&state)?.rename(&id, name).await?)
+    Ok(state.cards_cloud()?.rename(&id, name).await?)
 }
 
 /// Deletes a session in Cards Cloud; local sessions linked to it keep their cards and forget the link.
 #[tauri::command]
 pub async fn delete_remote_session(state: S<'_>, id: String) -> Result<()> {
-    match cards_cloud(&state)?.delete(&id).await {
-        Err(e) if e.status() != Some(404) => return Err(e.into()),
-        _ => {}
-    }
-    for local in state.db.unlink_remote(&id)? {
-        state.runner.emit_session(&local);
-    }
-    Ok(())
+    state.delete_remote_session(&id).await
 }
 
 #[tauri::command]
 pub async fn get_remote_session(state: S<'_>, id: String) -> Result<Value> {
-    let api = cards_cloud(&state)?;
-    let session = api.get(&id).await?;
-    let summary = api.summary(&id).await.unwrap_or(Value::Null);
-    Ok(serde_json::json!({"session": session, "summary": summary}))
+    state.remote_session(&id).await
 }
 
 #[tauri::command]
 pub async fn list_remote_items(state: S<'_>, session_id: String, page: u32) -> Result<Value> {
-    Ok(cards_cloud(&state)?
+    Ok(state
+        .cards_cloud()?
         .list_identifications(&session_id, page.max(1))
         .await?)
 }

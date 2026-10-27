@@ -582,6 +582,8 @@ mod tests {
             picked: false,
             edited: false,
             reviewed: false,
+            agent_reviewed: false,
+            review_note: String::new(),
             notes: String::new(),
             location: String::new(),
             ebay: None,

@@ -442,6 +442,82 @@ pub fn parse(endpoint: Endpoint, resp: &Value) -> Recognition {
     out
 }
 
+/// Another possible match after the best one, as `cardview::candidates` lists them.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Candidate {
+    /// Index into the response's `alternatives` (what `select_alternative` takes).
+    pub index: usize,
+    pub name: String,
+    pub full_name: String,
+    pub set_name: String,
+    pub set_code: String,
+    pub card_number: String,
+    pub year: String,
+    pub distance: Option<f64>,
+    pub confidence: Option<&'static str>,
+    pub price: Option<f64>,
+}
+
+/// The card's other candidates; `distances[0]` belongs to the best match, so alternative `i` has `distances[i + 1]`.
+pub fn candidates(resp: &Value) -> Vec<Candidate> {
+    let ident = ident_pointer(resp)
+        .and_then(|p| resp.pointer(&p))
+        .unwrap_or(&Value::Null);
+    let Some(alternatives) = ident["alternatives"].as_array() else {
+        return Vec::new();
+    };
+    alternatives
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| a.is_object())
+        .map(|(index, a)| {
+            let s = |keys: &[&str]| {
+                first_non_empty(&keys.iter().map(|k| text(&a[*k])).collect::<Vec<_>>())
+            };
+            let full_name = s(&["full_name"]);
+            let distance = a["distance"]
+                .as_f64()
+                .or(ident["distances"][index + 1].as_f64())
+                .filter(|d| d.is_finite());
+            Candidate {
+                index,
+                name: first_non_empty(&[
+                    s(&["name", "title"]),
+                    full_name.clone(),
+                    "Unknown".into(),
+                ]),
+                full_name,
+                set_name: s(&["set", "set_name", "publisher"]),
+                set_code: s(&["set_code"]),
+                card_number: s(&["card_number", "card_no", "number"]),
+                year: s(&["year", "date"]),
+                distance,
+                confidence: distance.map(tier),
+                price: representative_price(
+                    a["price_stats"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or_default(),
+                ),
+            }
+        })
+        .collect()
+}
+
+/// The `Rotation` tag of the front's card when Ximilar found it turned (anything but `rotation_ok`), as
+/// `cardview::rotationOf` reads it.
+pub fn rotation(resp: &Value) -> Option<String> {
+    let all = objects(&resp["records"][0]);
+    let sorted = largest_first(all.clone());
+    let card = sorted
+        .iter()
+        .find(|o| o["name"] != "Slab Label" && o["_identification"].is_object())
+        .or_else(|| all.iter().find(|o| o["_identification"].is_object()))
+        .or_else(|| sorted.iter().find(|o| o["name"] != "Slab Label"))?;
+    top_name(&card["_tags"]["Rotation"]).filter(|name| name != "rotation_ok")
+}
+
 /// The front's slab label, read as `cardview::matchOf` reads it: the company and grade its tags name, unless
 /// the label's identification says them.
 /// The user turned the front's image upright: its card's `Rotation` tag (if any, and not on a slab label)
@@ -763,6 +839,29 @@ fn first_non_empty(values: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_rotation_and_candidates_as_the_ui_does() {
+        let mut resp = json!({"records": [{"_objects": [
+            {"name": "Slab Label", "bound_box": [0, 0, 400, 100], "_tags": {"Rotation": [{"name": "rotated_left"}]}},
+            {"name": "Card", "bound_box": [0, 100, 300, 500], "_tags": {"Rotation": [{"name": "rotated_upside_down"}]},
+             "_identification": {"best_match": {"name": "A"}, "distances": [0.2, null, 0.45],
+                "alternatives": [{"title": "B", "publisher": "Marvel", "number": 7}, "not a card", {"full_name": "C 3"}]}}]}]});
+        assert_eq!(rotation(&resp).as_deref(), Some("rotated_upside_down"));
+        let found = candidates(&resp);
+        assert_eq!(found.len(), 2);
+        assert_eq!((found[0].index, found[0].name.as_str()), (0, "B"));
+        assert_eq!(
+            (found[0].set_name.as_str(), found[0].card_number.as_str()),
+            ("Marvel", "7")
+        );
+        assert_eq!((found[0].distance, found[0].confidence), (None, None));
+        // Indexes stay those of `alternatives`, which `select_alternative` takes.
+        assert_eq!((found[1].index, found[1].name.as_str()), (2, "C 3"));
+        assert_eq!(found[1].confidence, None);
+        mark_upright(&mut resp);
+        assert_eq!(rotation(&resp), None);
+    }
 
     fn tcg_response() -> Value {
         json!({"records": [{"_width": 389, "_height": 659, "Category": "Card/Trading Card Game",

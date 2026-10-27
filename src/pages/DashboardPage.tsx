@@ -18,7 +18,15 @@ import { ErrorNote } from "../components/Modal";
 import NewSessionDialog, { GAME_LABELS } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import StatusChip from "../components/StatusChip";
-import { api, errorText, onSessionUpdated, type Session, type SettingsView, type SourceKind } from "../lib/api";
+import {
+  api,
+  errorText,
+  onSessionDeleted,
+  onSessionUpdated,
+  type Session,
+  type SettingsView,
+  type SourceKind,
+} from "../lib/api";
 import { GRADING_LABELS, ID_MODE_LABELS, SOURCE_LABELS, dateTime, price } from "../lib/format";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
@@ -58,8 +66,17 @@ export default function DashboardPage() {
       })
       .catch(fail);
     api.listSessions().then(setSessions).catch(fail);
-    const un = onSessionUpdated((s) => setSessions((list) => list && list.map((x) => (x.id === s.id ? s : x))));
-    return () => void un.then((f) => f());
+    // Sessions an agent creates or deletes come and go too.
+    const un = onSessionUpdated((s) =>
+      setSessions(
+        (list) => list && (list.some((x) => x.id === s.id) ? list.map((x) => (x.id === s.id ? s : x)) : [s, ...list]),
+      ),
+    );
+    const unDeleted = onSessionDeleted((id) => setSessions((list) => list && list.filter((x) => x.id !== id)));
+    return () => {
+      void un.then((f) => f());
+      void unDeleted.then((f) => f());
+    };
   }, []);
 
   const resume = (id: string) => api.runSession(id).catch((e) => setError(errorText(e)));

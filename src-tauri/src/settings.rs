@@ -26,6 +26,8 @@ pub enum Secret {
     EbayRefresh,
     /// The ImgBB API key: pictures for exports that link to them (Whatnot).
     ImgbbKey,
+    /// What AI agents send to the MCP server (`Authorization: Bearer …`).
+    McpToken,
 }
 
 impl Secret {
@@ -35,6 +37,7 @@ impl Secret {
             Secret::EbayCert => "ebay-cert-id",
             Secret::EbayRefresh => "ebay-refresh-token",
             Secret::ImgbbKey => "imgbb-api-key",
+            Secret::McpToken => "mcp-token",
         }
     }
 }
@@ -71,6 +74,8 @@ pub struct Settings {
     pub engine: Engine,
     pub local_model: String,
     pub ebay: EbaySettings,
+    /// AI agents driving the app over MCP.
+    pub mcp: McpSettings,
     /// Replaces ImgBB's API host (tests); empty = ImgBB.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub image_host_base: String,
@@ -121,6 +126,37 @@ impl Default for EbaySettings {
     }
 }
 
+/// The MCP server on localhost and what agents may do through it; reading is always allowed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct McpSettings {
+    pub enabled: bool,
+    pub port: u16,
+    /// Create, run and stop sessions; accept, pick, edit, retry and turn cards; sync; CSV exports.
+    pub allow_run: bool,
+    /// Delete cards and sessions (also in Cards Cloud).
+    pub allow_delete: bool,
+    /// eBay drafts and listings, Whatnot and Shopify exports (which upload pictures).
+    pub allow_market: bool,
+    /// Change the defaults of new sessions.
+    pub allow_settings: bool,
+}
+
+pub const DEFAULT_MCP_PORT: u16 = 47821;
+
+impl Default for McpSettings {
+    fn default() -> Self {
+        McpSettings {
+            enabled: false,
+            port: DEFAULT_MCP_PORT,
+            allow_run: true,
+            allow_delete: false,
+            allow_market: false,
+            allow_settings: false,
+        }
+    }
+}
+
 impl EbaySettings {
     /// The keyset or account the connection belongs to changed: the eBay login no longer applies.
     fn other_account(&self, other: &EbaySettings) -> bool {
@@ -151,6 +187,7 @@ impl Default for Settings {
             engine: Engine::Ximilar,
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
             ebay: EbaySettings::default(),
+            mcp: McpSettings::default(),
             image_host_base: String::new(),
             fallback_token: None,
             fallback_secrets: BTreeMap::new(),

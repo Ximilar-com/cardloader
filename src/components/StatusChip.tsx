@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import {
   AlertCircle,
+  Bot,
   CircleCheck,
   CircleQuestionMark,
   CheckCircle2,
@@ -124,6 +125,27 @@ export function AcceptedMark() {
   return (
     <span className="shrink-0" title="You accepted this match" aria-label="Accepted">
       <CircleCheck className="h-[18px] w-[18px] text-emerald-600 dark:text-emerald-400" strokeWidth={2.5} />
+    </span>
+  );
+}
+
+/** An AI agent accepted, picked or corrected the card (over MCP): the user may want to check it. */
+export function AgentMark({ note }: { note?: string }) {
+  const title = `An AI agent reviewed this card${note ? `: ${note}` : ""}`;
+  return (
+    <span className="shrink-0" title={title} aria-label="Reviewed by AI">
+      <Bot className="h-[18px] w-[18px] text-indigo-500 dark:text-indigo-400" strokeWidth={2.25} />
+    </span>
+  );
+}
+
+export function AgentChip({ note }: { note?: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+      title={`An AI agent reviewed this card${note ? `: ${note}` : ""}`}
+    >
+      <Bot className="h-3 w-3" /> AI
     </span>
   );
 }

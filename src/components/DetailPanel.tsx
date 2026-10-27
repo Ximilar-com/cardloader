@@ -1,6 +1,7 @@
 import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
 import {
+  Bot,
   CircleCheck,
   CircleQuestionMark,
   Check,
@@ -20,7 +21,7 @@ import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, grade, price } from "../lib/format";
 import { ErrorNote } from "./Modal";
-import StatusChip, { AcceptedChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
+import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
 export default function DetailPanel({
   view,
@@ -75,6 +76,8 @@ export default function DetailPanel({
         return;
       const candidate = /^[1-9]$/.test(e.key) ? view.alternatives[Number(e.key) - 1] : undefined;
       if (e.key === "Escape") onClose();
+      // A card an agent reviewed: A makes the review the user's own.
+      else if (e.key === "a" && view.byAgent && onAccept) onAccept();
       else if (e.key === "a" && view.accepted && onUnaccept) onUnaccept();
       else if (e.key === "a" && !view.accepted && onAccept) onAccept();
       else if (e.key === "e" && onEdit && view.edit) setEditing(true);
@@ -98,7 +101,7 @@ export default function DetailPanel({
             <ConfidenceChip value={view.confidence} />
             {view.picked && !view.edited && <PickedChip />}
             {view.edited && <EditedChip />}
-            {view.accepted && <AcceptedChip />}
+            {view.byAgent ? <AgentChip note={view.reviewNote} /> : view.accepted && <AcceptedChip />}
             {view.toReview && <ReviewChip />}
             {view.rotation && (
               <button
@@ -176,15 +179,43 @@ export default function DetailPanel({
           </button>
         </div>
       )}
-      {(view.toReview && onAccept) || position ? (
+      {(view.toReview && onAccept) || view.byAgent || position ? (
         <div
           className={clsx(
             "flex items-center gap-2 border-b border-slate-200 px-4 py-2 text-xs dark:border-slate-800",
             view.toReview && onAccept && "bg-orange-50/70 dark:bg-orange-950/20",
-            view.accepted && "bg-emerald-50/60 dark:bg-emerald-950/20",
+            view.byAgent && "bg-indigo-50/70 dark:bg-indigo-950/20",
+            view.accepted && !view.byAgent && "bg-emerald-50/60 dark:bg-emerald-950/20",
           )}
         >
-          {view.toReview && onAccept ? (
+          {view.byAgent ? (
+            <>
+              <span className="selectable flex flex-1 items-start gap-1.5 text-indigo-800 dark:text-indigo-300">
+                <Bot className="h-4 w-4 shrink-0 text-indigo-500" strokeWidth={2.25} />
+                <span>
+                  {view.picked || view.edited ? "An AI agent corrected this card" : "An AI agent accepted this match"}
+                  {view.reviewNote && (
+                    <span className="text-indigo-700/80 dark:text-indigo-300/80">: {view.reviewNote}</span>
+                  )}
+                  {position && ` · ${position}`}
+                </span>
+              </span>
+              {onAccept && (
+                <button
+                  className="btn btn-primary px-2 py-0.5 text-xs"
+                  onClick={onAccept}
+                  title="You checked it: the review becomes yours (A)"
+                >
+                  <Check className="h-3 w-3" /> Confirm
+                </button>
+              )}
+              {onUnaccept && view.accepted && (
+                <button className="btn px-2 py-0.5 text-xs" onClick={onUnaccept} title="Take the accept back">
+                  Unaccept
+                </button>
+              )}
+            </>
+          ) : view.toReview && onAccept ? (
             <>
               <span className="flex flex-1 items-center gap-1.5 text-orange-800 dark:text-orange-300">
                 <CircleQuestionMark className="h-4 w-4 shrink-0 text-orange-500" strokeWidth={2.5} />

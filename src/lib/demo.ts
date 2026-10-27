@@ -91,12 +91,36 @@ const settings: SettingsView = {
     locationKey: "home",
     username: "demo-seller",
   },
+  mcp: {
+    enabled: true,
+    port: 47821,
+    allowRun: true,
+    allowDelete: false,
+    allowMarket: false,
+    allowSettings: false,
+  },
   tokenSet: true,
   tokenStorage: "keychain",
   ebayCertSet: true,
   ebayConnected: true,
   imgbbKeySet: true,
 };
+
+let mcpToken = "cl_demo0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+
+/** What `mcp_status` says: the server runs while agents are turned on. */
+function mcpStatus() {
+  const { enabled, port } = settings.mcp;
+  return {
+    enabled,
+    running: enabled,
+    url: enabled ? `http://127.0.0.1:${port}/mcp` : null,
+    token: enabled ? mcpToken : null,
+    command: "/Applications/Cardloader.app/Contents/MacOS/cardloader",
+    error: null,
+    lastUsed: enabled ? new Date(Date.now() - 4 * 60_000).toISOString() : null,
+  };
+}
 
 const ebaySetup = {
   username: "demo-seller",
@@ -185,7 +209,10 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     synced: true,
     picked: false,
     edited: false,
-    reviewed: false,
+    // A few cards an agent accepted over MCP.
+    reviewed: seq % 5 === 2,
+    agentReviewed: seq % 5 === 2,
+    reviewNote: seq % 5 === 2 ? `Name and #${cardNumber} match the picture` : "",
     notes: "",
     location: seq <= 6 ? "Box 1" : "",
     updatedAt: now(),
@@ -344,6 +371,8 @@ function selectMatch(id: number, index: number): ItemDetail {
     picked: true,
     edited: false,
     reviewed: true,
+    agentReviewed: false,
+    reviewNote: "",
     updatedAt: now(),
   });
   void emit("item-updated", summary(item));
@@ -371,7 +400,9 @@ function searchCards(query: string, filter: string, limit: number) {
           ? c.grade != null || c.slab != null
           : filter === "duplicates"
             ? c.copies > 1
-            : true,
+            : filter === "agent"
+              ? c.reviewed && c.agentReviewed
+              : true,
     )
     .filter(
       (c) =>
@@ -394,6 +425,8 @@ function updateItem(id: number, edit: ItemEdit): ItemDetail {
     notes: notes.trim(),
     location: location.trim(),
     reviewed: true,
+    agentReviewed: false,
+    reviewNote: "",
     updatedAt: now(),
   });
   void emit("item-updated", summary(item));
@@ -937,6 +970,11 @@ export function installDemo() {
           return `https://sandbox.ebay.com/itm/${a.listingId}`;
         case "dashboard_activity":
           return activity(a.days);
+        case "mcp_status":
+          return mcpStatus();
+        case "regenerate_mcp_token":
+          mcpToken = `cl_demo${crypto.randomUUID().replaceAll("-", "")}`;
+          return mcpStatus();
         case "test_connection":
           return { ok: true, account: "demo@example.com", error: null, cardsCloud: true, cardsCloudError: null };
         case "list_sessions":
@@ -961,6 +999,7 @@ export function installDemo() {
           };
           sessions.unshift(s);
           items.set(s.id, []);
+          void emit("session-updated", session(s.id));
           return s;
         }
         case "rename_session":
@@ -978,6 +1017,7 @@ export function installDemo() {
           const i = sessions.findIndex((x) => x.id === a.id);
           if (i >= 0) sessions.splice(i, 1);
           items.delete(a.id);
+          void emit("session-deleted", a.id);
           return null;
         }
         case "preview_csv":
@@ -1079,7 +1119,15 @@ export function installDemo() {
         case "update_item":
           return updateItem(a.id, a.edit);
         case "review_items":
-          return changeItems(a.sessionId, a.itemIds, (i) => (i.reviewed = a.reviewed));
+          // As in Rust: the user accepting a card an agent accepted makes it theirs.
+          return changeItems(
+            a.sessionId,
+            (a.itemIds as number[]).filter((id) => {
+              const i = items.get(a.sessionId)?.find((x) => x.id === id);
+              return i && (a.reviewed ? !i.reviewed || i.agentReviewed : i.reviewed);
+            }),
+            (i) => Object.assign(i, { reviewed: a.reviewed, agentReviewed: false, reviewNote: "" }),
+          );
         case "locate_items":
           return changeItems(a.sessionId, a.itemIds, (i) => (i.location = String(a.location).trim()));
         case "delete_items": {
