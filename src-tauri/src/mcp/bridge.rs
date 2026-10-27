@@ -146,6 +146,14 @@ impl Bridge {
                 Err(e) => return Err(Error::msg(format!("Cardloader didn't answer: {e}"))),
             };
             let status = response.status();
+            // The server was stopping (agents turned off, the app quitting or moving) and dropped the request: look
+            // for it again, once. Only when it is gone from mcp.json, so a call that failed in a running app isn't
+            // sent twice.
+            if status.is_server_error() && !retried && !self.serves(&target).await {
+                retried = true;
+                *self.target.lock().await = None;
+                continue;
+            }
             // A new token: read it again, once.
             if status == StatusCode::UNAUTHORIZED && !retried {
                 retried = true;
@@ -210,6 +218,13 @@ impl Bridge {
             .await
             .ok()
             .map(|_| endpoint)
+    }
+
+    /// Whether the app still serves agents where `target` points.
+    async fn serves(&self, target: &Target) -> bool {
+        self.reachable()
+            .await
+            .is_some_and(|e| e.url() == target.url)
     }
 
     async fn launch(&self) -> Result<Endpoint> {
