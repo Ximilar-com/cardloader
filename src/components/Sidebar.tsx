@@ -1,9 +1,10 @@
 import clsx from "clsx";
-import { LayoutDashboard, Layers, Settings, WalletCards } from "lucide-react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Download, LayoutDashboard, Layers, Settings, WalletCards } from "lucide-react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import ximilarLogo from "../assets/ximilar.svg";
 import { useT, type Key } from "../i18n";
+import { useUpdate } from "../lib/update";
 import { isUnsaved, useUnsavedSettings } from "../pages/SettingsPage";
 import Logo from "./Logo";
 
@@ -17,6 +18,8 @@ const NAV = [
 export default function Sidebar() {
   const { pathname } = useLocation();
   const unsaved = useUnsavedSettings((s) => isUnsaved(s.saved, s.draft));
+  const update = useUpdate((s) => (s.status === "available" ? s.info?.version : null));
+  const navigate = useNavigate();
   const t = useT();
   return (
     <nav className="flex w-[76px] shrink-0 flex-col items-center bg-rail py-3 text-white">
@@ -53,6 +56,17 @@ export default function Sidebar() {
           </NavLink>
         ))}
       </div>
+      {/* In Settings the About tab carries the dot instead. */}
+      {update && !pathname.startsWith("/settings") && (
+        <button
+          className="mb-2 flex w-16 flex-col items-center gap-1 rounded-lg bg-emerald-600/90 py-2 text-[11px] font-medium text-white hover:bg-emerald-600"
+          title={t("sidebar.updateAvailable", { version: update })}
+          onClick={() => navigate("/settings", { state: { section: "about" } })}
+        >
+          <Download className="h-5 w-5" strokeWidth={1.8} />
+          {t("sidebar.update")}
+        </button>
+      )}
       <a
         href="https://www.ximilar.com"
         onClick={(e) => {

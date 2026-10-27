@@ -691,6 +691,16 @@ function downloadDemo(model: ModelStatus) {
   }, 250);
 }
 
+/** The update downloads; a browser has nothing to install it into, so it then fails. */
+async function updateDemo(): Promise<never> {
+  const total = 18_000_000;
+  for (let downloaded = 0; downloaded <= total; downloaded += 1_500_000) {
+    void emit("update-progress", { downloaded, total });
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  throw "update: the browser preview can't install updates";
+}
+
 /** The local model reads each identified card; a few disagree. */
 async function compareDemo(sessionId: string, runId: string, modelId: string) {
   const big = modelId !== "lfm2.5-vl-450m";
@@ -1161,6 +1171,10 @@ export function installDemo() {
             dataDir: "/Users/demo/Library/Application Support/com.ximilar.cardloader",
             dataBytes: 734_003_200,
           };
+        case "check_update":
+          return { version: "0.5.0", currentVersion: "0.3.0" };
+        case "install_update":
+          return updateDemo();
         case "scanner_support":
           return { backend: "sane", available: true, hint: null };
         case "scanner_driver_settings":

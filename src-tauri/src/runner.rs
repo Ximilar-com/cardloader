@@ -628,6 +628,14 @@ impl Runner {
         }
     }
 
+    /// Whether a run, sync, eBay job or export is under way; an update waits for them.
+    pub fn busy(&self) -> bool {
+        !self.runs.lock().unwrap().is_empty()
+            || !self.syncs.lock().unwrap().is_empty()
+            || !self.ebay_jobs.lock().unwrap().is_empty()
+            || !self.exports.lock().unwrap().is_empty()
+    }
+
     /// Mirrors the session to Cards Cloud once (for sessions not currently running), unless already syncing.
     pub fn sync_now(self: &Arc<Self>, id: &str) -> Result<()> {
         if self.is_running(id) || self.syncs.lock().unwrap().contains_key(id) {

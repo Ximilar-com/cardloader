@@ -22,6 +22,7 @@ use crate::runner::Runner;
 use crate::settings::{Secret, Settings, SettingsStore, SettingsView};
 use crate::source::csv_file::{self, CsvPreview};
 use crate::source::{self, scanner};
+use crate::update::{UpdateInfo, Updates};
 use crate::ximilar::cards_cloud::{CardsCloudApi, MAX_SESSION_NAME};
 use tokio_util::sync::CancellationToken;
 
@@ -538,6 +539,25 @@ pub async fn app_info(app: AppHandle, state: S<'_>) -> Result<AppInfo> {
         data_dir: dir.to_string_lossy().into_owned(),
         data_bytes,
     })
+}
+
+/// A newer release of the app, or None.
+#[tauri::command]
+pub async fn check_update(
+    app: AppHandle,
+    updates: State<'_, Updates>,
+) -> Result<Option<UpdateInfo>> {
+    updates.check(&app).await
+}
+
+/// Installs the update the last check found and restarts the app; refused while sessions run.
+#[tauri::command]
+pub async fn install_update(
+    app: AppHandle,
+    state: S<'_>,
+    updates: State<'_, Updates>,
+) -> Result<()> {
+    updates.install(&app, state.runner.busy()).await
 }
 
 fn folder_size(dir: &std::path::Path) -> u64 {

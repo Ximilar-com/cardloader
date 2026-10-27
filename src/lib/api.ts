@@ -465,6 +465,17 @@ export interface AppInfo {
   dataBytes: number;
 }
 
+/** A newer release of the app. */
+export interface UpdateInfo {
+  version: string;
+  currentVersion: string;
+}
+
+export interface UpdateProgress {
+  downloaded: number;
+  total: number | null;
+}
+
 export interface ConnectionCheck {
   ok: boolean;
   account: string | null;
@@ -591,6 +602,10 @@ export const api = {
   deleteItems: (sessionId: string, itemIds: number[]) => invoke<number>("delete_items", { sessionId, itemIds }),
   countImages: (path: string) => invoke<number>("count_images", { path }),
   appInfo: () => invoke<AppInfo>("app_info"),
+  /** A newer release, or null. */
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
+  /** Installs the update the last check found and restarts the app; progress arrives through onUpdateProgress. */
+  installUpdate: () => invoke<void>("install_update"),
 
   listModels: () => invoke<ModelStatus[]>("list_models"),
   /** Starts or resumes a download; progress arrives through onModelUpdated. */
@@ -695,6 +710,10 @@ export function onEbayProgress(cb: (p: EbayProgress) => void): Promise<UnlistenF
 
 export function onExportProgress(cb: (p: ExportProgress) => void): Promise<UnlistenFn> {
   return listen<ExportProgress>("export-progress", (e) => cb(e.payload));
+}
+
+export function onUpdateProgress(cb: (p: UpdateProgress) => void): Promise<UnlistenFn> {
+  return listen<UpdateProgress>("update-progress", (e) => cb(e.payload));
 }
 
 export function onItemUpdated(cb: (i: ItemSummary) => void): Promise<UnlistenFn> {

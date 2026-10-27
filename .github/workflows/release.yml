@@ -30,6 +30,7 @@ jobs:
       # Signing is optional: these only take effect once the repository secrets exist.
       SECRET_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
       SECRET_WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+      SECRET_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,13 +86,24 @@ jobs:
           Set-Content -Path src-tauri/tauri.signing.conf.json -Value $conf
           "TAURI_SIGN_ARGS=--config src-tauri/tauri.signing.conf.json" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      # In-app updates (https://v2.tauri.app/plugin/updater/): bundles signed with the key whose public half is in
+      # tauri.conf.json, and a latest.json the app reads from the latest published release.
+      - name: Updater artifacts
+        if: env.SECRET_UPDATER_KEY != ''
+        shell: bash
+        run: |
+          echo '{"bundle":{"createUpdaterArtifacts":true}}' > src-tauri/tauri.updater.conf.json
+          echo "TAURI_UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_ENV"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           releaseName: Cardloader ${{ github.ref_name }}
           releaseBody: See the assets below to download and install Cardloader for your platform.
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }}
+          args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }} ${{ env.TAURI_UPDATER_ARGS }}

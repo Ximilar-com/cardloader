@@ -171,6 +171,15 @@ const messages: Messages<typeof en> = {
     spaceUsed: "Espace utilisé",
     space:
       "{size} — miniatures, numérisations et images de gradation des sessions ; supprimer une session libère sa part",
+    checkUpdates: "Rechercher des mises à jour",
+    upToDate: "À jour",
+    available: "Cardloader {version} est disponible. <link>Nouveautés</link>",
+    install: "Installer et redémarrer",
+    starting: "Démarrage du téléchargement…",
+    downloading: "Téléchargement… {done}",
+    installing: "Installation…",
+    installNote:
+      "Cardloader se ferme et se rouvre dans la nouvelle version. Les sessions en cours doivent d’abord se terminer.",
   },
   ebay: {
     keys: {

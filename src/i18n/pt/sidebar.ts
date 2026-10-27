@@ -10,6 +10,8 @@ const messages: Messages<typeof en> = {
   },
   unsavedSettings: "Configurações não salvas",
   poweredBy: "Com tecnologia Ximilar",
+  update: "Atualizar",
+  updateAvailable: "O Cardloader {version} está disponível",
   toast: {
     noneUpsideDown: "Nenhuma destas cartas está de cabeça para baixo",
     turned: { one: "{count} carta endireitada", other: "{count} cartas endireitadas" },

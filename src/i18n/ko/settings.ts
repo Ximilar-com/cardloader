@@ -168,6 +168,14 @@ const messages: Messages<typeof en> = {
     dataFolder: "데이터 폴더",
     spaceUsed: "사용 공간",
     space: "{size} — 세션의 썸네일, 스캔, 그레이딩 이미지. 세션을 삭제하면 그만큼 공간이 확보됩니다",
+    checkUpdates: "업데이트 확인",
+    upToDate: "최신 버전입니다",
+    available: "Cardloader {version}을(를) 사용할 수 있습니다. <link>새로운 기능</link>",
+    install: "설치 후 다시 시작",
+    starting: "다운로드를 시작하는 중…",
+    downloading: "다운로드 중… {done}",
+    installing: "설치 중…",
+    installNote: "Cardloader가 종료된 후 새 버전으로 다시 열립니다. 실행 중인 세션은 먼저 끝나야 합니다.",
   },
   ebay: {
     keys: {

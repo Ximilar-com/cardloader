@@ -7,6 +7,7 @@ import {
   Copy,
   Cloud,
   Cpu,
+  Download,
   FolderOpen,
   Info,
   KeyRound,
@@ -58,6 +59,7 @@ import {
   type SettingsView,
 } from "../lib/api";
 import { bytes, dateTime, gradingLabels, idModeLabels, sourceLabels } from "../lib/format";
+import { useUpdate } from "../lib/update";
 
 const DEFAULT_API = "https://api.ximilar.com";
 
@@ -108,6 +110,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [mcp, setMcp] = useState<McpStatus | null>(null);
   const models = useModels();
+  const updateAvailable = useUpdate((s) => (s.status === "available" ? s.info?.version : null));
   const showSetup = useSetupWizard((s) => s.show);
   // Another page can open Settings at a tab: navigate("/settings", { state: { section } }).
   const section = (useLocation().state as { section?: Tab } | null)?.section;
@@ -266,6 +269,12 @@ export default function SettingsPage() {
               )}
               {key === "ebay" && view.ebayConnected && ebayReady(view.ebay) && (
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label={t("settings.ebayConnected")} />
+              )}
+              {key === "about" && updateAvailable && (
+                <span
+                  className="h-2 w-2 rounded-full bg-emerald-500"
+                  aria-label={t("sidebar.updateAvailable", { version: updateAvailable })}
+                />
               )}
               {key === "agents" && mcp?.running && (
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" aria-label={t("settings.agentsCanConnect")} />
@@ -928,6 +937,7 @@ function DriverSettings({ device, disabled }: { device: string | null; disabled:
 function About() {
   const t = useT();
   const [info, setInfo] = useState<AppInfo | null>(null);
+  const { status, error, check } = useUpdate();
   useEffect(() => {
     api.appInfo().then(setInfo);
   }, []);
@@ -948,7 +958,22 @@ function About() {
       {info && (
         <dl className="grid grid-cols-[120px_1fr] items-center gap-x-4 gap-y-2 text-sm">
           <dt className="text-slate-500">{t("settings.about.version")}</dt>
-          <dd>{info.version}</dd>
+          <dd className="flex items-center gap-3">
+            {info.version}
+            <button
+              className="btn px-2 py-0.5 text-xs"
+              onClick={() => void check()}
+              disabled={status === "checking" || status === "installing"}
+            >
+              <RefreshCw className={clsx("h-3.5 w-3.5", status === "checking" && "animate-spin")} />{" "}
+              {t("settings.about.checkUpdates")}
+            </button>
+            {status === "current" && (
+              <span className="flex items-center gap-1 text-xs text-slate-500">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> {t("settings.about.upToDate")}
+              </span>
+            )}
+          </dd>
           <dt className="text-slate-500">{t("settings.about.dataFolder")}</dt>
           <dd className="flex min-w-0 items-center gap-2">
             <span className="selectable truncate font-mono text-xs" title={info.dataDir}>
@@ -962,7 +987,58 @@ function About() {
           <dd>{t("settings.about.space", { size: bytes(info.dataBytes) })}</dd>
         </dl>
       )}
+      <UpdateNotice />
+      <ErrorNote>{error}</ErrorNote>
     </Section>
+  );
+}
+
+/** The newer release, with its install button and, while installing, the download. */
+function UpdateNotice() {
+  const t = useT();
+  const { status, info, progress, install } = useUpdate();
+  if (!info || (status !== "available" && status !== "installing")) return null;
+  const pct = progress?.total ? Math.min(100, (progress.downloaded / progress.total) * 100) : 0;
+  return (
+    <div className="space-y-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm dark:border-emerald-900 dark:bg-emerald-950/40">
+      <div className="flex items-center gap-3">
+        <Download className="h-4 w-4 shrink-0 text-emerald-600" />
+        <span className="flex-1">
+          {rich(t("settings.about.available", { version: info.version }), {
+            link: (s) => (
+              <button
+                className="text-accent underline"
+                onClick={() => openUrl(`https://github.com/Ximilar-com/cardloader/releases/tag/v${info.version}`)}
+              >
+                {s}
+              </button>
+            ),
+          })}
+        </span>
+        <button className="btn-primary" onClick={() => void install()} disabled={status === "installing"}>
+          {t("settings.about.install")}
+        </button>
+      </div>
+      {status === "installing" ? (
+        <div className="space-y-1">
+          <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+            <div
+              className="progress-stripes h-full rounded-full bg-accent transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <p className="text-xs text-slate-500 tabular-nums">
+            {!progress
+              ? t("settings.about.starting")
+              : progress.total && progress.downloaded >= progress.total
+                ? t("settings.about.installing")
+                : t("settings.about.downloading", { done: bytes(progress.downloaded) })}
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500">{t("settings.about.installNote")}</p>
+      )}
+    </div>
   );
 }
 

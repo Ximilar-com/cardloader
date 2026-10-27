@@ -168,6 +168,14 @@ export default {
     dataFolder: "Data folder",
     spaceUsed: "Space used",
     space: "{size} — sessions’ thumbnails, scans and grading images; deleting a session frees its share",
+    checkUpdates: "Check for updates",
+    upToDate: "Up to date",
+    available: "Cardloader {version} is available. <link>What’s new</link>",
+    install: "Install and restart",
+    starting: "Starting the download…",
+    downloading: "Downloading… {done}",
+    installing: "Installing…",
+    installNote: "Cardloader closes and opens again on the new version. Running sessions finish first.",
   },
   ebay: {
     keys: {

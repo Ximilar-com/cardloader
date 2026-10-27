@@ -14,11 +14,12 @@ mod runner;
 mod settings;
 mod source;
 mod sync;
+mod update;
 mod ximilar;
 
 use std::sync::Arc;
 
-use tauri::Manager;
+use tauri::{AppHandle, Manager};
 
 use commands::AppState;
 
@@ -41,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let config_dir = app.path().app_config_dir()?;
@@ -71,6 +73,7 @@ pub fn run() {
             let mcp = mcp::McpServer::new(state.clone(), config_dir);
             app.manage(state);
             app.manage(mcp.clone());
+            app.manage(update::Updates::default());
             tauri::async_runtime::spawn(async move { mcp.apply().await });
             Ok(())
         })
@@ -115,6 +118,8 @@ pub fn run() {
             commands::cancel_compare,
             commands::count_images,
             commands::app_info,
+            commands::check_update,
+            commands::install_update,
             commands::scanner_support,
             commands::list_scanners,
             commands::scanner_driver_settings,
@@ -149,8 +154,13 @@ pub fn run() {
         .expect("error while building cardloader")
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                app.state::<AppState>().runner.stop_all();
-                app.state::<Arc<mcp::McpServer>>().forget_endpoint();
+                before_exit(app);
             }
         });
+}
+
+/// Stops the runs (their cards in flight go back to the queue on the next launch) and removes the MCP endpoint.
+fn before_exit(app: &AppHandle) {
+    app.state::<AppState>().runner.stop_all();
+    app.state::<Arc<mcp::McpServer>>().forget_endpoint();
 }

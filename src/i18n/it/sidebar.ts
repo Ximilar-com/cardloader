@@ -10,6 +10,8 @@ const messages: Messages<typeof en> = {
   },
   unsavedSettings: "Impostazioni non salvate",
   poweredBy: "Basato su Ximilar",
+  update: "Aggiorna",
+  updateAvailable: "Cardloader {version} è disponibile",
   toast: {
     noneUpsideDown: "Nessuna di queste carte è capovolta",
     turned: { one: "{count} carta raddrizzata", other: "{count} carte raddrizzate" },

@@ -171,6 +171,14 @@ const messages: Messages<typeof en> = {
     spaceUsed: "使用容量",
     space:
       "{size} — セッションのサムネイル、スキャン画像、グレーディング画像。セッションを削除すると、その分の容量が解放されます",
+    checkUpdates: "アップデートを確認",
+    upToDate: "最新です",
+    available: "Cardloader {version} を利用できます。<link>新機能</link>",
+    install: "インストールして再起動",
+    starting: "ダウンロードを開始しています…",
+    downloading: "ダウンロード中… {done}",
+    installing: "インストール中…",
+    installNote: "Cardloader は終了し、新しいバージョンで再び開きます。実行中のセッションは先に完了させてください。",
   },
   ebay: {
     keys: {

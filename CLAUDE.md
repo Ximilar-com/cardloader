@@ -46,6 +46,7 @@ src-tauri/src/
   settings.rs     settings.json + secrets (API token, eBay Cert ID and login) in the OS keychain (keyring)
   imaging.rs      decode, EXIF orientation, thumbnails/previews, JPEG/base64 for upload
   export.rs       CSV export
+  update.rs       in-app updates from GitHub releases (tauri-plugin-updater: check, download + install, restart)
   source/         folder, watch folder (notify), csv_file.rs (import parser), scanner/{sane.rs, twain.rs}
   ximilar/        http.rs (client, retry, error classes), recognition.rs, grading.rs, cards_cloud.rs
   ebay/           selling on eBay with the user's keyset: mod.rs (OAuth: consent window, tokens, account setup),
@@ -75,8 +76,8 @@ src/
 ```
 
 Events from Rust: `session-updated` (Session), `session-deleted` (id), `item-updated` (ItemSummary), `model-updated`
-(ModelStatus, download progress), `compare-progress` and `ebay-progress` (EbayProgress); pages patch their state from
-them.
+(ModelStatus, download progress), `compare-progress` and `ebay-progress` (EbayProgress), `update-progress` (UpdateProgress); pages patch their
+state from them.
 
 ## Rules for changes
 
@@ -226,11 +227,18 @@ them.
   handle comes from game/set/name/number (stable across sessions), conditions are `Option1` "Condition" variants;
   slabs and "one product per scanned card" get their own handle and a `Title`/`Default Title` variant. The inventory
   file matches rows by handle + option value and sets `On hand (new)` at a named location.
+- **Updates** (`update.rs`, `src/lib/update.ts`): release builds check once at launch (quietly) and from Settings ›
+  About ("Check for updates"); a found update shows an Update button in the sidebar and installs from About. The
+  updater reads `releases/latest/download/latest.json`, so a draft release offers nothing until it is published.
+  `release.yml` signs the bundles with `TAURI_SIGNING_PRIVATE_KEY` (+ `_PASSWORD`) and adds
+  `createUpdaterArtifacts` only then, so local `tauri build`s need no key; the public key is in `tauri.conf.json`
+  (`plugins.updater.pubkey`) — losing the private key means installed apps can never update again. Installing is
+  refused while `Runner::busy`; Windows runs its installer and exits without exit events (`on_before_exit`).
 - The browser demo logs `[TAURI] Couldn't find callback id` warnings from its mocked events; they are harmless.
 
 ## Not verified automatically
 
-Real Ximilar API calls, real eBay calls (use a sandbox keyset), real scanners (SANE/TWAIN), signed release builds,
+Real Ximilar API calls, real eBay calls (use a sandbox keyset), real updates (need a published signed release), real scanners (SANE/TWAIN), signed release builds,
 the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), and real MCP clients (Claude Desktop,
 Claude Code; the tests speak JSON-RPC over HTTP and through the bridge, and `npx @modelcontextprotocol/inspector`
 can call the tools by hand). Say so when a change depends on

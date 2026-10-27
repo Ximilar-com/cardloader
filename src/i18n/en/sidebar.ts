@@ -9,6 +9,8 @@ export default {
   },
   unsavedSettings: "Unsaved settings",
   poweredBy: "Powered by Ximilar",
+  update: "Update",
+  updateAvailable: "Cardloader {version} is available",
   toast: {
     noneUpsideDown: "None of these cards is upside down",
     turned: { one: "Turned {count} card upright", other: "Turned {count} cards upright" },

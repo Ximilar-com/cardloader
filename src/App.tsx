@@ -5,6 +5,7 @@ import Sidebar from "./components/Sidebar";
 import Toaster from "./components/Toast";
 import { useI18n } from "./i18n";
 import { api } from "./lib/api";
+import { useUpdate } from "./lib/update";
 import CardsPage from "./pages/CardsPage";
 import DashboardPage from "./pages/DashboardPage";
 import RemoteSessionPage from "./pages/RemoteSessionPage";
@@ -20,6 +21,11 @@ export default function App() {
   useEffect(() => {
     api.getSettings().then((s) => !s.setupDone && show(s));
   }, [show]);
+
+  // Dev builds aren't installed bundles, so there is nothing to update; Settings can still check by hand.
+  useEffect(() => {
+    if (!import.meta.env.DEV) void useUpdate.getState().check(true);
+  }, []);
 
   return (
     <div className="flex h-full overflow-hidden">

@@ -10,6 +10,8 @@ const messages: Messages<typeof en> = {
   },
   unsavedSettings: "저장되지 않은 설정",
   poweredBy: "Ximilar 제공",
+  update: "업데이트",
+  updateAvailable: "Cardloader {version}을(를) 사용할 수 있습니다",
   toast: {
     noneUpsideDown: "거꾸로 된 카드가 없습니다",
     turned: { other: "카드 {count}장을 똑바로 돌렸습니다" },

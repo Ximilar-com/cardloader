@@ -10,6 +10,8 @@ const messages: Messages<typeof en> = {
   },
   unsavedSettings: "Réglages non enregistrés",
   poweredBy: "Propulsé par Ximilar",
+  update: "Mettre à jour",
+  updateAvailable: "Cardloader {version} est disponible",
   toast: {
     noneUpsideDown: "Aucune de ces cartes n’est à l’envers",
     turned: { one: "{count} carte remise à l’endroit", other: "{count} cartes remises à l’endroit" },
