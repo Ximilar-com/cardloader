@@ -519,7 +519,7 @@ dependencies = [
 
 [[package]]
 name = "cardloader"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "axum",
  "base64 0.23.1",
@@ -557,7 +557,7 @@ dependencies = [
 
 [[package]]
 name = "cardloader-twain"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "libloading 0.8.9",
  "png 0.17.16",
