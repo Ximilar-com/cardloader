@@ -79,8 +79,9 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   to set where they are kept (a box, a binder page). When listing or exporting, **Adjust prices** sets the chosen
   cards to a percentage of the market price, ending in .99, with a minimum.
 - **Upside-down cards.** When Ximilar finds a card upside down in its image, the card shows an **Upside down**
-  badge; click it and **Turn upright** to turn the picture the app shows and exports upload (and the scan, for
-  scanner sessions). Images in your own folders are never changed.
+  badge; click it and **Turn upright** to turn the pictures the app shows and exports upload, front and back (and
+  the scans, for scanner sessions). Tick several cards and click **Turn upright** to turn those that are upside
+  down at once. Images in your own folders are never changed.
 - **AI agents.** Claude Desktop, Claude Code, Cursor and other AI apps can work with Cardloader over MCP: start a
   session on a folder, wait for it, and review its cards by looking at their pictures. Cards an agent accepts get an
   AI mark until you confirm them. See [AI agents](#ai-agents-mcp).
@@ -226,6 +227,9 @@ Cardloader includes an [MCP](https://modelcontextprotocol.io) server, so AI apps
   ```
 
 - **Claude Code:** `claude mcp add cardloader -- /Applications/Cardloader.app/Contents/MacOS/cardloader mcp`
+- **OpenAI Codex:** `codex mcp add cardloader -- /Applications/Cardloader.app/Contents/MacOS/cardloader mcp`
+- **Cursor, Gemini CLI, LM Studio:** the same `mcpServers` entry as Claude Desktop, in `~/.cursor/mcp.json`,
+  `~/.gemini/settings.json` or LM Studio's `mcp.json` (Program tab → Install → Edit mcp.json).
 - **Other apps** connect over HTTP to the address Settings shows (`http://127.0.0.1:47821/mcp`) with the header
   `Authorization: Bearer <token>`.
 

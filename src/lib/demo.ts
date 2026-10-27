@@ -15,7 +15,7 @@ import type {
   Session,
   SettingsView,
 } from "./api";
-import { matchOf, needsReview, representativePrice, tier } from "./cardview";
+import { matchOf, needsReview, representativePrice, rotationOf, tier } from "./cardview";
 
 const CARDS = [
   ["Charizard ex", "Obsidian Flames", "OBF", "125", "2023", "Pokemon", 0.12, 24.99, 9.0, "Mint", "#f97316"],
@@ -377,6 +377,18 @@ function selectMatch(id: number, index: number): ItemDetail {
   });
   void emit("item-updated", summary(item));
   void emit("session-updated", session(item.sessionId));
+  return item;
+}
+
+/** What `turn_item` does in Rust, without new pictures: the demo's cards are drawn upright. */
+function turnItem(item: ItemDetail): ItemDetail {
+  for (const record of item.recognition.response.records) {
+    for (const o of record._objects ?? []) {
+      const tag = o._tags?.Rotation?.[0];
+      if (tag && tag.name !== "rotation_ok") Object.assign(tag, { found: tag.name, name: "rotation_ok" });
+    }
+  }
+  void emit("item-updated", summary(item));
   return item;
 }
 
@@ -1107,14 +1119,14 @@ export function installDemo() {
           return [...items.values()].flat().find((i) => i.id === a.id);
         case "search_cards":
           return searchCards(String(a.query ?? ""), a.filter, a.limit ?? 1000);
-        case "turn_item": {
-          const item = [...items.values()].flat().find((i) => i.id === a.id)!;
-          for (const o of item.recognition.response.records[0]._objects) {
-            const tag = o._tags?.Rotation?.[0];
-            if (tag && tag.name !== "rotation_ok") Object.assign(tag, { found: tag.name, name: "rotation_ok" });
-          }
-          void emit("item-updated", summary(item));
-          return item;
+        case "turn_item":
+          return turnItem([...items.values()].flat().find((i) => i.id === a.id)!);
+        case "turn_items": {
+          // As in Rust: only cards found upside down turn.
+          const list = [...items.values()].flat().filter((i) => (a.itemIds as number[]).includes(i.id));
+          const upsideDown = list.filter((i) => rotationOf(i.recognition?.response)?.tag === "rotated_upside_down");
+          upsideDown.forEach(turnItem);
+          return { turned: upsideDown.length, skipped: list.length - upsideDown.length };
         }
         case "update_item":
           return updateItem(a.id, a.edit);

@@ -577,6 +577,8 @@ export const api = {
   updateItem: (id: number, edit: ItemEdit) => invoke<ItemDetail>("update_item", { id, edit }),
   /** Turns a card's image upright when Ximilar found it upside down (cardloader's copies only). */
   turnItem: (id: number) => invoke<ItemDetail>("turn_item", { id }),
+  /** Turns upright those of the cards Ximilar found upside down; the others are counted as skipped. */
+  turnItems: (itemIds: number[]) => invoke<{ turned: number; skipped: number }>("turn_items", { itemIds }),
   /** Accepts the cards' matches, or with `reviewed: false` takes that back. */
   reviewItems: (sessionId: string, itemIds: number[], reviewed = true) =>
     invoke<number>("review_items", { sessionId, itemIds, reviewed }),

@@ -264,9 +264,9 @@ impl Runner {
         self.db.item(item_id)
     }
 
-    /// Turns a card's front image upright (Ximilar found it upside down): its thumbnail and preview, which
-    /// the app shows and exports upload, and a scan cardloader made. Images in the user's folders stay as
-    /// they are.
+    /// Turns a card's images upright (Ximilar found the front upside down): its thumbnail and previews, which
+    /// the app shows and exports upload, and scans cardloader made. The back turns too unless Ximilar read it
+    /// upright. Images in the user's folders stay as they are.
     pub fn turn_item(&self, item_id: i64) -> Result<ItemDetail> {
         let item = self.db.item(item_id)?;
         let s = &item.summary;
@@ -285,18 +285,37 @@ impl Runner {
             .map(Path::to_path_buf)
             .unwrap_or(dir.join("thumbs"));
         let (thumb, new_preview) = imaging::turned_derivatives(&preview, &thumbs, &stem)?;
-        let front = Path::new(&s.front_path);
-        if s.front_path.is_empty() || !front.starts_with(&dir) {
-            tracing::info!("{} is the user's: not turned", front.display());
-        } else {
-            imaging::rotate_file(front, ScanRotation::UpsideDown)?;
-        }
         let mut raw = item.recognition.clone().unwrap_or(Value::Null);
+        // A card fed upside down (through a duplex scanner, or photographed so) has its back upside down too.
+        // Only a back Ximilar read and found upright stays as it is.
+        let back_turns = recognition::back_rotation(&raw["response"])
+            .is_none_or(|tag| tag == "rotated_upside_down");
+        let back_preview = item
+            .back_preview_path
+            .as_deref()
+            .filter(|_| back_turns)
+            .map(|p| imaging::turned_preview(Path::new(p), &thumbs, &stem))
+            .transpose()?;
+        let mut scans = vec![s.front_path.as_str()];
+        if back_preview.is_some() {
+            scans.extend(s.back_path.as_deref());
+        }
+        for scan in scans.into_iter().map(Path::new) {
+            if scan.as_os_str().is_empty() || !scan.starts_with(&dir) {
+                tracing::info!("{} is the user's: not turned", scan.display());
+            } else {
+                imaging::rotate_file(scan, ScanRotation::UpsideDown)?;
+            }
+        }
         recognition::mark_upright(&mut raw["response"]);
-        self.db.save_turned(item_id, &thumb, &new_preview, &raw)?;
+        self.db
+            .save_turned(item_id, &thumb, &new_preview, back_preview.as_deref(), &raw)?;
         for old in [
             s.thumb_path.as_deref(),
             Some(preview.to_string_lossy().as_ref()),
+            item.back_preview_path
+                .as_deref()
+                .filter(|_| back_preview.is_some()),
         ]
         .into_iter()
         .flatten()
@@ -307,6 +326,23 @@ impl Runner {
         }
         self.emit_item(item_id);
         self.db.item(item_id)
+    }
+
+    /// Turns upright the cards among `ids` that Ximilar found upside down; returns how many turned and how many
+    /// weren't upside down.
+    pub fn turn_items(&self, ids: &[i64]) -> Result<(usize, usize)> {
+        let (mut turned, mut skipped) = (0, 0);
+        for &id in ids {
+            let item = self.db.item(id)?;
+            let response = item.recognition.as_ref().map(|r| &r["response"]);
+            if response.and_then(recognition::rotation).as_deref() == Some("rotated_upside_down") {
+                self.turn_item(id)?;
+                turned += 1;
+            } else {
+                skipped += 1;
+            }
+        }
+        Ok((turned, skipped))
     }
 
     /// Accepts the cards' matches (or takes that back); returns how many changed.
@@ -2268,24 +2304,35 @@ pub(crate) mod tests {
         let scans = runner.session_dir(&session.id).join("scans");
         std::fs::create_dir_all(&scans).unwrap();
         let scan = scans.join("scan_0001.png");
-        RgbImage::from_fn(60, 80, |x, _| {
-            if x < 30 {
-                Rgb([255, 0, 0])
-            } else {
-                Rgb([0, 0, 255])
-            }
-        })
-        .save(&scan)
-        .unwrap();
+        let back_scan = scans.join("scan_0002.png");
+        for path in [&scan, &back_scan] {
+            RgbImage::from_fn(60, 80, |x, _| {
+                if x < 30 {
+                    Rgb([255, 0, 0])
+                } else {
+                    Rgb([0, 0, 255])
+                }
+            })
+            .save(path)
+            .unwrap();
+        }
         let thumbs = runner.session_dir(&session.id).join("thumbs");
         let (thumb, preview) = imaging::make_derivatives(&scan, &thumbs, "a").unwrap();
+        let (_, back_preview) = imaging::make_derivatives(&back_scan, &thumbs, "b").unwrap();
         let images = ItemImages {
             thumb: Some(thumb.clone()),
             preview: Some(preview.clone()),
+            back_preview: Some(back_preview.clone()),
             ..Default::default()
         };
         let id = db
-            .insert_item(&session.id, &scan.to_string_lossy(), None, &images, None)
+            .insert_item(
+                &session.id,
+                &scan.to_string_lossy(),
+                Some(&back_scan.to_string_lossy()),
+                &images,
+                None,
+            )
             .unwrap();
         db.claim_next(&session.id).unwrap();
         let raw = json!({"response": {"records": [{"_objects": [
@@ -2319,6 +2366,15 @@ pub(crate) mod tests {
         };
         assert!(left(&new_preview)[2] > 200, "blue on the left now");
         assert!(left(&turned.summary.thumb_path.clone().unwrap())[2] > 200);
+        // The back wasn't read by Ximilar: it was fed the same way, so it turns too.
+        let new_back = turned.back_preview_path.clone().unwrap();
+        assert_ne!(new_back, back_preview);
+        assert!(!Path::new(&back_preview).exists());
+        assert!(
+            left(&new_back)[2] > 200,
+            "the back's blue is on the left now"
+        );
+        assert_eq!(left(&back_scan.to_string_lossy()), [0, 0, 255]);
         assert_eq!(
             left(&scan.to_string_lossy()),
             [0, 0, 255],
@@ -2334,6 +2390,9 @@ pub(crate) mod tests {
             turned.hosted_images.is_empty(),
             "exports upload the upright picture"
         );
+        // Turning several: a card already upright is left as it is.
+        assert_eq!(runner.turn_items(&[id]).unwrap(), (0, 1));
+        assert_eq!(db.item(id).unwrap().preview_path, turned.preview_path);
     }
 
     /// Without a connection the cards stay queued and the session pauses, saying why; it doesn't fail them.

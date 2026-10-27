@@ -657,15 +657,22 @@ impl Db {
         Ok(())
     }
 
-    /// The card's image was turned upright: new thumbnail and preview, the response says it is upright, and
-    /// pictures hosted for exports are uploaded again.
-    pub fn save_turned(&self, id: i64, thumb: &str, preview: &str, raw: &Value) -> Result<()> {
+    /// The card's images were turned upright: new thumbnail and preview (and back preview, when the back turned
+    /// too), the response says it is upright, and pictures hosted for exports are uploaded again.
+    pub fn save_turned(
+        &self,
+        id: i64,
+        thumb: &str,
+        preview: &str,
+        back_preview: Option<&str>,
+        raw: &Value,
+    ) -> Result<()> {
         self.with(|c| {
             c.execute(
                 "UPDATE items SET thumb_path = ?2, preview_path = ?3, recognition = ?4, hosted_images = NULL,
-                    updated_at = ?5
+                    updated_at = ?5, back_preview_path = COALESCE(?6, back_preview_path)
                  WHERE id = ?1",
-                params![id, thumb, preview, raw.to_string(), now()],
+                params![id, thumb, preview, raw.to_string(), now(), back_preview],
             )
         })?;
         Ok(())

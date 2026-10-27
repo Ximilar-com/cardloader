@@ -275,8 +275,8 @@ struct RetryCards {
 }
 
 #[derive(Deserialize, JsonSchema)]
-struct ItemArg {
-    item_id: i64,
+struct ItemIds {
+    item_ids: Vec<i64>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -453,7 +453,7 @@ fn specs() -> Vec<Spec> {
         spec::<SelectCandidate>(Run, "select_candidate", "Select a candidate", "Makes another candidate the card's match (get_card lists them by index); the card counts as accepted."),
         spec::<EditCard>(Run, "edit_card", "Edit a card", "Corrects a card's fields or price by hand, or sets its notes and location; given fields change, others stay."),
         spec::<RetryCards>(Run, "retry_cards", "Analyse cards again", "Puts the failed cards (or the given ones) back in the queue and analyses them."),
-        spec::<ItemArg>(Run, "turn_card_upright", "Turn a card upright", "Turns the picture of a card Ximilar found upside down."),
+        spec::<ItemIds>(Run, "turn_cards_upright", "Turn cards upright", "Turns the pictures (front and back) of the cards Ximilar found upside down; other cards are left as they are."),
         spec::<SetLocation>(Run, "set_location", "Set where cards are kept", "Sets where the cards are kept (a box, a binder page)."),
         spec::<SessionArg>(Run, "sync_session", "Sync to Cards Cloud", "Sends the session's changes to Cards Cloud now."),
         spec::<ExportCsv>(Run, "export_csv", "Export a CSV", "Writes the session's cards to a CSV file."),
@@ -671,10 +671,10 @@ impl Handler {
                     json!({"queued": n, "session": self.session_json(&self.state.db.session(&id)?, false)}),
                 )
             }
-            "turn_card_upright" => {
-                let a: ItemArg = args(a)?;
-                self.state.runner.turn_item(a.item_id)?;
-                self.card(a.item_id, false).await
+            "turn_cards_upright" => {
+                let a: ItemIds = args(a)?;
+                let (turned, skipped) = self.state.runner.turn_items(&a.item_ids)?;
+                out(json!({"turned": turned, "notUpsideDown": skipped}))
             }
             "set_location" => {
                 let a: SetLocation = args(a)?;

@@ -662,8 +662,9 @@ function AgentsTab({
   setError: (e: string | null) => void;
 }) {
   const command = status?.command ?? "";
-  const desktop = JSON.stringify({ mcpServers: { cardloader: { command, args: ["mcp"] } } }, null, 2);
-  const claudeCode = `claude mcp add cardloader -- "${command}" mcp`;
+  const [app, setApp] = useState<AgentApp>("claude");
+  // Claude Desktop, Cursor, Gemini CLI and LM Studio read the same `mcpServers` shape.
+  const mcpServers = JSON.stringify({ mcpServers: { cardloader: { command, args: ["mcp"] } } }, null, 2);
   const newToken = () =>
     api
       .regenerateMcpToken()
@@ -733,22 +734,88 @@ function AgentsTab({
           title="Connect an app"
           text="Apps start Cardloader’s own program with the argument mcp; it finds the open app and its token by itself."
         >
-          <Snippet
-            label="Claude Desktop"
-            hint="Settings → Developer → Edit Config: add this, then restart Claude."
-            text={desktop}
-          />
-          <Snippet label="Claude Code" hint="Run this in a terminal." text={claudeCode} />
-          <div className="space-y-2">
-            <Snippet
-              label="Other apps"
-              hint="Apps that connect over HTTP: the address, and the header they send."
-              text={status.url ?? ""}
-            />
-            <Snippet label="Header" text={`Authorization: Bearer ${status.token ?? ""}`} />
-            <button className="btn px-2 py-1 text-xs" onClick={newToken}>
-              <RefreshCw className="h-3.5 w-3.5" /> New token
-            </button>
+          <div className="flex flex-wrap gap-0.5 rounded-md bg-slate-100 p-0.5 dark:bg-slate-900" role="tablist">
+            {AGENT_APPS.map(([key, label]) => (
+              <button
+                key={key}
+                role="tab"
+                aria-selected={app === key}
+                onClick={() => setApp(key)}
+                className={clsx(
+                  "rounded px-3 py-1 text-sm font-medium",
+                  app === key
+                    ? "bg-white shadow-xs dark:bg-slate-800"
+                    : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200",
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* Its own spacing: snippets of one app sit apart from each other and from the tips below. */}
+          <div role="tabpanel" className="space-y-5 pb-1">
+            {app === "claude" && (
+              <>
+                <Snippet
+                  label="Claude Desktop"
+                  hint="Settings → Developer → Edit Config: add this, then quit and reopen Claude."
+                  text={mcpServers}
+                />
+                <Snippet
+                  label="Claude Code"
+                  hint="Run this in a terminal; /mcp then lists Cardloader."
+                  text={`claude mcp add cardloader -- "${command}" mcp`}
+                />
+              </>
+            )}
+            {app === "codex" && (
+              <>
+                <Snippet
+                  label="Codex CLI and IDE extension"
+                  hint="Run this in a terminal; both read the same configuration."
+                  text={`codex mcp add cardloader -- "${command}" mcp`}
+                />
+                <Snippet
+                  label="Or the config file"
+                  hint="Add this to ~/.codex/config.toml."
+                  text={`[mcp_servers.cardloader]\ncommand = '${command}'\nargs = ["mcp"]`}
+                />
+              </>
+            )}
+            {app === "cursor" && (
+              <Snippet
+                label="Cursor"
+                hint="Add this to ~/.cursor/mcp.json (or a project’s .cursor/mcp.json), then turn cardloader on in Cursor’s MCP settings."
+                text={mcpServers}
+              />
+            )}
+            {app === "gemini" && (
+              <Snippet
+                label="Gemini CLI"
+                hint="Add this to ~/.gemini/settings.json; /mcp then lists Cardloader."
+                text={mcpServers}
+              />
+            )}
+            {app === "lmstudio" && (
+              <Snippet
+                label="LM Studio"
+                hint="Program tab → Install → Edit mcp.json: add this. Reviewing cards needs a model that sees images and calls tools."
+                text={mcpServers}
+              />
+            )}
+            {app === "http" && (
+              <div className="space-y-2">
+                <Snippet
+                  label="Address"
+                  hint="For apps that connect over HTTP, with the header below."
+                  text={status.url ?? ""}
+                />
+                <Snippet label="Header" text={`Authorization: Bearer ${status.token ?? ""}`} />
+                <button className="btn px-2 py-1 text-xs" onClick={newToken}>
+                  <RefreshCw className="h-3.5 w-3.5" /> New token
+                </button>
+              </div>
+            )}
           </div>
           <p className="text-xs text-slate-500">
             Try asking: “Run a new Cardloader session on my folder ~/Cards/pokemon — English Pokémon, fronts only, store
@@ -759,6 +826,17 @@ function AgentsTab({
     </>
   );
 }
+
+type AgentApp = "claude" | "codex" | "cursor" | "gemini" | "lmstudio" | "http";
+
+const AGENT_APPS: [AgentApp, string][] = [
+  ["claude", "Claude"],
+  ["codex", "OpenAI Codex"],
+  ["cursor", "Cursor"],
+  ["gemini", "Gemini CLI"],
+  ["lmstudio", "LM Studio"],
+  ["http", "Other (HTTP)"],
+];
 
 /** Text to copy into another app. */
 function Snippet({ label, hint, text }: { label: string; hint?: string; text: string }) {

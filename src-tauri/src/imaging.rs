@@ -77,6 +77,15 @@ pub fn turned_derivatives(preview: &Path, dir: &Path, stem: &str) -> Result<(Str
     write_derivatives(&open(preview)?.rotate180(), dir, stem)
 }
 
+/// `preview` turned upside down, saved as `<stem>_back_preview.jpg` in `dir`: a back has no thumbnail.
+pub fn turned_preview(preview: &Path, dir: &Path, stem: &str) -> Result<String> {
+    std::fs::create_dir_all(dir)?;
+    let path = dir.join(format!("{stem}_back_preview.jpg"));
+    let img = fit_long_edge(&open(preview)?.rotate180(), PREVIEW_LONG_EDGE);
+    std::fs::write(&path, jpeg_bytes(&img, 90)?)?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 fn write_derivatives(img: &DynamicImage, dir: &Path, stem: &str) -> Result<(String, String)> {
     std::fs::create_dir_all(dir)?;
     let thumb = dir.join(format!("{stem}_thumb.jpg"));

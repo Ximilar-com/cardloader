@@ -471,6 +471,21 @@ pub fn turn_item(state: S, id: i64) -> Result<ItemDetail> {
     state.runner.turn_item(id)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnedItems {
+    pub turned: usize,
+    /// Cards that weren't upside down, left as they are.
+    pub skipped: usize,
+}
+
+/// Turns upright those of the cards Ximilar found upside down (front and back).
+#[tauri::command]
+pub fn turn_items(state: S, item_ids: Vec<i64>) -> Result<TurnedItems> {
+    let (turned, skipped) = state.runner.turn_items(&item_ids)?;
+    Ok(TurnedItems { turned, skipped })
+}
+
 /// Accepts the cards' matches, or with `reviewed: false` takes that back.
 #[tauri::command]
 pub fn review_items(

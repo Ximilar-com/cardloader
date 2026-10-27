@@ -158,8 +158,8 @@ export default function DetailPanel({
       {turning && canTurn && (
         <div className="flex items-center gap-2 border-b border-slate-200 bg-violet-50/70 px-4 py-2 text-xs text-violet-900 dark:border-slate-800 dark:bg-violet-950/30 dark:text-violet-200">
           <span className="flex-1">
-            The card is upside down in the image. Turn it upright for the app and for exports? Images in your own
-            folders stay as they are.
+            The card is upside down in the image. Turn it upright, with its back, for the app and for exports? Images in
+            your own folders stay as they are.
           </span>
           <button className="btn px-2 py-0.5 text-xs" onClick={() => setTurning(false)}>
             Cancel

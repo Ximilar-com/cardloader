@@ -2,14 +2,14 @@
 // each there are.
 
 import clsx from "clsx";
-import { Bot, CircleQuestionMark, Check, ExternalLink, MapPin, Search, Undo2, X } from "lucide-react";
+import { Bot, CircleQuestionMark, Check, ExternalLink, MapPin, RotateCw, Search, Undo2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
 import { ErrorNote } from "../components/Modal";
 import { RenameDialog } from "../components/SessionActions";
 import SessionTable from "../components/SessionTable";
-import { toast, toastError } from "../components/Toast";
+import { toast, toastError, turnUpright } from "../components/Toast";
 import {
   api,
   errorText,
@@ -158,6 +158,13 @@ export default function CardsPage() {
             )}
             <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedCards)}>
               <MapPin className="h-3.5 w-3.5" /> Set location…
+            </button>
+            <button
+              className="btn px-2 py-1 text-xs"
+              onClick={() => turnUpright(checkedCards.map((c) => c.id))}
+              title="Turn the cards Ximilar found upside down, front and back"
+            >
+              <RotateCw className="h-3.5 w-3.5" /> Turn upright
             </button>
             <button
               className="btn btn-ghost px-1.5"

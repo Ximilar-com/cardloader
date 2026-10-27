@@ -14,6 +14,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  RotateCw,
   Search,
   Square,
   Pencil,
@@ -35,7 +36,7 @@ import { ConfirmDialog, RenameDialog, useSessionActions } from "../components/Se
 import ProgressBar from "../components/ProgressBar";
 import SessionTable from "../components/SessionTable";
 import StatusChip from "../components/StatusChip";
-import { toast, toastError } from "../components/Toast";
+import { toast, toastError, turnUpright } from "../components/Toast";
 import {
   api,
   errorText,
@@ -463,6 +464,13 @@ function SessionView({ id }: { id: string }) {
               )}
               <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedIds)}>
                 <MapPin className="h-3.5 w-3.5" /> Set location…
+              </button>
+              <button
+                className="btn px-2 py-1 text-xs"
+                onClick={() => turnUpright(checkedIds)}
+                title="Turn the cards Ximilar found upside down, front and back"
+              >
+                <RotateCw className="h-3.5 w-3.5" /> Turn upright
               </button>
               <button
                 className="btn px-2 py-1 text-xs"

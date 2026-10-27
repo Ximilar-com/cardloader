@@ -1,7 +1,7 @@
 // One short message at a time in the corner, from anywhere: `toast("Exported 12 cards")`.
 
 import { useEffect, useSyncExternalStore } from "react";
-import { errorText } from "../lib/api";
+import { api, errorText } from "../lib/api";
 
 interface Notice {
   id: number;
@@ -20,6 +20,20 @@ function set(notice: Notice | null) {
 
 export function toast(text: string) {
   set({ id: next++, text, error: false });
+}
+
+/** Turns the upside-down cards among `ids` upright and says how many (the table doesn't know which ones are). */
+export function turnUpright(ids: number[]) {
+  return api
+    .turnItems(ids)
+    .then(({ turned, skipped }) =>
+      toast(
+        turned === 0
+          ? "None of these cards is upside down"
+          : `Turned ${turned} card${turned === 1 ? "" : "s"} upright${skipped ? ` · ${skipped} weren’t upside down` : ""}`,
+      ),
+    )
+    .catch(toastError);
 }
 
 export function toastError(e: unknown) {

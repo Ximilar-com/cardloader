@@ -508,26 +508,36 @@ pub fn candidates(resp: &Value) -> Vec<Candidate> {
 /// The `Rotation` tag of the front's card when Ximilar found it turned (anything but `rotation_ok`), as
 /// `cardview::rotationOf` reads it.
 pub fn rotation(resp: &Value) -> Option<String> {
-    let all = objects(&resp["records"][0]);
+    record_rotation(resp, 0).filter(|name| name != "rotation_ok")
+}
+
+/// The back's `Rotation` tag, `rotation_ok` included; none when the back wasn't sent or carries no tag.
+pub fn back_rotation(resp: &Value) -> Option<String> {
+    record_rotation(resp, 1)
+}
+
+fn record_rotation(resp: &Value, index: usize) -> Option<String> {
+    let all = objects(&resp["records"][index]);
     let sorted = largest_first(all.clone());
     let card = sorted
         .iter()
         .find(|o| o["name"] != "Slab Label" && o["_identification"].is_object())
         .or_else(|| all.iter().find(|o| o["_identification"].is_object()))
         .or_else(|| sorted.iter().find(|o| o["name"] != "Slab Label"))?;
-    top_name(&card["_tags"]["Rotation"]).filter(|name| name != "rotation_ok")
+    top_name(&card["_tags"]["Rotation"])
 }
 
-/// The front's slab label, read as `cardview::matchOf` reads it: the company and grade its tags name, unless
-/// the label's identification says them.
-/// The user turned the front's image upright: its card's `Rotation` tag (if any, and not on a slab label)
+/// The user turned the card's images upright: each side's `Rotation` tag (if any, and not on a slab label)
 /// says so from now on, keeping what Ximilar found under `found`. Returns whether a tag changed.
 pub fn mark_upright(resp: &mut Value) -> bool {
     let mut changed = false;
-    let objects = resp
-        .pointer_mut("/records/0/_objects")
-        .and_then(Value::as_array_mut);
-    for object in objects.into_iter().flatten() {
+    let objects = resp["records"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+        .filter_map(|r| r["_objects"].as_array_mut())
+        .flatten();
+    for object in objects {
         if object["name"] == "Slab Label" {
             continue;
         }
@@ -545,6 +555,8 @@ pub fn mark_upright(resp: &mut Value) -> bool {
     changed
 }
 
+/// The front's slab label, read as `cardview::matchOf` reads it: the company and grade its tags name, unless
+/// the label's identification says them.
 pub fn slab_label(resp: &Value) -> Option<SlabLabel> {
     let label = objects(&resp["records"][0])
         .into_iter()
@@ -861,6 +873,19 @@ mod tests {
         assert_eq!(found[1].confidence, None);
         mark_upright(&mut resp);
         assert_eq!(rotation(&resp), None);
+        assert_eq!(back_rotation(&resp), None, "no back was sent");
+
+        // A back Ximilar read keeps its own tag; turning the card marks both sides upright.
+        let mut both = json!({"records": [
+            {"_objects": [{"name": "Card", "_tags": {"Rotation": [{"name": "rotated_upside_down"}]}}]},
+            {"_id": "back", "_objects": [{"name": "Card", "_tags": {"Rotation": [{"name": "rotated_upside_down"}]}}]}]});
+        assert_eq!(back_rotation(&both).as_deref(), Some("rotated_upside_down"));
+        assert!(mark_upright(&mut both));
+        assert_eq!(back_rotation(&both).as_deref(), Some("rotation_ok"));
+        assert_eq!(
+            both["records"][1]["_objects"][0]["_tags"]["Rotation"][0]["found"],
+            "rotated_upside_down"
+        );
     }
 
     fn tcg_response() -> Value {

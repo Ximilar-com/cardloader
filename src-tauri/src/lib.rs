@@ -101,6 +101,7 @@ pub fn run() {
             commands::select_match,
             commands::search_cards,
             commands::update_item,
+            commands::turn_items,
             commands::review_items,
             commands::turn_item,
             commands::locate_items,
