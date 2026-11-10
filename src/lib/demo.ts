@@ -689,10 +689,10 @@ const models: ModelStatus[] = [
     name: "Qwen3.5 4B",
     tier: "Accurate",
     params: "4B",
-    memoryMb: 4000,
+    memoryMb: 3900,
     size: 3_413_361_504,
     description:
-      "Alibaba's Qwen3.5 4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Larger than the LFM models: best on a GPU or a Mac with 16 GB of memory.",
+      "Alibaba's Qwen3.5 4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Reads card names exactly and leaves a collector number empty rather than guess. About 7 s per card on an Apple M4: best on a GPU.",
     homepage: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF",
   },
   {
@@ -705,7 +705,7 @@ const models: ModelStatus[] = [
     memoryMb: 7200,
     size: 6_598_688_544,
     description:
-      "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Needs a GPU with 8 GB of memory or more, or a Mac with 16 GB; on the CPU alone it is slow.",
+      "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Reads names exactly, like 4B, and is the slowest: about 12 s per card on an Apple M4. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
     homepage: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
   },
 ];

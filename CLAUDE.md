@@ -205,8 +205,10 @@ state from them.
   `homepage`. Its `family` covers what llama.cpp's built-in chat templates miss: Qwen3.5's template turns thinking
   off with an empty `<think></think>` that the built-in ChatML lacks (`Family::answer_prefix`). `maker` and
   `commercial_limit` drive the license note. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak
-  memory before writing its description; mirror it in `src/lib/demo.ts`. The Qwen3.5 descriptions and
-  `memory_mb` are estimates still to measure.
+  memory before writing its description; mirror it in `src/lib/demo.ts`. On Metal, peak RSS leaves out weights
+  the GPU holds, so a model larger than its RSS gets `memory_mb` from its files (Qwen3.5 9B). Qwen3.5 (measured on
+  an Apple M4) reads names exactly but leaves most collector numbers empty: the bottom strip and its prompt were
+  tuned for LFM.
 - **Where models run** (`settings.local_device`, `local::Device`): "" = automatic (`llama::pick_gpu`: the discrete GPU
   with the most free memory, else an integrated one; one GPU, never split), "cpu", or a GPU by llama.cpp's name
   (`Vulkan1`, `CUDA0`, `MTL0`). `LocalModels::engine` loads again when the device changes, and if loading on a GPU

@@ -142,11 +142,12 @@ the engine and model it was created with, and **New session** can pick another d
 | [LFM2.5-VL 3B](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF) (default) | 2.3 GB | ~2.5 GB | 3.2 s |
 | [LFM2.5-VL 450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) | 330 MB | ~0.6 GB | 0.7 s |
 | [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 1.9 s |
-| [Qwen3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ~4 GB | — |
-| [Qwen3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 6.6 GB | ~7 GB | — |
+| [Qwen3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ~4 GB | 6.8 s |
+| [Qwen3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 6.6 GB | ~7 GB | 11.5 s |
 
-Times are for an Apple-silicon Mac (Metal); the Qwen3.5 models aren't measured yet. A CPU is slower, and the larger
-models want a GPU. To choose, run **Compare with local model** on your own cards (below).
+Times are for an Apple-silicon Mac (Metal); a CPU is slower, and the Qwen3.5 models want a GPU. They read card names
+exactly where the LFM models may misspell them, and leave a collector number they can't read empty rather than guess
+one. To choose, run **Compare with local model** on your own cards (below).
 
 - The model runs in the app through [llama.cpp](https://github.com/ggml-org/llama.cpp). The model is loaded once (a
   few seconds) and reads one card at a time.
