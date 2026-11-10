@@ -19,12 +19,13 @@ jobs:
           - name: macOS universal
             os: macos-latest
             args: --target universal-apple-darwin
+          # Local models on the GPU through llama.cpp's Vulkan backend (macOS has Metal built in).
           - name: Windows x64
             os: windows-latest
-            args: ""
+            args: --features vulkan
           - name: Linux x64
             os: ubuntu-22.04
-            args: ""
+            args: --features vulkan
     runs-on: ${{ matrix.os }}
     env:
       # Signing is optional: these only take effect once the repository secrets exist.
@@ -39,6 +40,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev cmake clang
+
+      - name: Vulkan SDK
+        if: runner.os != 'macOS'
+        uses: ./.github/actions/vulkan-sdk
 
       - uses: actions/setup-node@v4
         with:
@@ -107,3 +112,16 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }} ${{ env.TAURI_UPDATER_ARGS }}
+
+      # A manual run without a tag creates no release: its installers are kept as workflow artifacts, to try a build
+      # (such as one from a branch) before tagging.
+      - name: Installers as artifacts (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ runner.os }}
+          path: |
+            target/release/bundle/
+            target/universal-apple-darwin/release/bundle/
+          if-no-files-found: error
+          retention-days: 7

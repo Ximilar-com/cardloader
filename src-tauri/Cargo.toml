@@ -16,7 +16,16 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 default = ["local-model"]
 # On-device identification with a vision language model through llama.cpp (needs cmake and a C++ compiler).
-local-model = ["dep:llama-cpp-2"]
+# Metal on macOS; the CPU elsewhere unless a GPU backend below is on.
+local-model = ["dep:llama-cpp-2", "dep:llama-cpp-sys-2"]
+# llama.cpp as shared libraries whose GPU and CPU backends load at runtime: the app starts (and runs on the CPU)
+# where a GPU driver is missing. `build.rs` gathers the libraries into `llama/` for the bundle. Implied by the GPU
+# backends; not for macOS, where Metal is built in.
+gpu-backends = ["local-model", "llama-cpp-2/dynamic-backends"]
+# GPU backends for Windows and Linux. Vulkan (any NVIDIA, AMD or Intel GPU) is what releases ship; it needs the
+# Vulkan SDK to build. CUDA (NVIDIA only, needs the CUDA toolkit) is for building from source.
+vulkan = ["gpu-backends", "llama-cpp-2/vulkan"]
+cuda = ["gpu-backends", "llama-cpp-2/cuda"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -41,6 +50,9 @@ base64 = "0.23"
 sha2 = "0.10"
 # Pinned: the multimodal (mtmd) API of the bindings still changes between releases.
 llama-cpp-2 = { version = "=0.1.159", default-features = false, features = ["mtmd", "common"], optional = true }
+# A direct dependency so that `build.rs` runs after llama.cpp is built and learns where its libraries are
+# (`DEP_LLAMA_BACKENDS_DIR`), and for constants the safe bindings don't re-export.
+llama-cpp-sys-2 = { version = "=0.1.159", default-features = false, optional = true }
 csv = "1"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }

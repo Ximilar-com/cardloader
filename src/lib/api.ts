@@ -246,6 +246,8 @@ export interface Settings {
   syncByDefault: boolean;
   engine: Engine;
   localModel: string;
+  /** Where local models run: "" = the best GPU there is (else the CPU), "cpu", or a GPU's name ("Vulkan1"). */
+  localDevice: string;
   ebay: EbaySettings;
   mcp: McpSettings;
 }
@@ -405,8 +407,12 @@ export interface ModelStatus {
   description: string;
   /** Memory the loaded model needs, roughly. */
   memoryMb: number;
+  /** Who made it, as the license notice names them. */
+  maker: string;
   licenseName: string;
   licenseUrl: string;
+  /** The license limits commercial use. */
+  commercialLimit: boolean;
   homepage: string;
   /** Bytes, both files. */
   size: number;
@@ -415,6 +421,36 @@ export interface ModelStatus {
   error: string | null;
   /** This build can run local models. */
   supported: boolean;
+}
+
+/** A device llama.cpp can run models on. */
+export interface ComputeDevice {
+  /** llama.cpp's name ("Vulkan0", "CUDA0", "MTL0", "CPU"): what `settings.localDevice` stores. */
+  name: string;
+  /** What it is ("NVIDIA GeForce RTX 4070"). */
+  description: string;
+  kind: "gpu" | "igpu" | "cpu" | "accel" | "unknown";
+  /** "Vulkan", "CUDA", "MTL" (Metal), "CPU". */
+  backend: string;
+  memoryTotal: number;
+  memoryFree: number;
+}
+
+/** The model in memory and where it ended up. */
+export interface ActiveModel {
+  model: string;
+  runsOn: string;
+  /** Layers on the GPU, of `layers`: fewer when the GPU's free memory couldn't hold them all. */
+  gpuLayers: number;
+  layers: number;
+  /** Why it runs on the CPU though a GPU was wanted. */
+  fallback: string | null;
+}
+
+export interface DeviceList {
+  supported: boolean;
+  devices: ComputeDevice[];
+  active: ActiveModel | null;
 }
 
 export interface CompareRow {
@@ -611,6 +647,8 @@ export const api = {
   /** Starts or resumes a download; progress arrives through onModelUpdated. */
   downloadModel: (id: string) => invoke<ModelStatus>("download_model", { id }),
   cancelModelDownload: (id: string) => invoke<void>("cancel_model_download", { id }),
+  /** The CPU and GPUs local models can run on, and where the loaded model runs. */
+  localDevices: () => invoke<DeviceList>("local_devices"),
   deleteModel: (id: string) => invoke<ModelStatus>("delete_model", { id }),
   /** `runId` (chosen by the caller) names the comparison for its progress events and for cancelling it. */
   compareLocal: (sessionId: string, runId: string, model?: string) =>

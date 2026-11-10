@@ -15,10 +15,24 @@ const messages: Messages<typeof en> = {
     ready: "다운로드됨 · 이 컴퓨터에서 실행되며 인터넷이 필요 없습니다",
     accept: "<license>{license}</license>에 동의합니다",
     licenseNote:
-      "이 모델은 Liquid AI가 만들었고 Hugging Face에서 다운로드되며, cardloader의 일부가 아닙니다. 라이선스는 일정 매출 이하에서만 상업적 사용을 허용합니다 — 동의하기 전에 읽어 보세요.",
+      "이 모델은 {maker}에서 만들었고 Hugging Face에서 다운로드되며, cardloader의 일부가 아닙니다. 동의하기 전에 라이선스를 읽어 보세요.",
+    licenseLimit: "라이선스는 일정 매출 이하에서만 상업적 사용을 허용합니다.",
     resume: "다운로드 재개",
     download: "다운로드",
     partial: "{size} 중 {done} 다운로드됨",
+  },
+  device: {
+    runOn: "실행 장치",
+    auto: "자동",
+    noGpu: "GPU가 없어 CPU 사용",
+    cpu: "CPU만",
+    integrated: "{backend} · 내장",
+    missing: "{name}(찾을 수 없음: CPU 사용)",
+    tooSmall: "{model} 필요 메모리 약 {need}, {gpu} 메모리 {have}: 들어가지 않는 부분은 CPU에서 실행되어 느려집니다.",
+    loaded: "로드된 모델은 {runsOn}에서 실행됩니다.",
+    partly:
+      "로드된 모델은 {layers}개 층 중 {gpu}개를 {runsOn}에서, 나머지는 CPU에서 실행합니다. GPU 여유 메모리가 부족했습니다.",
+    fellBack: "GPU에서 모델을 로드하지 못해 CPU에서 실행합니다({error}).",
   },
   compare: {
     title: "로컬 모델과 비교",

@@ -3,7 +3,8 @@
   "bundle": {
     "externalBin": ["binaries/cardloader-twain"],
     "resources": {
-      "binaries/TWAINDSM.dll": "TWAINDSM.dll"
+      "binaries/TWAINDSM.dll": "TWAINDSM.dll",
+      "llama": "./"
     }
   }
 }

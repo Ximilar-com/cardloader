@@ -16,6 +16,9 @@ values (`demo@example.com`, `/Users/demo/...`).
 - npm (not pnpm/yarn). Node 22+.
 - The default cargo feature `local-model` compiles llama.cpp (`llama-cpp-2`, pinned, with `mtmd` vision support):
   it needs cmake + clang. `--no-default-features` builds without it (local models then report "unsupported").
+  `vulkan` (releases and CI on Windows/Linux; needs the Vulkan SDK, see `.github/actions/vulkan-sdk`) and `cuda`
+  (source builds) add a GPU backend through `gpu-backends`: llama.cpp as shared libraries whose backends load at
+  runtime. macOS always builds Metal in statically and never uses these features.
 
 ## Commands
 
@@ -58,9 +61,10 @@ src-tauri/src/
   mcp/            MCP server for AI agents: mod.rs (axum on 127.0.0.1, bearer token, start/stop from Settings,
                   <config>/mcp.json), tools.rs (tools by permission group, compact JSON, card pictures), prompts.rs,
                   bridge.rs (`cardloader mcp`: stdio ↔ the running app's HTTP server)
-  local/          on-device identification: catalog.rs (pinned model files + SHA-256), download.rs (resumable),
-                  llama.rs (llama.cpp engine, feature-gated), identify.rs (prompts, GBNF grammars, parsing),
-                  compare.rs (agreement with Ximilar), mod.rs (LocalModels: status, downloads, loaded model)
+  local/          on-device identification: catalog.rs (pinned model files + SHA-256, model families), download.rs
+                  (resumable), llama.rs (llama.cpp engine, feature-gated: devices, GPU choice, fitting),
+                  identify.rs (prompts, GBNF grammars, parsing), compare.rs (agreement with Ximilar), mod.rs
+                  (LocalModels: status, downloads, the loaded model and the device it runs on)
 src/
   lib/api.ts      TypeScript types + wrappers for every command and event
   lib/cardview.ts one Row/CardView shape for local items and Cards Cloud rows
@@ -197,8 +201,26 @@ state from them.
   condition labels to be more useful than numeric grades (`real_model_grades_cards`).
 - **Adding a model**: add a `ModelSpec` to `local::catalog::MODELS` (the default first, then smallest first) with a pinned revision
   (`https://huggingface.co/api/models/<repo>` → `sha`), file sizes and SHA-256 (`.../tree/main` → `lfs.oid`), a GGUF
-  quant plus its `mmproj`. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak memory before
-  writing its description; mirror it in `src/lib/demo.ts`.
+  quant plus its `mmproj` (F16 or Q8: a heavily quantized vision encoder reads worse), all from the repo in
+  `homepage`. Its `family` covers what llama.cpp's built-in chat templates miss: Qwen3.5's template turns thinking
+  off with an empty `<think></think>` that the built-in ChatML lacks (`Family::answer_prefix`). `maker` and
+  `commercial_limit` drive the license note. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak
+  memory before writing its description; mirror it in `src/lib/demo.ts`. The Qwen3.5 descriptions and
+  `memory_mb` are estimates still to measure.
+- **Where models run** (`settings.local_device`, `local::Device`): "" = automatic (`llama::pick_gpu`: the discrete GPU
+  with the most free memory, else an integrated one; one GPU, never split), "cpu", or a GPU by llama.cpp's name
+  (`Vulkan1`, `CUDA0`, `MTL0`). `LocalModels::engine` loads again when the device changes, and if loading on a GPU
+  fails it loads on the CPU and keeps why (`ActiveModel.fallback`, shown in Settings). Off macOS, `fit_params`
+  sets how many layers the GPU's free memory holds (keeping the projector's size free); on macOS (unified memory)
+  everything goes on Metal. The bindings can't place the vision projector: it takes the first discrete GPU.
+  Device names are llama.cpp's: Metal's backend is "MTL".
+- **GPU builds (`gpu-backends`)**: llama-cpp-sys-2 is a direct dependency so that `build.rs` runs after it and reads
+  `DEP_LLAMA_BACKENDS_DIR`; it copies the shared libraries (Linux: the `lib*.so.N` sonames) and backend modules into
+  `src-tauri/llama/` (gitignored, always created: Tauri checks bundled paths), which `tauri.windows.conf.json` ships
+  next to the exe and `tauri.linux.conf.json` in `/usr/lib/Cardloader/llama`, found through the binary's DT_RPATH
+  `$ORIGIN/../lib/Cardloader/llama`. At startup `llama::load_backend_modules` loads the modules from there (or the
+  build folder for `cargo test`/`tauri dev`); a GPU module whose driver is missing doesn't load, so the app runs on
+  the CPU. `local::tests::lists_the_cpu` fails if no backend module was found.
 - `llama-cpp-2`'s `LlamaSampler::sample` already accepts the token; accepting it again corrupts the grammar
   (`GGML_ASSERT(!stacks.empty())`). The llama.cpp backend can be initialised once per process (`OnceLock`).
 - Real-model checks are opt-in (`#[ignore]`): `real_model_reads_cards` (needs `CARDLOADER_MODELS`, `CARDLOADER_CARDS`)
@@ -239,7 +261,8 @@ state from them.
 ## Not verified automatically
 
 Real Ximilar API calls, real eBay calls (use a sandbox keyset), real updates (need a published signed release), real scanners (SANE/TWAIN), signed release builds,
-the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), and real MCP clients (Claude Desktop,
+the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), real GPUs (Vulkan/CUDA: CI has
+none, so it builds the backend and runs on the CPU), the llama.cpp libraries in the Windows/Linux bundles, and real MCP clients (Claude Desktop,
 Claude Code; the tests speak JSON-RPC over HTTP and through the bridge, and `npx @modelcontextprotocol/inspector`
 can call the tools by hand). Say so when a change depends on
 them, and describe how it was checked.

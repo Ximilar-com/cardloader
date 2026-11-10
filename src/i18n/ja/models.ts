@@ -15,10 +15,24 @@ const messages: Messages<typeof en> = {
     ready: "ダウンロード済み · このパソコン上で動作し、インターネット接続は不要です",
     accept: "<license>{license}</license>に同意します",
     licenseNote:
-      "このモデルはLiquid AIが作成し、Hugging Faceからダウンロードされます。Cardloaderの一部ではありません。ライセンスでは、一定の収益額未満の場合にのみ商用利用が認められています。同意する前にお読みください。",
+      "このモデルは{maker}が作成し、Hugging Faceからダウンロードされます。Cardloaderの一部ではありません。同意する前にライセンスをお読みください。",
+    licenseLimit: "ライセンスでは、一定の収益額未満の場合にのみ商用利用が認められています。",
     resume: "ダウンロードを再開",
     download: "ダウンロード",
     partial: "{size}のうち{done}をダウンロード済み",
+  },
+  device: {
+    runOn: "実行するデバイス",
+    auto: "自動",
+    noGpu: "GPUが見つからないためCPU",
+    cpu: "CPUのみ",
+    integrated: "{backend} · 内蔵",
+    missing: "{name}（見つかりません：CPUを使用）",
+    tooSmall: "{model}には約{need}が必要ですが、{gpu}は{have}です。収まらない部分はCPUで実行されるため、遅くなります。",
+    loaded: "読み込まれたモデルは{runsOn}で実行されています。",
+    partly:
+      "読み込まれたモデルは{layers}層のうち{gpu}層を{runsOn}で、残りをCPUで実行しています。GPUの空きメモリが足りませんでした。",
+    fellBack: "GPUでモデルを読み込めなかったため、CPUで実行しています（{error}）。",
   },
   compare: {
     title: "ローカルモデルと比較",

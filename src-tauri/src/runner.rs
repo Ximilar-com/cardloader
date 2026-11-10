@@ -23,7 +23,7 @@ use crate::ebay::sync::{EbayProgress, Job};
 use crate::ebay::EbayAuth;
 use crate::error::{Error, Result};
 use crate::imaging;
-use crate::local::LocalModels;
+use crate::local::{Device, LocalModels};
 use crate::model::*;
 use crate::pairing::Unit;
 use crate::settings::SettingsStore;
@@ -122,6 +122,8 @@ impl Runner {
         settings: Arc<SettingsStore>,
         data_dir: PathBuf,
     ) -> Arc<Self> {
+        let local = Arc::new(LocalModels::new(data_dir.join("models")));
+        local.set_device(Device::from_setting(&settings.get().local_device));
         Arc::new(Runner {
             app,
             events,
@@ -132,7 +134,7 @@ impl Runner {
             ebay_jobs: Mutex::new(HashMap::new()),
             exports: Mutex::new(HashMap::new()),
             ebay: EbayAuth::default(),
-            local: Arc::new(LocalModels::new(data_dir.join("models"))),
+            local,
             data_dir,
         })
     }

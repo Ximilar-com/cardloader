@@ -15,10 +15,25 @@ const messages: Messages<typeof en> = {
     ready: "Descargado · funciona en este ordenador, sin internet",
     accept: "Acepto la <license>{license}</license>",
     licenseNote:
-      "El modelo lo crea Liquid AI y se descarga de Hugging Face; no forma parte de cardloader. Su licencia solo permite el uso comercial por debajo de un umbral de ingresos: léela antes de aceptarla.",
+      "El modelo lo crea {maker} y se descarga de Hugging Face; no forma parte de cardloader. Lee su licencia antes de aceptarla.",
+    licenseLimit: "Solo permite el uso comercial por debajo de un umbral de ingresos.",
     resume: "Reanudar la descarga",
     download: "Descargar",
     partial: "{done} de {size} ya descargados",
+  },
+  device: {
+    runOn: "Ejecutar en",
+    auto: "Automático",
+    noGpu: "no hay GPU, así que la CPU",
+    cpu: "Solo la CPU",
+    integrated: "{backend} · integrada",
+    missing: "{name} (no encontrada: se usa la CPU)",
+    tooSmall:
+      "{model} necesita unos {need} y {gpu} tiene {have}: lo que no cabe se ejecuta en la CPU, que es más lenta.",
+    loaded: "El modelo cargado se ejecuta en {runsOn}.",
+    partly:
+      "El modelo cargado ejecuta {gpu} de sus {layers} capas en {runsOn} y el resto en la CPU: la memoria libre de la GPU no alcanzaba para todo.",
+    fellBack: "La GPU no pudo cargar el modelo, así que se ejecuta en la CPU ({error}).",
   },
   compare: {
     title: "Comparar con un modelo local",

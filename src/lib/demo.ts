@@ -81,6 +81,7 @@ const settings: SettingsView = {
   syncByDefault: true,
   engine: "ximilar",
   localModel: "lfm2.5-vl-3b",
+  localDevice: "",
   ebay: {
     sandbox: true,
     appId: "Demo-Cardload-SBX-0a1b2c3d4-5e6f7a8b",
@@ -629,12 +630,20 @@ const remote = {
 };
 
 const lfm = {
+  maker: "Liquid AI",
   licenseName: "LFM Open License v1.0",
   licenseUrl: "https://www.liquid.ai/lfm-license",
+  commercialLimit: true,
   downloaded: 0,
   state: "missing" as const,
   error: null,
   supported: true,
+};
+const qwen = {
+  maker: "Alibaba's Qwen team",
+  licenseName: "Apache License 2.0",
+  licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
+  commercialLimit: false,
 };
 // The default first, as `local::catalog::MODELS`.
 const models: ModelStatus[] = [
@@ -672,6 +681,32 @@ const models: ModelStatus[] = [
     size: 1_314_006_144,
     description: "The 1.6B model (Q4_K_M): reads names and numbers clearly better than 450M, about 2–3 times slower.",
     homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF",
+  },
+  {
+    ...lfm,
+    ...qwen,
+    id: "qwen3.5-4b",
+    name: "Qwen3.5 4B",
+    tier: "Accurate",
+    params: "4B",
+    memoryMb: 4000,
+    size: 3_413_361_504,
+    description:
+      "Alibaba's Qwen3.5 4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Larger than the LFM models: best on a GPU or a Mac with 16 GB of memory.",
+    homepage: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF",
+  },
+  {
+    ...lfm,
+    ...qwen,
+    id: "qwen3.5-9b",
+    name: "Qwen3.5 9B",
+    tier: "Large",
+    params: "9B",
+    memoryMb: 7200,
+    size: 6_598_688_544,
+    description:
+      "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Needs a GPU with 8 GB of memory or more, or a Mac with 16 GB; on the CPU alone it is slow.",
+    homepage: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
   },
 ];
 models[0] = { ...models[0], state: "ready", downloaded: models[0].size };
@@ -1084,6 +1119,43 @@ export function installDemo() {
         }
         case "list_models":
           return models.map((m) => ({ ...m }));
+        case "local_devices":
+          return {
+            supported: true,
+            devices: [
+              {
+                name: "CPU",
+                description: "AMD Ryzen 7 7700X",
+                kind: "cpu",
+                backend: "CPU",
+                memoryTotal: 32e9,
+                memoryFree: 20e9,
+              },
+              {
+                name: "Vulkan0",
+                description: "NVIDIA GeForce RTX 4070",
+                kind: "gpu",
+                backend: "Vulkan",
+                memoryTotal: 12_878_610_432,
+                memoryFree: 11_200_000_000,
+              },
+              {
+                name: "Vulkan1",
+                description: "AMD Radeon Graphics",
+                kind: "igpu",
+                backend: "Vulkan",
+                memoryTotal: 2_147_483_648,
+                memoryFree: 1_900_000_000,
+              },
+            ],
+            active: {
+              model: "lfm2.5-vl-3b",
+              runsOn: "NVIDIA GeForce RTX 4070",
+              gpuLayers: 30,
+              layers: 30,
+              fallback: null,
+            },
+          };
         case "download_model":
           downloadDemo(modelById(a.id));
           return { ...modelById(a.id) };

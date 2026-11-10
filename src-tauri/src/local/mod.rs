@@ -42,7 +42,82 @@ pub trait VisionModel: Send + Sync {
 }
 
 type Notify = Arc<dyn Fn(ModelStatus) + Send + Sync>;
-type Loader = Arc<dyn Fn(&ModelSpec, &Path, &Path) -> Result<Arc<dyn VisionModel>> + Send + Sync>;
+type Loader = Arc<dyn Fn(&ModelSpec, &Path, &Path, &Device) -> Result<Loaded> + Send + Sync>;
+
+/// Where models run (`settings.local_device`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Device {
+    /// The best GPU there is (a discrete one first), else the CPU.
+    Auto,
+    Cpu,
+    /// A GPU by the name llama.cpp gives it ("Vulkan1", "CUDA0").
+    Named(String),
+}
+
+impl Device {
+    /// "" is automatic, "cpu" the CPU, anything else a GPU's name.
+    pub fn from_setting(s: &str) -> Device {
+        match s {
+            "" => Device::Auto,
+            "cpu" => Device::Cpu,
+            name => Device::Named(name.into()),
+        }
+    }
+}
+
+/// A loaded model and where it runs.
+pub struct Loaded {
+    pub engine: Arc<dyn VisionModel>,
+    /// The device, as people know it: "NVIDIA GeForce RTX 4070", "Apple M2 Pro", "CPU".
+    pub runs_on: String,
+    /// Layers on the GPU, of `layers`: fewer when the GPU's free memory couldn't hold them all.
+    pub gpu_layers: u32,
+    pub layers: u32,
+}
+
+/// A device llama.cpp can run models on.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputeDevice {
+    /// llama.cpp's name for it ("Vulkan0", "CUDA0", "MTL0", "CPU"): what `settings.local_device` stores.
+    pub name: String,
+    /// What it is ("NVIDIA GeForce RTX 4070").
+    pub description: String,
+    /// "gpu", "igpu" (integrated), "cpu", "accel".
+    pub kind: String,
+    /// "Vulkan", "CUDA", "MTL" (Metal), "CPU".
+    pub backend: String,
+    pub memory_total: u64,
+    pub memory_free: u64,
+}
+
+/// The model in memory and where it ended up.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActiveModel {
+    pub model: String,
+    pub runs_on: String,
+    pub gpu_layers: u32,
+    pub layers: u32,
+    /// Why it runs on the CPU though a GPU was wanted (loading there failed).
+    pub fallback: Option<String>,
+}
+
+/// What Settings shows about running models: the devices and the loaded model.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceList {
+    /// This build can run models (the `local-model` feature).
+    pub supported: bool,
+    pub devices: Vec<ComputeDevice>,
+    pub active: Option<ActiveModel>,
+}
+
+struct LoadedModel {
+    id: String,
+    device: Device,
+    engine: Arc<dyn VisionModel>,
+}
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -63,8 +138,11 @@ pub struct ModelStatus {
     pub description: String,
     /// Memory the loaded model needs, roughly (MB).
     pub memory_mb: u32,
+    pub maker: String,
     pub license_name: String,
     pub license_url: String,
+    /// The license limits commercial use.
+    pub commercial_limit: bool,
     pub homepage: String,
     pub size: u64,
     pub downloaded: u64,
@@ -86,7 +164,10 @@ pub struct LocalModels {
     http: reqwest::Client,
     downloads: Mutex<HashMap<String, Download>>,
     errors: Mutex<HashMap<String, String>>,
-    loaded: tokio::sync::Mutex<Option<(String, Arc<dyn VisionModel>)>>,
+    loaded: tokio::sync::Mutex<Option<LoadedModel>>,
+    /// Where the loaded model runs; apart from `loaded`, which is held while a model loads.
+    active: Mutex<Option<ActiveModel>>,
+    device: RwLock<Device>,
     loader: RwLock<Loader>,
     /// Running comparisons by the id the UI gave them, to cancel them.
     pub comparing: Mutex<HashMap<String, CancellationToken>>,
@@ -97,11 +178,23 @@ pub fn supported() -> bool {
     cfg!(feature = "local-model")
 }
 
+/// The devices models can run on (none in a build without local models).
+pub fn devices() -> Vec<ComputeDevice> {
+    #[cfg(feature = "local-model")]
+    {
+        llama::devices()
+    }
+    #[cfg(not(feature = "local-model"))]
+    {
+        Vec::new()
+    }
+}
+
 fn default_loader() -> Loader {
-    Arc::new(|_spec, _model, _mmproj| {
+    Arc::new(|_spec, _model, _mmproj, _device| {
         #[cfg(feature = "local-model")]
         {
-            Ok(Arc::new(llama::LlamaVision::load(_model, _mmproj)?) as Arc<dyn VisionModel>)
+            llama::LlamaVision::load(_spec, _model, _mmproj, _device)
         }
         #[cfg(not(feature = "local-model"))]
         {
@@ -124,9 +217,25 @@ impl LocalModels {
             downloads: Mutex::new(HashMap::new()),
             errors: Mutex::new(HashMap::new()),
             loaded: tokio::sync::Mutex::new(None),
+            active: Mutex::new(None),
+            device: RwLock::new(Device::Auto),
             loader: RwLock::new(default_loader()),
             comparing: Mutex::new(HashMap::new()),
             notify: RwLock::new(None),
+        }
+    }
+
+    /// Where models run from now on; a model loaded elsewhere is loaded again when next used.
+    pub fn set_device(&self, device: Device) {
+        *self.device.write().unwrap() = device;
+    }
+
+    /// The devices there are and where the loaded model runs.
+    pub fn device_list(&self) -> DeviceList {
+        DeviceList {
+            supported: supported(),
+            devices: devices(),
+            active: self.active.lock().unwrap().clone(),
         }
     }
 
@@ -178,8 +287,10 @@ impl LocalModels {
             params: spec.params.into(),
             description: spec.description.into(),
             memory_mb: spec.memory_mb,
+            maker: spec.maker.into(),
             license_name: spec.license_name.into(),
             license_url: spec.license_url.into(),
+            commercial_limit: spec.commercial_limit,
             homepage: spec.homepage.into(),
             size: spec.size(),
             downloaded,
@@ -275,8 +386,9 @@ impl LocalModels {
         let spec = catalog::find(id).ok_or_else(|| Error::msg("unknown model"))?;
         self.cancel(id);
         let mut loaded = self.loaded.lock().await;
-        if loaded.as_ref().is_some_and(|(m, _)| m == id) {
+        if loaded.as_ref().is_some_and(|l| l.id == id) {
             *loaded = None;
+            *self.active.lock().unwrap() = None;
         }
         drop(loaded);
         // A cancelled download lets go of its file within moments.
@@ -304,20 +416,47 @@ impl LocalModels {
                 spec.name
             )));
         }
+        let device = self.device.read().unwrap().clone();
         let mut loaded = self.loaded.lock().await;
-        if let Some((m, engine)) = loaded.as_ref() {
-            if m == id {
-                return Ok(engine.clone());
+        if let Some(l) = loaded.as_ref() {
+            if l.id == id && l.device == device {
+                return Ok(l.engine.clone());
             }
         }
+        // Let go of the last model first: both may not fit in memory.
+        *loaded = None;
+        *self.active.lock().unwrap() = None;
         let (model, mmproj) = self.paths(spec);
         let loader = self.loader.read().unwrap().clone();
-        // Loading reads a few hundred MB: off the async threads.
-        let engine = tokio::task::spawn_blocking(move || loader(spec, &model, &mmproj))
+        let wanted = device.clone();
+        // Loading reads gigabytes: off the async threads. A GPU that fails (its driver, its memory) leaves the CPU.
+        let (l, fallback) =
+            tokio::task::spawn_blocking(move || match loader(spec, &model, &mmproj, &wanted) {
+                Ok(l) => Ok((l, None)),
+                Err(e) if wanted != Device::Cpu => {
+                    tracing::warn!(
+                        "model {} failed on {wanted:?}, trying the CPU: {e}",
+                        spec.id
+                    );
+                    loader(spec, &model, &mmproj, &Device::Cpu).map(|l| (l, Some(e.to_string())))
+                }
+                Err(e) => Err(e),
+            })
             .await
             .map_err(|e| Error::msg(e.to_string()))??;
-        *loaded = Some((id.to_string(), engine.clone()));
-        Ok(engine)
+        *self.active.lock().unwrap() = Some(ActiveModel {
+            model: id.to_string(),
+            runs_on: l.runs_on,
+            gpu_layers: l.gpu_layers,
+            layers: l.layers,
+            fallback,
+        });
+        *loaded = Some(LoadedModel {
+            id: id.to_string(),
+            device,
+            engine: l.engine.clone(),
+        });
+        Ok(l.engine)
     }
 
     /// Identifies the card in `image` (a file) with model `id`. Returns the recognition and the raw record
@@ -444,9 +583,77 @@ pub mod testing {
             }
         }
         let answer = answer.to_string();
-        models.set_loader(Arc::new(move |_, _, _| {
-            Ok(Arc::new(FakeVision(answer.clone())))
+        models.set_loader(Arc::new(move |_, _, _, _| Ok(fake_loaded(&answer, "CPU"))));
+    }
+
+    pub fn fake_loaded(answer: &str, runs_on: &str) -> Loaded {
+        Loaded {
+            engine: Arc::new(FakeVision(answer.to_string())),
+            runs_on: runs_on.into(),
+            gpu_layers: 0,
+            layers: 32,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A GPU that fails to take the model leaves it on the CPU, and Settings says why; another device loads it
+    /// again, and deleting the model lets go of it.
+    #[tokio::test]
+    async fn falls_back_to_the_cpu_and_reloads_on_another_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let local = LocalModels::new(dir.path().to_path_buf());
+        testing::install_fake(&local, "{}");
+        let loads = Arc::new(Mutex::new(Vec::new()));
+        let seen = loads.clone();
+        local.set_loader(Arc::new(move |_, _, _, device| {
+            seen.lock().unwrap().push(device.clone());
+            match device {
+                Device::Named(_) => Err(Error::msg("out of GPU memory")),
+                Device::Auto => Ok(testing::fake_loaded("{}", "Test GPU")),
+                Device::Cpu => Ok(testing::fake_loaded("{}", "CPU")),
+            }
         }));
+        let id = catalog::DEFAULT_MODEL;
+        local.engine(id).await.unwrap();
+        local.engine(id).await.unwrap();
+        assert_eq!(*loads.lock().unwrap(), [Device::Auto], "loaded once");
+        let active = local.device_list().active.unwrap();
+        assert_eq!(
+            (active.runs_on.as_str(), active.fallback),
+            ("Test GPU", None)
+        );
+
+        local.set_device(Device::from_setting("Vulkan1"));
+        local.engine(id).await.unwrap();
+        let active = local.device_list().active.unwrap();
+        assert_eq!(active.runs_on, "CPU");
+        assert!(active.fallback.unwrap().contains("out of GPU memory"));
+        assert_eq!(
+            loads.lock().unwrap()[1..],
+            [Device::Named("Vulkan1".into()), Device::Cpu]
+        );
+
+        local.delete(id).await.unwrap();
+        assert!(local.device_list().active.is_none());
+    }
+
+    #[test]
+    fn device_settings() {
+        assert_eq!(Device::from_setting(""), Device::Auto);
+        assert_eq!(Device::from_setting("cpu"), Device::Cpu);
+        assert_eq!(Device::from_setting("CUDA0"), Device::Named("CUDA0".into()));
+    }
+
+    /// llama.cpp finds at least the CPU: with `gpu-backends` that means its backend modules were found and loaded.
+    #[cfg(feature = "local-model")]
+    #[test]
+    fn lists_the_cpu() {
+        let devices = devices();
+        assert!(devices.iter().any(|d| d.kind == "cpu"), "{devices:?}");
     }
 }
 

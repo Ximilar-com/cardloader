@@ -51,7 +51,9 @@ pub async fn save_settings(
     mcp: State<'_, Arc<McpServer>>,
     settings: Settings,
 ) -> Result<SettingsView> {
+    let device = local::Device::from_setting(&settings.local_device);
     state.settings.update(settings)?;
+    state.runner.local.set_device(device);
     mcp.apply().await;
     Ok(state.settings.view())
 }
@@ -596,6 +598,16 @@ pub fn download_model(state: S, id: String) -> Result<ModelStatus> {
         ));
     }
     state.runner.local.download(&id)
+}
+
+/// The CPU and GPUs local models can run on, and where the loaded model runs.
+#[tauri::command]
+pub async fn local_devices(state: S<'_>) -> Result<local::DeviceList> {
+    let local = state.runner.local.clone();
+    // Listing starts llama.cpp (and its GPU drivers) the first time: off the async threads.
+    tokio::task::spawn_blocking(move || local.device_list())
+        .await
+        .map_err(|e| Error::msg(e.to_string()))
 }
 
 #[tauri::command]

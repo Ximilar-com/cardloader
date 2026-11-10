@@ -15,10 +15,25 @@ export default {
     ready: "Downloaded · runs on this computer, no internet needed",
     accept: "I accept the <license>{license}</license>",
     licenseNote:
-      "The model is made by Liquid AI and downloaded from Hugging Face; it is not part of cardloader. Its license allows commercial use only below a revenue threshold — read it before accepting.",
+      "The model is made by {maker} and downloaded from Hugging Face; it is not part of cardloader. Read its license before accepting.",
+    licenseLimit: "Its license allows commercial use only below a revenue threshold.",
     resume: "Resume download",
     download: "Download",
     partial: "{done} of {size} already downloaded",
+  },
+  device: {
+    runOn: "Run on",
+    auto: "Automatic",
+    noGpu: "no GPU found, so the CPU",
+    cpu: "CPU only",
+    integrated: "{backend} · integrated",
+    missing: "{name} (not found: the CPU is used)",
+    tooSmall:
+      "{model} needs about {need} and {gpu} has {have}: the part that doesn't fit runs on the CPU, which is slower.",
+    loaded: "The loaded model runs on {runsOn}.",
+    partly:
+      "The loaded model runs {gpu} of its {layers} layers on {runsOn} and the rest on the CPU: the GPU's free memory couldn't hold it all.",
+    fellBack: "The GPU couldn't load the model, so it runs on the CPU ({error}).",
   },
   compare: {
     title: "Compare with a local model",

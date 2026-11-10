@@ -75,6 +75,9 @@ pub struct Settings {
     /// What identifies cards in new sessions.
     pub engine: Engine,
     pub local_model: String,
+    /// Where local models run: "" = the best GPU there is (else the CPU), "cpu", or a GPU's llama.cpp name
+    /// ("Vulkan1"). See `local::Device`.
+    pub local_device: String,
     pub ebay: EbaySettings,
     /// AI agents driving the app over MCP.
     pub mcp: McpSettings,
@@ -189,6 +192,7 @@ impl Default for Settings {
             sync_by_default: false,
             engine: Engine::Ximilar,
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
+            local_device: String::new(),
             ebay: EbaySettings::default(),
             mcp: McpSettings::default(),
             image_host_base: String::new(),

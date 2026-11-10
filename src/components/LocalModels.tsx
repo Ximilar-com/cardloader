@@ -2,10 +2,10 @@
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
-import { Cpu, Download, ExternalLink, Trash2, X } from "lucide-react";
+import { Cpu, Download, ExternalLink, Gauge, MonitorCog, Trash2, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { rich, t as translate, useT } from "../i18n";
-import { api, errorText, onModelUpdated, type ModelStatus } from "../lib/api";
+import { api, errorText, onModelUpdated, type ComputeDevice, type DeviceList, type ModelStatus } from "../lib/api";
 import { bytes, duration } from "../lib/format";
 import { ErrorNote } from "./Modal";
 import Select, { Badge, type SelectOption } from "./Select";
@@ -48,6 +48,7 @@ const TIER_STYLES: Record<string, string> = {
   Fast: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
   Balanced: "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
   Accurate: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+  Large: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
 };
 
 /** The model's Hugging Face repository, e.g. `LiquidAI/LFM2.5-VL-450M-GGUF`. */
@@ -202,7 +203,10 @@ function ModelCard({ model }: { model: ModelStatus }) {
               })}
             </span>
           </label>
-          <p className="text-xs text-slate-500">{t("models.card.licenseNote")}</p>
+          <p className="text-xs text-slate-500">
+            {t("models.card.licenseNote", { maker: model.maker })}
+            {model.commercialLimit && <> {t("models.card.licenseLimit")}</>}
+          </p>
           <div className="flex items-center gap-3">
             <button
               className="btn btn-primary"
@@ -224,6 +228,101 @@ function ModelCard({ model }: { model: ModelStatus }) {
         <div className="mt-3">
           <ErrorNote>{model.error ?? error}</ErrorNote>
         </div>
+      )}
+    </div>
+  );
+}
+
+const isGpu = (d: ComputeDevice) => d.kind === "gpu" || d.kind === "igpu";
+/** llama.cpp names Apple's backend "MTL". */
+const isMetal = (d: ComputeDevice) => d.backend === "MTL" || d.backend === "Metal";
+const backendName = (d: ComputeDevice) => (isMetal(d) ? "Metal" : d.backend);
+
+/** The GPU "automatic" picks, as `local::llama::pick_gpu` does: the discrete GPU with the most free memory, else an
+ * integrated one. */
+function autoGpu(devices: ComputeDevice[]): ComputeDevice | undefined {
+  const rank = (d: ComputeDevice) => (d.kind === "gpu" ? 1e15 : 0) + d.memoryFree;
+  return devices.filter(isGpu).sort((a, b) => rank(b) - rank(a))[0];
+}
+
+/** Where local models run (automatic, the CPU or one GPU), and where the loaded model ended up. */
+export function DevicePicker({
+  value,
+  onChange,
+  model,
+}: {
+  value: string;
+  onChange: (device: string) => void;
+  /** The model new sessions use, to warn when it is larger than the GPU. */
+  model?: ModelStatus;
+}) {
+  const t = useT();
+  const [list, setList] = useState<DeviceList | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api
+      .localDevices()
+      .then((l) => alive && setList(l))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  if (!list?.supported) return null;
+
+  const gpus = list.devices.filter(isGpu);
+  const options: SelectOption<string>[] = [
+    {
+      value: "",
+      label: t("models.device.auto"),
+      text: t("models.device.auto"),
+      icon: Gauge,
+      hint: autoGpu(gpus)?.description ?? t("models.device.noGpu"),
+    },
+    { value: "cpu", label: t("models.device.cpu"), text: t("models.device.cpu"), icon: Cpu },
+    ...gpus.map((d) => ({
+      value: d.name,
+      label: d.description,
+      text: d.description,
+      icon: MonitorCog,
+      hint: d.kind === "igpu" ? t("models.device.integrated", { backend: backendName(d) }) : backendName(d),
+      badge: <Badge>{bytes(d.memoryTotal)}</Badge>,
+    })),
+  ];
+  // A GPU chosen earlier that isn't here now (unplugged, another driver): models run on the CPU until it's back.
+  if (value && value !== "cpu" && !gpus.some((d) => d.name === value)) {
+    options.push({ value, label: t("models.device.missing", { name: value }), text: value, icon: MonitorCog });
+  }
+
+  const gpu = value === "" ? autoGpu(gpus) : gpus.find((d) => d.name === value);
+  // Unified memory (Metal) holds the whole model or nothing, so only a GPU with its own memory splits it.
+  const tooSmall = gpu && model && !isMetal(gpu) && model.memoryMb * 1e6 > gpu.memoryTotal;
+  const active = list.active;
+  return (
+    <div className="mt-5 space-y-2">
+      <div>
+        <div className="label">{t("models.device.runOn")}</div>
+        <Select value={value} options={options} onChange={onChange} aria-label={t("models.device.runOn")} />
+      </div>
+      {tooSmall && (
+        <p className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+          <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+          {t("models.device.tooSmall", {
+            model: model.name,
+            need: bytes(model.memoryMb * 1e6),
+            gpu: gpu.description,
+            have: bytes(gpu.memoryTotal),
+          })}
+        </p>
+      )}
+      {active && (
+        <p className="text-xs text-slate-500">
+          {active.fallback
+            ? t("models.device.fellBack", { error: active.fallback })
+            : active.gpuLayers > 0 && active.gpuLayers < active.layers
+              ? t("models.device.partly", { runsOn: active.runsOn, gpu: active.gpuLayers, layers: active.layers })
+              : t("models.device.loaded", { runsOn: active.runsOn })}
+        </p>
       )}
     </div>
   );

@@ -13,7 +13,9 @@ The Windows installer ships an unmodified 32-bit `TWAINDSM.dll` 2.5.1 from the T
 ## llama.cpp (local model support)
 
 Builds with the default `local-model` feature compile [llama.cpp](https://github.com/ggml-org/llama.cpp) into the
-app through the `llama-cpp-2` / `llama-cpp-sys-2` crates.
+app through the `llama-cpp-2` / `llama-cpp-sys-2` crates. The Windows and Linux installers, built with the `vulkan`
+feature, ship it as shared libraries with its Vulkan and CPU backends (`llama/`, next to the app). They use the
+Vulkan loader of the GPU's driver and don't include one.
 
 - License: MIT — <https://github.com/ggml-org/llama.cpp/blob/master/LICENSE>
 
@@ -22,13 +24,18 @@ app through the `llama-cpp-2` / `llama-cpp-sys-2` crates.
 Local models are **not** part of cardloader or its installers. When the user chooses one in Settings and accepts
 its license, the app downloads it from Hugging Face (pinned revision, SHA-256 verified).
 
-All of them are by Liquid AI, under the [LFM Open License v1.0](https://www.liquid.ai/lfm-license) (commercial use
-limited by a revenue threshold):
+By Liquid AI, under the [LFM Open License v1.0](https://www.liquid.ai/lfm-license) (commercial use limited by a
+revenue threshold):
 
 - LFM2.5-VL-450M — <https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF>
 - LFM2.5-VL-1.6B — <https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF>
-- LFM2-VL-1.6B — <https://huggingface.co/LiquidAI/LFM2-VL-1.6B-GGUF>
-- LFM2-VL-3B — <https://huggingface.co/LiquidAI/LFM2-VL-3B-GGUF>
+- LFM2.5-VL-3B — <https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF>
+
+By Alibaba's Qwen team, under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), as GGUF files
+converted by Unsloth:
+
+- Qwen3.5-4B — <https://huggingface.co/unsloth/Qwen3.5-4B-GGUF>
+- Qwen3.5-9B — <https://huggingface.co/unsloth/Qwen3.5-9B-GGUF>
 
 ## Rust and npm dependencies
 

@@ -28,7 +28,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation } from "react-router-dom";
 import { create } from "zustand";
 import { ebayReady } from "../components/Ebay";
-import { ModelPicker, useModels } from "../components/LocalModels";
+import { DevicePicker, ModelPicker, useModels } from "../components/LocalModels";
 import { ErrorNote } from "../components/Modal";
 import { toast } from "../components/Toast";
 import {
@@ -401,7 +401,14 @@ export default function SettingsPage() {
                 text={rich(t("settings.models.text"), { b: (s) => <b>{s}</b> })}
               >
                 {models && (
-                  <ModelPicker models={models} value={draft.localModel} onChange={(id) => set("localModel", id)} />
+                  <>
+                    <ModelPicker models={models} value={draft.localModel} onChange={(id) => set("localModel", id)} />
+                    <DevicePicker
+                      value={draft.localDevice}
+                      onChange={(device) => set("localDevice", device)}
+                      model={models.find((m) => m.id === draft.localModel)}
+                    />
+                  </>
                 )}
               </Section>
             )}

@@ -19,3 +19,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .vite/
+
+# llama.cpp libraries gathered by build.rs for the bundle (gpu-backends)
+src-tauri/llama/

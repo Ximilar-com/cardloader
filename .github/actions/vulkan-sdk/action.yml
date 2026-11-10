@@ -1,0 +1,36 @@
+name: Vulkan SDK
+description: >-
+  Installs LunarG's Vulkan SDK on Windows and Linux runners: the headers, glslc and SPIRV-Headers that llama.cpp's
+  Vulkan backend (the `vulkan` cargo feature) builds with. The built app needs none of it; it uses the GPU driver's
+  Vulkan loader when there is one.
+inputs:
+  version:
+    description: LunarG Vulkan SDK version
+    default: "1.4.313.0"
+runs:
+  using: composite
+  steps:
+    - name: Vulkan SDK (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $v = "${{ inputs.version }}"
+        $installer = Join-Path $env:RUNNER_TEMP "vulkan-sdk.exe"
+        curl.exe -fsSL -o $installer "https://sdk.lunarg.com/sdk/download/$v/windows/vulkansdk-windows-X64-$v.exe"
+        & $installer --root "C:\VulkanSDK\$v" --accept-licenses --default-answer --confirm-command install
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        "VULKAN_SDK=C:\VulkanSDK\$v" | Out-File -FilePath $env:GITHUB_ENV -Append
+        "C:\VulkanSDK\$v\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Vulkan SDK (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        v="${{ inputs.version }}"
+        curl -fsSL -o "$RUNNER_TEMP/vulkan-sdk.tar.xz" "https://sdk.lunarg.com/sdk/download/$v/linux/vulkansdk-linux-x86_64-$v.tar.xz"
+        mkdir -p "$RUNNER_TEMP/vulkan-sdk"
+        tar -xJf "$RUNNER_TEMP/vulkan-sdk.tar.xz" -C "$RUNNER_TEMP/vulkan-sdk"
+        sdk="$RUNNER_TEMP/vulkan-sdk/$v/x86_64"
+        echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
+        echo "$sdk/bin" >> "$GITHUB_PATH"
+        echo "LD_LIBRARY_PATH=$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"

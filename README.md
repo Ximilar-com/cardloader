@@ -33,9 +33,9 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   **Magic AI** lets Sport ID identify cards that aren't in Ximilar's database (extra credits, only when it runs).
   A **custom endpoint** that Ximilar set up for you can replace the standard one; it gets the same request.
 - **Local model (optional).** Cards can instead be identified on your computer, offline and for free, by a
-  vision language model from Liquid AI's LFM family (450M to 3B parameters, about 1–4 s per card). It reads the
-  name, collector number and year printed on the card; it can't give prices, other candidates or grades. See
-  [Local model](#local-model).
+  vision language model: Liquid AI's LFM2.5-VL (450M to 3B parameters) or Alibaba's Qwen3.5 (4B and 9B), on the
+  GPU when there is one. It reads the name, collector number and year printed on the card; it can't give prices,
+  other candidates or grades. See [Local model](#local-model).
 - **Grading.** [Card Grading](https://docs.ximilar.com/collectibles/card-grading) can grade each card in full
   (corners, edges, surface, centering, final grade) using both sides, check its condition, or measure centering
   only. The grading overlays are saved alongside the session.
@@ -142,12 +142,19 @@ the engine and model it was created with, and **New session** can pick another d
 | [LFM2.5-VL 3B](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF) (default) | 2.3 GB | ~2.5 GB | 3.2 s |
 | [LFM2.5-VL 450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) | 330 MB | ~0.6 GB | 0.7 s |
 | [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 1.9 s |
+| [Qwen3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ~4 GB | — |
+| [Qwen3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 6.6 GB | ~7 GB | — |
 
-Times are for an Apple-silicon Mac (Metal); the CPU on Windows and Linux is slower. To choose, run **Compare with
-local model** on your own cards (below).
+Times are for an Apple-silicon Mac (Metal); the Qwen3.5 models aren't measured yet. A CPU is slower, and the larger
+models want a GPU. To choose, run **Compare with local model** on your own cards (below).
 
-- The model runs in the app through [llama.cpp](https://github.com/ggml-org/llama.cpp): Metal on Macs, the CPU on
-  Windows and Linux. The model is loaded once (a few seconds) and reads one card at a time.
+- The model runs in the app through [llama.cpp](https://github.com/ggml-org/llama.cpp). The model is loaded once (a
+  few seconds) and reads one card at a time.
+- **GPU.** Macs use Metal. On Windows and Linux, Cardloader uses any NVIDIA, AMD or Intel GPU through Vulkan, which
+  comes with the GPU's driver; without one it runs on the CPU. **Settings → Local models → Run on** chooses:
+  **Automatic** (the GPU with the most free memory, a dedicated one before an integrated one), **CPU only**, or one
+  GPU. A model larger than the GPU's free memory runs partly on the CPU; if the GPU can't load it at all, it runs
+  on the CPU and Settings says why.
 - Two quick looks per card: the whole card for the name, year and game, and the enlarged bottom edge for the
   collector number and set code. The answers are held to a fixed JSON shape, so they always parse.
 - What it can't do: tell reprints and variants apart, give a match score, other candidates or prices.
@@ -160,8 +167,11 @@ local model** on your own cards (below).
 - **How good is it on your cards?** On a session identified by Ximilar, **⋯ → Compare with local model…** runs
   a downloaded model on the same cards and shows how often the name and the number agree, and how long each card
   took. Run it again with another model to compare models side by side. The session itself isn't changed.
-- The models are made by Liquid AI and licensed under the [LFM Open License v1.0](https://www.liquid.ai/lfm-license),
-  which limits commercial use above a revenue threshold. It is downloaded from Hugging Face, never bundled.
+- **Licenses.** The LFM2.5-VL models are made by Liquid AI under the
+  [LFM Open License v1.0](https://www.liquid.ai/lfm-license), which limits commercial use above a revenue threshold.
+  The Qwen3.5 models are made by Alibaba's Qwen team under the
+  [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), which allows commercial use (GGUF files by
+  Unsloth). Each is downloaded from Hugging Face after you accept its license, never bundled.
 - Models are stored in the app's data folder under `models/`; **Delete** in Settings removes them.
 
 ## Selling on eBay
@@ -333,6 +343,10 @@ Prerequisites:
 - [CMake](https://cmake.org) and Clang, to compile llama.cpp for the local model (`brew install cmake` on macOS,
   `sudo apt install cmake clang` on Debian/Ubuntu, the Visual Studio C++ tools on Windows). To build without local
   model support, use `cargo build --no-default-features` in `src-tauri/`.
+- For local models on the GPU on Windows and Linux (macOS always has Metal): the
+  [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) and the `vulkan` feature, as releases are built
+  (`npm run tauri dev -- --features vulkan`, `npm run tauri build -- --features vulkan`). With the CUDA toolkit,
+  `--features cuda` builds for NVIDIA GPUs instead. Without either feature, local models run on the CPU.
 
 Then:
 

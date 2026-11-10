@@ -113,6 +113,7 @@ pub fn run() {
             commands::list_models,
             commands::download_model,
             commands::cancel_model_download,
+            commands::local_devices,
             commands::delete_model,
             commands::compare_local,
             commands::cancel_compare,
