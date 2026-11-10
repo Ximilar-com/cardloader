@@ -81,6 +81,7 @@ export default function NewSessionDialog({
   const [support, setSupport] = useState<ScannerSupport | null>(null);
   const [scanning, setScanning] = useState(false);
   const [idMode, setIdMode] = useState<IdMode>(from?.idMode ?? "auto");
+  const [defaultPairing, setDefaultPairing] = useState<Pairing>("single");
   const [options, setOptions] = useState<SessionOptions | null>(from?.options ?? null);
   const [tokenSet, setTokenSet] = useState(true);
   const [remoteSession, setRemoteSession] = useState("");
@@ -97,9 +98,10 @@ export default function NewSessionDialog({
       }
       if (from) return;
       setIdMode(s.defaultIdMode);
+      setDefaultPairing(s.defaultPairing);
       setFolder(s.defaultFolder ?? "");
       setDevice(s.defaultScanner ?? "");
-      setOptions({
+      const options: SessionOptions = {
         priceStats: s.priceStats,
         slab: false,
         grading: s.defaultGrading,
@@ -119,7 +121,8 @@ export default function NewSessionDialog({
         syncRemote: s.syncByDefault,
         engine: s.engine,
         localModel: s.localModel,
-      });
+      };
+      setOptions(withKindDefaults(options, s.defaultIdMode, options.pairing));
     });
   }, [from, initialKind]);
 
@@ -205,6 +208,22 @@ export default function NewSessionDialog({
   const needsCsv = !editing && kind === "csv" && !csvPath.trim();
   const sourceMissing = needsFolder || needsCsv;
   const local = options?.engine === "local";
+  // A local session holds one kind of cards (Auto and slabs are the API's).
+  const sessionIdMode = local ? localKind(idMode) : idMode;
+  // What "Images per card" goes back to when a local session stops reading backs.
+  const basePairing: Pairing = kind === "scanner" && options?.scan.duplex ? "front_back" : defaultPairing;
+  const chooseEngine = (engine: Engine) =>
+    setOptions(
+      (o) =>
+        o &&
+        (o.engine === "local" || engine === "local"
+          ? withKindDefaults({ ...o, engine }, idMode, basePairing)
+          : { ...o, engine }),
+    );
+  const chooseIdMode = (mode: IdMode) => {
+    setIdMode(mode);
+    if (local) setOptions((o) => o && withKindDefaults(o, mode, basePairing));
+  };
   // Only grading uses more than a 300 dpi scan (the runner's `scan_settings`).
   const grades = !local && options?.grading !== "off";
   // Only a downloaded model can be picked: the chosen one, else the first downloaded.
@@ -228,7 +247,7 @@ export default function NewSessionDialog({
     setError(null);
     try {
       await saveScan();
-      const saved = await api.updateSession(from.id, name, idMode, chosen);
+      const saved = await api.updateSession(from.id, name, sessionIdMode, chosen);
       onSaved?.(saved);
       onClose();
     } catch (e) {
@@ -245,7 +264,7 @@ export default function NewSessionDialog({
       name,
       sourceKind: kind,
       sourceRef: kind === "scanner" ? device : kind === "csv" ? csvPath : folder,
-      idMode,
+      idMode: sessionIdMode,
       options: chosen,
     };
     try {
@@ -501,7 +520,7 @@ export default function NewSessionDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">{t("newSession.identifyWith")}</label>
-              <Select value={options.engine} onChange={(v) => set("engine", v)} options={engineOptions()} />
+              <Select value={options.engine} onChange={chooseEngine} options={engineOptions()} />
             </div>
             {local ? (
               <div>
@@ -521,9 +540,13 @@ export default function NewSessionDialog({
               <div />
             )}
             {local && <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>}
-            <div className={local ? "hidden" : undefined}>
+            <div>
               <label className="label">{t("newSession.identifyAs")}</label>
-              <Select value={idMode} onChange={setIdMode} options={optionsOf(idModeLabels())} />
+              <Select
+                value={sessionIdMode}
+                onChange={chooseIdMode}
+                options={local ? localKindOptions() : optionsOf(idModeLabels())}
+              />
             </div>
             <div>
               <label className="label">{t("newSession.grading")}</label>
@@ -556,6 +579,22 @@ export default function NewSessionDialog({
               </div>
             ) : (
               kind !== "csv" && <div />
+            )}
+            {local && (
+              <div className="col-span-2">
+                <Check
+                  label={t("newSession.localBack.label")}
+                  checked={options.bothSides}
+                  onChange={(v) =>
+                    setOptions({
+                      ...options,
+                      bothSides: v,
+                      ...(kind === "csv" ? {} : { pairing: v ? "front_back" : options.pairing }),
+                    })
+                  }
+                />
+                <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.localBack.hint")}</p>
+              </div>
             )}
             {!local && (
               <>
@@ -600,6 +639,26 @@ export default function NewSessionDialog({
       </div>
     </Modal>
   );
+}
+
+/** What a local session can hold; any other "Identify as" reads as trading cards. */
+const LOCAL_KINDS: IdMode[] = ["tcg", "sport", "comics"];
+
+function localKind(mode: IdMode): IdMode {
+  return LOCAL_KINDS.includes(mode) ? mode : "tcg";
+}
+
+function localKindOptions(): SelectOption<IdMode>[] {
+  const labels = idModeLabels();
+  return LOCAL_KINDS.map((value) => ({ value, label: labels[value] }));
+}
+
+/** A local session of sports cards reads both sides by default (the number, year and set are on the back); other
+ * kinds, and the API, start with the front only. Turning the back off returns "Images per card" to `basePairing`. */
+function withKindDefaults(o: SessionOptions, mode: IdMode, basePairing: Pairing): SessionOptions {
+  const back = o.engine === "local" && localKind(mode) === "sport";
+  if (back === o.bothSides) return o;
+  return { ...o, bothSides: back, pairing: back ? "front_back" : basePairing };
 }
 
 const CATEGORY_OF: Partial<Record<IdMode, string>> = {

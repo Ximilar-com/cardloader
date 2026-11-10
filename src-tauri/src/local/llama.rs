@@ -258,7 +258,7 @@ impl LlamaVision {
 impl VisionModel for LlamaVision {
     fn generate(
         &self,
-        image: &[u8],
+        images: &[&[u8]],
         prompt: &str,
         grammar: Option<&str>,
         max_tokens: u32,
@@ -273,13 +273,15 @@ impl VisionModel for LlamaVision {
             .new_context(backend, context_params())
             .map_err(|e| err("cannot create a context")(&e))?;
 
-        let bitmap = MtmdBitmap::from_buffer(&mtmd, image, false)
+        let bitmaps = images
+            .iter()
+            .map(|image| MtmdBitmap::from_buffer(&mtmd, image, false))
+            .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| err("cannot read the image")(&e))?;
-        let message = LlamaChatMessage::new(
-            "user".into(),
-            format!("{}\n{prompt}", mtmd::mtmd_default_marker()),
-        )
-        .map_err(|e| err("bad prompt")(&e))?;
+        // One marker per image, in order, before the question that names them.
+        let markers = vec![mtmd::mtmd_default_marker(); images.len()].join("\n");
+        let message = LlamaChatMessage::new("user".into(), format!("{markers}\n{prompt}"))
+            .map_err(|e| err("bad prompt")(&e))?;
         let mut text = self
             .model
             .apply_chat_template(&self.template, &[message], true)
@@ -292,7 +294,7 @@ impl VisionModel for LlamaVision {
                     add_special: true,
                     parse_special: true,
                 },
-                &[&bitmap],
+                &bitmaps.iter().collect::<Vec<_>>(),
             )
             .map_err(|e| err("cannot tokenize")(&e))?;
         let n_past = chunks

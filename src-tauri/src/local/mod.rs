@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, Result};
 use crate::imaging;
-use crate::model::GradingMode;
+use crate::model::{GradingMode, IdMode};
 use crate::ximilar::recognition::Recognition;
 use catalog::ModelSpec;
 
@@ -29,12 +29,17 @@ use catalog::ModelSpec;
 const CARD_LONG_EDGE: u32 = 768;
 const STRIP_LONG_EDGE: u32 = 1024;
 const MAX_ANSWER_TOKENS: u32 = 160;
+/// Every field at once, the set name included.
+const MAX_WHOLE_TOKENS: u32 = 240;
+/// JPEGs of one card: the front, its back if there is one, and the bottom strip of the front.
+type Images = (Vec<u8>, Option<Vec<u8>>, Vec<u8>);
 
-/// Something that answers a prompt about an image (llama.cpp in the app, a fake in tests).
+/// Something that answers a prompt about images (llama.cpp in the app, a fake in tests): one image, or several of
+/// the same card (its front and back), which the prompt names in order.
 pub trait VisionModel: Send + Sync {
     fn generate(
         &self,
-        image: &[u8],
+        images: &[&[u8]],
         prompt: &str,
         grammar: Option<&str>,
         max_tokens: u32,
@@ -459,50 +464,95 @@ impl LocalModels {
         Ok(l.engine)
     }
 
-    /// Identifies the card in `image` (a file) with model `id`. Returns the recognition and the raw record
-    /// stored with the item.
-    pub async fn identify(&self, id: &str, image: &Path) -> Result<(Recognition, Value)> {
+    /// Identifies the card in `front` (a file) with model `id`; `kind` is what the session holds (its "Identify
+    /// as"). `back`, the card's back when the session reads both sides, is sent to models that read the whole card;
+    /// small models read it for a sports card (number, year and set are printed there), else the front's bottom.
+    /// Returns the recognition and the raw record stored with the item.
+    pub async fn identify(
+        &self,
+        id: &str,
+        front: &Path,
+        back: Option<&Path>,
+        kind: IdMode,
+    ) -> Result<(Recognition, Value)> {
+        let spec =
+            catalog::find(id).ok_or_else(|| Error::msg(format!("unknown local model {id}")))?;
         let engine = self.engine(id).await?;
-        let path = image.to_path_buf();
-        let (card_jpeg, strip_jpeg) =
-            tokio::task::spawn_blocking(move || -> Result<(Vec<u8>, Vec<u8>)> {
-                let img = imaging::open(&path)?;
-                let card = imaging::jpeg_bytes(&imaging::fit_long_edge(&img, CARD_LONG_EDGE), 90)?;
-                let top = (img.height() as f64 * (1.0 - identify::STRIP_FRACTION)) as u32;
-                let strip = img.crop_imm(0, top, img.width(), img.height() - top);
-                let strip =
-                    imaging::jpeg_bytes(&imaging::fit_long_edge(&strip, STRIP_LONG_EDGE), 92)?;
-                Ok((card, strip))
-            })
-            .await
-            .map_err(|e| Error::msg(e.to_string()))??;
+        let whole = spec.family.reads_whole_card();
+        let front = front.to_path_buf();
+        let back = back.map(Path::to_path_buf);
+        // The whole card, its back, and the enlarged bottom strip of the front for small models.
+        let (card, back, strip) = tokio::task::spawn_blocking(move || -> Result<Images> {
+            let img = imaging::open(&front)?;
+            let card = imaging::jpeg_bytes(&imaging::fit_long_edge(&img, CARD_LONG_EDGE), 90)?;
+            let back = back
+                .map(|b| {
+                    let b = imaging::open(&b)?;
+                    imaging::jpeg_bytes(&imaging::fit_long_edge(&b, CARD_LONG_EDGE), 90)
+                })
+                .transpose()?;
+            let top = (img.height() as f64 * (1.0 - identify::STRIP_FRACTION)) as u32;
+            let strip = img.crop_imm(0, top, img.width(), img.height() - top);
+            let strip = imaging::jpeg_bytes(&imaging::fit_long_edge(&strip, STRIP_LONG_EDGE), 92)?;
+            Ok((card, back, strip))
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))??;
         let started = Instant::now();
-        let (card_answer, strip_answer) =
-            tokio::task::spawn_blocking(move || -> Result<(String, String)> {
-                let card = engine.generate(
-                    &card_jpeg,
+        let (answers, sent) =
+            tokio::task::spawn_blocking(move || -> Result<(Vec<String>, &str)> {
+                if whole {
+                    // Both sides in one question: measured on sports cards, faster than asking about the front first.
+                    let mut all: Vec<&[u8]> = vec![&card];
+                    all.extend(back.as_deref());
+                    let answer = engine.generate(
+                        &all,
+                        &identify::whole_prompt(all.len() > 1),
+                        Some(&identify::whole_grammar(kind)),
+                        MAX_WHOLE_TOKENS,
+                    )?;
+                    return Ok((
+                        vec![answer],
+                        if all.len() > 1 { "front+back" } else { "front" },
+                    ));
+                }
+                let first = engine.generate(
+                    &[&card],
                     identify::CARD_PROMPT,
-                    Some(&identify::card_grammar()),
+                    Some(&identify::card_grammar(kind)),
                     MAX_ANSWER_TOKENS,
                 )?;
-                let strip = engine.generate(
-                    &strip_jpeg,
-                    identify::STRIP_PROMPT,
+                // A sports card's number is on its back; a trading card's at the bottom of its front.
+                let (image, prompt, sent) = match back.as_deref() {
+                    Some(back) if kind == IdMode::Sport || identify::is_sport(&first) => {
+                        (back, identify::BACK_PROMPT, "front+back")
+                    }
+                    _ => (strip.as_slice(), identify::STRIP_PROMPT, "front+strip"),
+                };
+                let second = engine.generate(
+                    &[image],
+                    prompt,
                     Some(&identify::strip_grammar()),
                     MAX_ANSWER_TOKENS,
                 )?;
-                Ok((card, strip))
+                Ok((vec![first, second], sent))
             })
             .await
             .map_err(|e| Error::msg(e.to_string()))??;
         let seconds = started.elapsed().as_secs_f64();
-        let (recognition, parsed) =
-            identify::parse_answers(&card_answer, Some(&strip_answer)).map_err(Error::Msg)?;
+        let (recognition, parsed) = if whole {
+            identify::parse_whole(&answers[0])
+        } else {
+            identify::parse_answers(&answers[0], answers.get(1).map(String::as_str))
+        }
+        .map_err(Error::Msg)?;
         let raw = json!({
             "endpoint": format!("local/{id}"),
             "model": id,
             "seconds": (seconds * 100.0).round() / 100.0,
-            "answers": [card_answer, strip_answer],
+            // What the model saw: the card, then its back or its enlarged bottom strip.
+            "images": sent,
+            "answers": answers,
             "response": parsed,
         });
         Ok((recognition, raw))
@@ -541,7 +591,7 @@ impl LocalModels {
             };
             images
                 .iter()
-                .map(|jpeg| engine.generate(jpeg, &prompt, Some(&grammar), MAX_ANSWER_TOKENS))
+                .map(|jpeg| engine.generate(&[jpeg], &prompt, Some(&grammar), MAX_ANSWER_TOKENS))
                 .collect()
         })
         .await
@@ -567,8 +617,16 @@ pub mod testing {
     pub struct FakeVision(pub String);
 
     impl VisionModel for FakeVision {
-        fn generate(&self, image: &[u8], prompt: &str, _: Option<&str>, _: u32) -> Result<String> {
-            assert!(!image.is_empty() && !prompt.is_empty());
+        fn generate(
+            &self,
+            images: &[&[u8]],
+            prompt: &str,
+            _: Option<&str>,
+            _: u32,
+        ) -> Result<String> {
+            assert!(
+                !images.is_empty() && images.iter().all(|i| !i.is_empty()) && !prompt.is_empty()
+            );
             Ok(self.0.clone())
         }
     }
@@ -740,6 +798,75 @@ mod real_model {
         }
     }
 
+    /// Scores a model on labelled cards. `CARDLOADER_TRUTH` is a CSV with the image (`front` or `file`), optionally
+    /// `back`, the card's `name` (or `player`) and `number`; image paths are relative to the CSV. With
+    /// `CARDLOADER_BACKS=1` the backs go to models that read them. Prints each card and how often the name and the
+    /// number agree, counted as "Compare with local model" counts them.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn real_model_scores_cards() {
+        let models = std::env::var("CARDLOADER_MODELS").expect("CARDLOADER_MODELS");
+        let truth = PathBuf::from(std::env::var("CARDLOADER_TRUTH").expect("CARDLOADER_TRUTH"));
+        let backs = std::env::var("CARDLOADER_BACKS").is_ok_and(|v| v == "1");
+        // The session's "Identify as": tcg, sport or comics (default auto).
+        let kind = IdMode::parse(&std::env::var("CARDLOADER_KIND").unwrap_or_default());
+        let local = LocalModels::new(PathBuf::from(models));
+        let id = test_model();
+        assert!(local.is_ready(&id), "model files missing");
+        let dir = truth.parent().unwrap().to_path_buf();
+        let mut reader = csv::Reader::from_path(&truth).unwrap();
+        let headers = reader.headers().unwrap().clone();
+        let col = |row: &csv::StringRecord, names: &[&str]| {
+            names
+                .iter()
+                .find_map(|n| {
+                    headers
+                        .iter()
+                        .position(|h| h == *n)
+                        .and_then(|i| row.get(i))
+                })
+                .unwrap_or_default()
+                .to_string()
+        };
+        let (mut cards, mut names, mut numbers, mut seconds) = (0, 0, 0, 0.0);
+        for row in reader.records() {
+            let row = row.unwrap();
+            let front = dir.join(col(&row, &["front", "file"]));
+            let back = Some(col(&row, &["back"]))
+                .filter(|b| backs && !b.is_empty())
+                .map(|b| dir.join(b));
+            let (r, raw) = local
+                .identify(&id, &front, back.as_deref(), kind)
+                .await
+                .unwrap();
+            let (name, number) = (col(&row, &["name", "player"]), col(&row, &["number"]));
+            let name_ok = compare::names_match(&name, &r.card.name);
+            let number_ok = compare::numbers_match(&number, &r.card.card_number);
+            cards += 1;
+            names += name_ok as usize;
+            numbers += number_ok as usize;
+            seconds += raw["seconds"].as_f64().unwrap();
+            let mark = |ok: bool| if ok { "ok" } else { "--" };
+            println!(
+                "{:<34} {:>5.2}s {} {:<26} {} {:<10} | {} {} {}",
+                col(&row, &["front", "file"]),
+                raw["seconds"].as_f64().unwrap(),
+                mark(name_ok),
+                r.card.name,
+                mark(number_ok),
+                r.card.card_number,
+                name,
+                number,
+                raw["images"]
+            );
+        }
+        println!(
+            "SCORE {id} {} backs={backs}: names {names}/{cards}, numbers {numbers}/{cards}, {:.2} s per card",
+            truth.display(),
+            seconds / cards.max(1) as f64
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     #[ignore]
     async fn real_model_reads_cards() {
@@ -754,7 +881,7 @@ mod real_model {
             .collect();
         paths.sort();
         for path in paths.iter().filter(|p| imaging::is_supported(p)) {
-            let (r, raw) = local.identify(&id, path).await.unwrap();
+            let (r, raw) = local.identify(&id, path, None, IdMode::Auto).await.unwrap();
             println!(
                 "{:<28} {:>5.2}s  {:<6} {}  | {}",
                 path.file_name().unwrap().to_string_lossy(),

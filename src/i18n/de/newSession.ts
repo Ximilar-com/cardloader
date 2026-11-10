@@ -83,6 +83,10 @@ const messages: Messages<typeof en> = {
   notDownloaded: "nicht heruntergeladen",
   localNote:
     "Läuft auf diesem Computer: liest Name, Sammlernummer und Jahr, die auf jeder Karte gedruckt sind, und schätzt Bewertung und Zustand. Keine Preise oder weiteren Kandidaten.",
+  localBack: {
+    label: "Vorder- und Rückseite zur Identifizierung verwenden",
+    hint: "Paart Vorder- und Rückseite jeder Karte und zeigt dem Modell beide: Sportkarten tragen Kartennummer, Jahr und Set auf der Rückseite. Bei Sportkarten standardmäßig an. Etwa doppelt so lange pro Karte.",
+  },
   identifyAs: "Erkennen als",
   grading: "Grading",
   imagesPerCard: "Bilder pro Karte",

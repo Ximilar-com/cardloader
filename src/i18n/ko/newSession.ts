@@ -75,6 +75,10 @@ const messages: Messages<typeof en> = {
   notDownloaded: "다운로드 안 됨",
   localNote:
     "이 컴퓨터에서 실행: 각 카드에 인쇄된 이름, 컬렉터 번호, 연도를 읽고 등급과 상태를 추정합니다. 가격과 다른 후보는 없습니다.",
+  localBack: {
+    label: "앞면과 뒷면으로 식별",
+    hint: "각 카드의 앞면과 뒷면을 짝지어 모델에 함께 보여 줍니다. 스포츠 카드는 뒷면에 카드 번호, 연도, 세트가 인쇄되어 있습니다. 스포츠 카드는 기본으로 켜져 있습니다. 카드당 시간이 약 두 배 걸립니다.",
+  },
   identifyAs: "식별 유형",
   grading: "그레이딩",
   imagesPerCard: "카드당 이미지",

@@ -189,11 +189,22 @@ state from them.
 - The Windows scanner path never runs TWAIN in the app process: `cardloader-twain` is a sidecar speaking JSON lines
   over stdio. It must be built for `i686-pc-windows-msvc` (`scripts/prepare-sidecar.mjs`).
 - Vite 8 no longer bundles esbuild; `vite.config.ts` uses `minify: !process.env.TAURI_ENV_DEBUG`.
-- **Local model** (`Engine::Local`): two generations per card — whole card (name, year, game) and the enlarged bottom
-  strip (collector number, set code); a 450M model reads small print only when it is enlarged, and fills a "set name"
-  with random card text, so that field isn't asked for. Answers are constrained by hand-written GBNF grammars (field
-  order matters; a schema-generated grammar sorts keys). Local items have `confidence = "local"`, no distance or
-  price, `calls = 0`, and `recognition.endpoint = "local/<model>"`; concurrency is 1.
+- **Local model** (`Engine::Local`), by `catalog::Family`. LFM: two generations per card — whole card (name, year,
+  game) and the enlarged bottom strip (collector number, set code); a 450M model reads small print only when it is
+  enlarged, and fills a "set name" with random card text, so that field isn't asked for. The strip is the bottom 12% of
+  the image: it assumes the card fills it (scans), and on a phone photo it is the table. Qwen3.5
+  (`Family::reads_whole_card`): one generation with every field (`identify::whole_prompt`/`whole_grammar`), and with
+  the card's back as a second image when the session reads both sides (`both_sides`; `VisionModel::generate` takes
+  several images, one mtmd marker each). With `both_sides`, LFM's second question is about the back instead of the
+  strip when the card is a sports card (session `id_mode` Sport, or the first answer's game). A local session's
+  "Identify as" is TCG, Sport or Comics (the dialog maps Auto/Slab to TCG; MCP and older sessions may keep Auto) and
+  limits the grammar's `game` to that kind; the dialog turns "Use front and back for identification" on for Sport
+  (`withKindDefaults`), as MCP `create_session` does. The stored raw record says what was sent (`images`: `front`,
+  `front+back`, `front+strip`). Answers are constrained by hand-written GBNF grammars (field order matters; a
+  schema-generated grammar sorts keys). Local items have `confidence = "local"`,
+  no distance or price, `calls = 0`, and `recognition.endpoint = "local/<model>"`; concurrency is 1.
+  `real_model_scores_cards` scores a model on a labelled CSV (`CARDLOADER_TRUTH`, `CARDLOADER_BACKS=1`,
+  `CARDLOADER_KIND=sport`).
 - **Local grading** (`local::grade`): one more generation per side after identification, stored in Ximilar's shape
   (`records[0].grades`, `records[0]._objects[0].Condition`) so the UI reads both alike; the card takes the worse side.
   `condition_mode` names a scale (`tcgplayer`, `cardmarket`, `ebay_tcg`, `ebay_sport`; Ximilar gets `ebay` for both
@@ -206,9 +217,10 @@ state from them.
   off with an empty `<think></think>` that the built-in ChatML lacks (`Family::answer_prefix`). `maker` and
   `commercial_limit` drive the license note. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak
   memory before writing its description; mirror it in `src/lib/demo.ts`. On Metal, peak RSS leaves out weights
-  the GPU holds, so a model larger than its RSS gets `memory_mb` from its files (Qwen3.5 9B). Qwen3.5 (measured on
-  an Apple M4) reads names exactly but leaves most collector numbers empty: the bottom strip and its prompt were
-  tuned for LFM.
+  the GPU holds, so a model larger than its RSS gets `memory_mb` from its files (Qwen3.5 9B). Score it with
+  `real_model_scores_cards` on labelled cards (kept outside the repo) before writing the README's accuracy table:
+  modern sports cards print the number only on the back (0 numbers from the front for every model), and asking for
+  "the card number" alone made the models answer the serial (`12/99`) or drop the letters before the number.
 - **Where models run** (`settings.local_device`, `local::Device`): "" = automatic (`llama::pick_gpu`: the discrete GPU
   with the most free memory, else an integrated one; one GPU, never split), "cpu", or a GPU by llama.cpp's name
   (`Vulkan1`, `CUDA0`, `MTL0`). `LocalModels::engine` loads again when the device changes, and if loading on a GPU

@@ -83,6 +83,10 @@ const messages: Messages<typeof en> = {
   notDownloaded: "non scaricato",
   localNote:
     "Gira su questo computer: legge nome, numero di collezione e anno stampati su ogni carta e stima voti e condizione. Niente prezzi né altri candidati.",
+  localBack: {
+    label: "Usa fronte e retro per l’identificazione",
+    hint: "Abbina fronte e retro di ogni carta e li mostra entrambi al modello: le carte sportive riportano numero, anno e serie sul retro. Attivo di default per le carte sportive. Circa il doppio del tempo per carta.",
+  },
   identifyAs: "Identifica come",
   grading: "Gradazione",
   imagesPerCard: "Immagini per carta",

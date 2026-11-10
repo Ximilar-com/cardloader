@@ -658,6 +658,8 @@ pub async fn compare_local(
         ..Default::default()
     };
     let total = items.len();
+    // As a local session would read them: of the same kind, with the back when this one sent Ximilar both sides.
+    let session = state.db.session(&session_id)?;
     for item in items {
         if cancel.is_cancelled() {
             report.cancelled = true;
@@ -668,10 +670,15 @@ pub async fn compare_local(
             .preview_path
             .clone()
             .unwrap_or_else(|| item.front_path.clone());
+        let back = detail
+            .back_preview_path
+            .as_deref()
+            .filter(|_| session.options.both_sides)
+            .map(std::path::Path::new);
         let row = match state
             .runner
             .local
-            .identify(&model, std::path::Path::new(&image))
+            .identify(&model, std::path::Path::new(&image), back, session.id_mode)
             .await
         {
             Ok((rec, raw)) => CompareRow {

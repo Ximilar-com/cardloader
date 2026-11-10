@@ -83,6 +83,10 @@ const messages: Messages<typeof en> = {
   notDownloaded: "não baixado",
   localNote:
     "Roda neste computador: lê o nome, o número de colecionador e o ano impressos em cada carta e estima notas e condição. Sem preços nem outros candidatos.",
+  localBack: {
+    label: "Usar frente e verso na identificação",
+    hint: "Junta a frente e o verso de cada carta e mostra os dois ao modelo: as cartas esportivas trazem o número, o ano e a coleção no verso. Ligado por padrão para cartas esportivas. Demora cerca do dobro por carta.",
+  },
   identifyAs: "Identificar como",
   grading: "Graduação",
   imagesPerCard: "Imagens por carta",

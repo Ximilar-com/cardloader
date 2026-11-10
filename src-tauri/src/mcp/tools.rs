@@ -189,7 +189,8 @@ struct CreateSession {
     alphabet: Option<String>,
     /// single: one image per card; front_back: images alternate front, back, front, back.
     pairing: Option<Pairing>,
-    /// Also send each card's back to identification (sports cards; needs front_back).
+    /// Also send each card's back to identification (sports cards; needs front_back). Default: on for a local-model
+    /// session of sport cards, which then pairs front_back.
     read_backs: Option<bool>,
     /// The images are known to be fronts (and backs, when paired): faster and more accurate.
     known_side: Option<bool>,
@@ -1047,12 +1048,19 @@ impl Handler {
             return Err(Error::msg("scanner sessions are started in the app"));
         }
         let id_mode = a.card_type.unwrap_or(settings.default_id_mode);
+        // As the New session dialog does: a local session of sports cards reads both sides unless told not to.
+        let local_sport = settings.engine == Engine::Local && id_mode == IdMode::Sport;
+        let read_backs = a.read_backs.unwrap_or(local_sport);
         let options = SessionOptions {
             price_stats: a.price_stats.unwrap_or(settings.price_stats),
             grading: a.grading.unwrap_or(settings.default_grading),
             condition_mode: settings.default_condition_mode.clone(),
-            pairing: a.pairing.unwrap_or(settings.default_pairing),
-            both_sides: a.read_backs.unwrap_or(false),
+            pairing: a.pairing.unwrap_or(if local_sport && read_backs {
+                Pairing::FrontBack
+            } else {
+                settings.default_pairing
+            }),
+            both_sides: read_backs,
             skip_detection: a.cropped.unwrap_or(false),
             known_category: a.card_type.is_some_and(|t| t != IdMode::Auto),
             known_side: a.known_side.unwrap_or(false),

@@ -39,12 +39,17 @@ pub fn normalise_name(name: &str) -> String {
         .collect()
 }
 
-/// The number before any "/", without leading zeros: "004/325" = "4", "#58" = "58".
+/// The number before any "/", letters and digits only, without leading zeros: "004/325" = "4", "#58" = "58",
+/// "78-SP" = "78SP" = "78sp" (sports card numbers are printed with and without the hyphen).
 pub fn normalise_number(number: &str) -> String {
     let n = number.trim().trim_start_matches('#');
-    let n = n.split('/').next().unwrap_or_default().trim();
-    let n = n.trim_start_matches('0');
-    n.to_lowercase()
+    let n = n.split('/').next().unwrap_or_default();
+    let n: String = n
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    n.trim_start_matches('0').to_string()
 }
 
 pub fn names_match(a: &str, b: &str) -> bool {
@@ -88,6 +93,9 @@ mod tests {
         assert!(numbers_match("#58", "58/102"));
         assert!(!numbers_match("125/197", "330"));
         assert!(!numbers_match("", ""));
+        assert!(numbers_match("78-SP", "78SP"));
+        assert!(numbers_match("RMC-CP", "rmc cp"));
+        assert!(!numbers_match("RMC-EJ", "RMC-EI"));
     }
 
     #[test]

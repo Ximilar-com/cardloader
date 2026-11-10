@@ -1,16 +1,20 @@
-//! Asking a vision language model what card a photo shows, and reading its answer.
+//! Asking a vision language model what card a photo shows, and reading its answer. Each answer is a small JSON
+//! object held to its fields by a llama.cpp grammar.
 //!
-//! Two short questions, each constrained to a small JSON object by a llama.cpp grammar:
+//! Small models (LFM) get two short questions:
 //! 1. the whole card: name, year and game;
 //! 2. the bottom strip, enlarged: collector number and set code — the small print a 450M model can't read
 //!    from the whole card (asked about the whole card, it reads the HP or attack text instead).
 //!
-//! The set *name* isn't asked for: small models fill it with whatever text is on the card.
+//! and aren't asked for the set *name*: they fill it with whatever text is on the card. Models that read small print
+//! on the whole card (Qwen3.5, `Family::reads_whole_card`) get one question with every field, and with the card's
+//! back as a second image when the session has it: sports cards print the number, year and set there. The strip
+//! assumes the card fills the picture; the whole card doesn't.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::model::CardFields;
+use crate::model::{CardFields, IdMode};
 use crate::ximilar::recognition::Recognition;
 
 /// Marks local results where the Ximilar confidence (high/medium/low) would be.
@@ -32,6 +36,35 @@ card_number: the collector number exactly as printed (not the power/toughness, H
 set_code: the short set code, only if it is printed. \
 Use an empty string for anything you cannot read clearly.";
 
+/// The second question of small models when the session reads backs: the back instead of the front's bottom strip.
+pub const BACK_PROMPT: &str = "This is the back of a sports card. Read the small print: \
+card_number: the card number exactly as printed, with any letters before it (e.g. BCP-155, RA-PC), not the serial \
+number of a numbered card, e.g. 12/99; \
+set_code: the short set code, only if it is printed. \
+Use an empty string for anything you cannot read clearly.";
+
+const WHOLE_FIELDS: &str = "Fill in the JSON fields from what is printed on the card: \
+name: the card name or player name exactly as printed; \
+card_number: the card number exactly as printed, with any letters before it (e.g. BCP-155, RA-PC); on a trading \
+card the collector number, not the power/toughness, HP or damage; on a sports card not the serial number of a \
+numbered card, e.g. 12/99; \
+set_name: the set or product line as printed, with its maker (e.g. on the back of a sports card); \
+set_code: the short set code, only if it is printed; \
+year: the copyright or release year, only if it is printed; \
+game: which game or sport the card belongs to. \
+Use an empty string for anything you cannot read clearly. Do not guess.";
+
+/// The one question of models that read the whole card; `back`: the second image is the card's back.
+pub fn whole_prompt(back: bool) -> String {
+    let images = if back {
+        "The first image is the front of a collectible card (trading card, sports card or comic), the second its \
+         back: sports cards print the card number, year and set on the back. "
+    } else {
+        "This is a photo of a collectible card (trading card, sports card or comic). "
+    };
+    format!("{images}{WHOLE_FIELDS}")
+}
+
 pub const GAMES: &[(&str, &str, &str)] = &[
     // (answer, id_type, category shown in the app)
     ("pokemon", "tcg", "Pokemon"),
@@ -51,6 +84,7 @@ pub const GAMES: &[(&str, &str, &str)] = &[
 ];
 
 const GRAMMAR_COMMON: &str = r#"s80 ::= "\"" char{0,80} "\""
+s24 ::= "\"" char{0,24} "\""
 s16 ::= "\"" char{0,16} "\""
 s8 ::= "\"" char{0,8} "\""
 char ::= [^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})
@@ -68,15 +102,27 @@ fn object_grammar(fields: &[(&str, &str)], extra: &str) -> String {
     format!("root ::= \"{{\" space {body} space \"}}\"\n{extra}{GRAMMAR_COMMON}")
 }
 
-pub fn card_grammar() -> String {
-    let games = GAMES
+/// The games a card of a session of `kind` can be: the session says whether it holds trading cards, sports cards
+/// or comics; Auto (and slab labels) leave it to the model.
+fn game_rule(kind: IdMode) -> String {
+    let id_type = match kind {
+        IdMode::Tcg => Some("tcg"),
+        IdMode::Sport => Some("sport"),
+        IdMode::Comics => Some("comics"),
+        IdMode::Auto | IdMode::Slab => None,
+    };
+    GAMES
         .iter()
+        .filter(|g| id_type.is_none_or(|t| g.1 == t))
         .map(|g| format!(r#""\"{}\"""#, g.0))
         .collect::<Vec<_>>()
-        .join(" | ");
+        .join(" | ")
+}
+
+pub fn card_grammar(kind: IdMode) -> String {
     object_grammar(
         &[("name", "s80"), ("year", "s8"), ("game", "game")],
-        &format!("game ::= {games}\n"),
+        &format!("game ::= {}\n", game_rule(kind)),
     )
 }
 
@@ -84,19 +130,31 @@ pub fn strip_grammar() -> String {
     object_grammar(&[("card_number", "s16"), ("set_code", "s16")], "")
 }
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct CardAnswer {
-    name: String,
-    year: String,
-    game: String,
+/// Every field at once (`whole_prompt`), in the order a model reads a card: name, then the small print.
+pub fn whole_grammar(kind: IdMode) -> String {
+    object_grammar(
+        &[
+            ("name", "s80"),
+            ("card_number", "s24"),
+            ("set_name", "s80"),
+            ("set_code", "s16"),
+            ("year", "s8"),
+            ("game", "game"),
+        ],
+        &format!("game ::= {}\n", game_rule(kind)),
+    )
 }
 
+/// The fields of a card as a model answers them; a question that doesn't ask for a field leaves it empty.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
-struct StripAnswer {
+struct Answer {
+    name: String,
     card_number: String,
+    set_name: String,
     set_code: String,
+    year: String,
+    game: String,
 }
 
 fn json_object(text: &str) -> Result<Value, String> {
@@ -115,11 +173,17 @@ fn clean(text: &str) -> String {
     }
 }
 
-/// The collector number without what models copy around it: a leading rarity letter ("C 0123", Magic) or
-/// regulation mark ("D025/202", Pokémon). "125197" read without its slash is "125/197": six digits are taken as
-/// two halves.
+/// The collector number without what models copy around it: "#" or "No." (sports cards print "No. 76"), a leading
+/// rarity letter ("C 0123", Magic) or regulation mark ("D025/202", Pokémon). "125197" read without its slash is
+/// "125/197": six digits are taken as two halves.
 fn collector_number(raw: &str) -> String {
-    let n = clean(raw).trim_start_matches('#').trim().to_string();
+    let n = clean(raw);
+    let n = n.trim_start_matches('#').trim();
+    let n = match n.get(..3).map(str::to_ascii_lowercase).as_deref() {
+        Some("no.") => n[3..].trim(),
+        _ => n,
+    };
+    let n = n.trim_start_matches('#').trim().to_string();
     let mut chars = n.chars();
     let n = match (chars.next(), chars.as_str().trim_start()) {
         (Some(c), rest)
@@ -139,20 +203,49 @@ fn collector_number(raw: &str) -> String {
 /// The two answers as a recognition, plus the parsed answers for the stored raw response.
 pub fn parse_answers(card: &str, strip: Option<&str>) -> Result<(Recognition, Value), String> {
     let card_raw = json_object(card)?;
-    let a: CardAnswer = serde_json::from_value(card_raw.clone()).map_err(|e| e.to_string())?;
+    let a: Answer = serde_json::from_value(card_raw.clone()).map_err(|e| e.to_string())?;
     let strip_raw = strip.and_then(|s| json_object(s).ok());
-    let s: StripAnswer = strip_raw
+    let s: Answer = strip_raw
         .clone()
         .and_then(|v| serde_json::from_value(v).ok())
         .unwrap_or_default();
+    let answer = Answer {
+        card_number: s.card_number,
+        set_code: s.set_code,
+        // Not asked of small models: what they put there is other card text.
+        set_name: String::new(),
+        ..a
+    };
+    Ok((
+        recognition(answer),
+        json!({"card": card_raw, "strip": strip_raw}),
+    ))
+}
 
+/// Whether the answer to `CARD_PROMPT` names a sport: then the back holds the card number.
+pub fn is_sport(card: &str) -> bool {
+    let game = json_object(card)
+        .ok()
+        .and_then(|v| v.get("game").and_then(Value::as_str).map(str::to_string))
+        .unwrap_or_default();
+    GAMES.iter().any(|g| g.0 == game.trim() && g.1 == "sport")
+}
+
+/// The answer to `whole_prompt` as a recognition, plus the parsed answer for the stored raw response.
+pub fn parse_whole(text: &str) -> Result<(Recognition, Value), String> {
+    let raw = json_object(text)?;
+    let answer: Answer = serde_json::from_value(raw.clone()).map_err(|e| e.to_string())?;
+    Ok((recognition(answer), json!({ "card": raw })))
+}
+
+fn recognition(a: Answer) -> Recognition {
     let game = GAMES.iter().find(|g| g.0 == a.game.trim());
     let year: String = clean(&a.year)
         .chars()
         .filter(char::is_ascii_digit)
         .take(4)
         .collect();
-    let set_code = clean(&s.set_code).to_uppercase();
+    let set_code = clean(&a.set_code).to_uppercase();
     let mut card = CardFields {
         name: clean(&a.name),
         // Set codes are short (OBF, LOB-EN, SV03); anything else is other small print, e.g. the artist.
@@ -164,7 +257,8 @@ pub fn parse_answers(card: &str, strip: Option<&str>) -> Result<(Recognition, Va
         } else {
             String::new()
         },
-        card_number: collector_number(&s.card_number),
+        card_number: collector_number(&a.card_number),
+        set_name: clean(&a.set_name),
         year: if year.len() == 4 { year } else { String::new() },
         subcategory: game.map(|g| g.2.to_string()).unwrap_or_default(),
         ..Default::default()
@@ -186,13 +280,12 @@ pub fn parse_answers(card: &str, strip: Option<&str>) -> Result<(Recognition, Va
             .collect::<Vec<_>>()
             .join(" ");
     }
-    let recognition = Recognition {
+    Recognition {
         id_type: game.map(|g| g.1).unwrap_or("tcg").to_string(),
         confidence: (!card.name.is_empty()).then(|| LOCAL_CONFIDENCE.to_string()),
         card,
         ..Default::default()
-    };
-    Ok((recognition, json!({"card": card_raw, "strip": strip_raw})))
+    }
 }
 
 #[cfg(test)]
@@ -239,8 +332,43 @@ mod tests {
     }
 
     #[test]
+    fn reads_the_whole_card_in_one_answer() {
+        // A sports card's front and back: the number, year and set come from the back.
+        let (r, raw) = parse_whole(
+            r#"{"name": "Austin Reaves", "card_number": "No. 76", "set_name": "2023 Panini Prizm Basketball",
+                "set_code": "", "year": "2023", "game": "basketball"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.id_type, "sport");
+        assert_eq!(
+            (
+                r.card.card_number.as_str(),
+                r.card.set_name.as_str(),
+                r.card.year.as_str(),
+                r.card.subcategory.as_str()
+            ),
+            ("76", "2023 Panini Prizm Basketball", "2023", "Basketball")
+        );
+        assert_eq!(r.card.full_name, "Austin Reaves #76");
+        assert_eq!(raw["card"]["set_name"], "2023 Panini Prizm Basketball");
+        assert_eq!(collector_number("no.SIG-ZG"), "SIG-ZG");
+        assert_eq!(collector_number("#US199"), "US199");
+        // The two-question answer never takes a set name.
+        let (two, _) = parse_answers(
+            r#"{"name": "Pikachu", "year": "2023", "game": "pokemon", "set_name": "Pikachu"}"#,
+            None,
+        )
+        .unwrap();
+        assert!(two.card.set_name.is_empty());
+        assert!(whole_prompt(true).contains("the second its back"));
+        assert!(whole_prompt(false).contains("not the serial number"));
+        assert!(whole_prompt(false).contains("with any letters before it"));
+        assert!(!whole_prompt(false).contains("back:"));
+    }
+
+    #[test]
     fn grammars_keep_the_field_order() {
-        let card = card_grammar();
+        let card = card_grammar(IdMode::Auto);
         let root = card.lines().next().unwrap();
         assert!(
             root.starts_with(r#"root ::= "{" space "\"name\"" space ":" space s80"#),
@@ -249,5 +377,35 @@ mod tests {
         assert!(root.find("year").unwrap() < root.find("game").unwrap());
         assert!(card.contains(r#""\"one_piece\"""#));
         assert!(strip_grammar().starts_with(r#"root ::= "{" space "\"card_number\"""#));
+        let whole = whole_grammar(IdMode::Auto);
+        let root = whole.lines().next().unwrap();
+        let order: Vec<_> = [
+            "name",
+            "card_number",
+            "set_name",
+            "set_code",
+            "year",
+            "game",
+        ]
+        .iter()
+        .map(|f| root.find(&format!(r#"\"{f}\""#)).unwrap())
+        .collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{root}");
+        assert!(whole.contains("s24 ::=") && whole.contains(r#""\"hockey\"""#));
+        // A session of one kind of cards answers only that kind's games.
+        let sport = card_grammar(IdMode::Sport);
+        assert!(sport.contains(r#""\"hockey\"""#) && !sport.contains(r#""\"pokemon\"""#));
+        assert!(whole_grammar(IdMode::Comics).contains("game ::= \"\\\"comics\\\"\"\n"));
+    }
+
+    #[test]
+    fn tells_sports_cards() {
+        assert!(is_sport(
+            r#"{"name": "Austin Reaves", "year": "2023", "game": "basketball"}"#
+        ));
+        assert!(!is_sport(
+            r#"{"name": "Pikachu", "year": "1999", "game": "pokemon"}"#
+        ));
+        assert!(!is_sport("not json"));
     }
 }

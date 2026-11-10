@@ -22,6 +22,12 @@ pub enum Family {
 }
 
 impl Family {
+    /// Reads small print on the whole card: one question covers every field, and the card's back can come with it.
+    /// LFM needs the bottom strip enlarged (`identify`).
+    pub fn reads_whole_card(self) -> bool {
+        matches!(self, Family::Qwen35)
+    }
+
     /// Text the model's answer starts with, after the formatted prompt.
     pub fn answer_prefix(self) -> &'static str {
         match self {
@@ -174,8 +180,8 @@ pub const MODELS: &[ModelSpec] = &[
         tier: "Accurate",
         params: "4B",
         description: "Alibaba's Qwen3.5 4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. \
-                      Reads card names exactly and leaves a collector number empty rather than guess. About 7 s \
-                      per card on an Apple M4: best on a GPU.",
+                      Reads the whole card at once, names exactly, and a sports card's number from its back. About \
+                      7 s per card on an Apple M4, 16 s with the back: best on a GPU.",
         // Peak RSS on an Apple M4.
         memory_mb: 3_900,
         maker: "Alibaba's Qwen team",
@@ -203,9 +209,9 @@ pub const MODELS: &[ModelSpec] = &[
         name: "Qwen3.5 9B",
         tier: "Large",
         params: "9B",
-        description: "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Reads \
-                      names exactly, like 4B, and is the slowest: about 12 s per card on an Apple M4. Wants a GPU \
-                      with 8 GB of memory or more, or a Mac with 16 GB.",
+        description: "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Like 4B, \
+                      and reads more sports card numbers off the back. The slowest: about 14 s per card on an Apple \
+                      M4, 22 s with the back. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
         // Its files plus room to work: what a GPU with its own memory needs. (On Metal the peak RSS, 5.3 GB, leaves
         // out weights the GPU holds.)
         memory_mb: 7_200,

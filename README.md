@@ -142,12 +142,25 @@ the engine and model it was created with, and **New session** can pick another d
 | [LFM2.5-VL 3B](https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF) (default) | 2.3 GB | ~2.5 GB | 3.2 s |
 | [LFM2.5-VL 450M](https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF) | 330 MB | ~0.6 GB | 0.7 s |
 | [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 1.9 s |
-| [Qwen3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ~4 GB | 6.8 s |
-| [Qwen3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 6.6 GB | ~7 GB | 11.5 s |
+| [Qwen3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ~4 GB | 7 s, with the back 16 s |
+| [Qwen3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 6.6 GB | ~7 GB | 14 s, with the back 22 s |
 
-Times are for an Apple-silicon Mac (Metal); a CPU is slower, and the Qwen3.5 models want a GPU. They read card names
-exactly where the LFM models may misspell them, and leave a collector number they can't read empty rather than guess
-one. To choose, run **Compare with local model** on your own cards (below).
+Times are for a MacBook Air M4 (Metal; it slows down during long runs); a CPU is slower, and the Qwen3.5 models want
+a GPU. How often the name and the number came out right on labelled test cards (Magic and Pokémon: clean scans;
+sports: sellers' photos of 100 cards from 2026 sets, 20 each of five sports):
+
+| Model | Magic (20) | Pokémon (20) | Sports (100) | Sports, front and back |
+| --- | --- | --- | --- | --- |
+| LFM2.5-VL 450M | 18 / 12 | 12 / 16 | 68 / 0 | 68 / 33 |
+| Qwen3.5 4B | 20 / 20 | 19 / 16 | 76 / 0 | 88 / 79 |
+| Qwen3.5 9B | 20 / 20 | 19 / 17 | – | 87 / 88 |
+
+Modern sports cards print the card number on the back, so no model finds it on the front alone. A local session
+says what it holds (**New session → Identify as**: trading cards, sport cards or comics); for sport cards **Use front
+and back for identification** is on by default (the others can turn it on): it pairs each front with its back and
+every model reads the back too. The 9B model gets the most of those numbers (on 51 more photos, mostly signed
+baseball cards in holders: 47 against 4B's 32 and 450M's 10); elsewhere it reads no better than 4B. To choose, run
+**Compare with local model** on your own cards (below).
 
 - The model runs in the app through [llama.cpp](https://github.com/ggml-org/llama.cpp). The model is loaded once (a
   few seconds) and reads one card at a time.
@@ -156,8 +169,11 @@ one. To choose, run **Compare with local model** on your own cards (below).
   **Automatic** (the GPU with the most free memory, a dedicated one before an integrated one), **CPU only**, or one
   GPU. A model larger than the GPU's free memory runs partly on the CPU; if the GPU can't load it at all, it runs
   on the CPU and Settings says why.
-- Two quick looks per card: the whole card for the name, year and game, and the enlarged bottom edge for the
-  collector number and set code. The answers are held to a fixed JSON shape, so they always parse.
+- The Qwen3.5 models read the whole card in one look (and its back, if the session reads both sides). The LFM models
+  take two quick looks: the whole card for the name, year and game, then for the card number the back of a sports
+  card (when the session reads both sides) or the enlarged bottom edge of the front, which works when the card fills
+  the picture (a scan), not on a photo of a card on a table. The answer's game is one of the session's kind of
+  cards. The answers are held to a fixed JSON shape, so they always parse.
 - What it can't do: tell reprints and variants apart, give a match score, other candidates or prices.
   Rows show a **Local** tag instead of High/Medium/Low. Cards Cloud sync still works (with your Ximilar token).
 - **Grading and condition (estimates).** A local session can also grade: each side gets one more question, and

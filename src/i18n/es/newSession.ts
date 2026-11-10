@@ -83,6 +83,10 @@ const messages: Messages<typeof en> = {
   notDownloaded: "sin descargar",
   localNote:
     "Funciona en este ordenador: lee el nombre, el número de colección y el año impresos en cada carta, y estima notas y estado. Sin precios ni otros candidatos.",
+  localBack: {
+    label: "Usar anverso y reverso para identificar",
+    hint: "Empareja el anverso y el reverso de cada carta y muestra ambos al modelo: las cartas deportivas llevan el número, el año y la colección en el reverso. Activado por defecto para cartas deportivas. Tarda aproximadamente el doble por carta.",
+  },
   identifyAs: "Identificar como",
   grading: "Gradación",
   imagesPerCard: "Imágenes por carta",

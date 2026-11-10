@@ -76,6 +76,10 @@ export default {
   notDownloaded: "not downloaded",
   localNote:
     "Runs on this computer: reads the name, collector number and year printed on each card, and estimates grades and condition. No prices or other candidates.",
+  localBack: {
+    label: "Use front and back for identification",
+    hint: "Pairs each card’s front and back and shows the model both: sports cards print the card number, year and set on the back. On by default for sport cards. About twice as long per card.",
+  },
   identifyAs: "Identify as",
   grading: "Grading",
   imagesPerCard: "Images per card",

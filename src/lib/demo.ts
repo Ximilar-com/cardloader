@@ -692,7 +692,7 @@ const models: ModelStatus[] = [
     memoryMb: 3900,
     size: 3_413_361_504,
     description:
-      "Alibaba's Qwen3.5 4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Reads card names exactly and leaves a collector number empty rather than guess. About 7 s per card on an Apple M4: best on a GPU.",
+      "Alibaba's Qwen3.5 4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Reads the whole card at once, names exactly, and a sports card's number from its back. About 7 s per card on an Apple M4, 16 s with the back: best on a GPU.",
     homepage: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF",
   },
   {
@@ -705,7 +705,7 @@ const models: ModelStatus[] = [
     memoryMb: 7200,
     size: 6_598_688_544,
     description:
-      "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Reads names exactly, like 4B, and is the slowest: about 12 s per card on an Apple M4. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
+      "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Like 4B, and reads more sports card numbers off the back. The slowest: about 14 s per card on an Apple M4, 22 s with the back. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
     homepage: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
   },
 ];

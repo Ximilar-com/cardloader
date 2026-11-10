@@ -83,6 +83,10 @@ const messages: Messages<typeof en> = {
   notDownloaded: "non téléchargé",
   localNote:
     "Fonctionne sur cet ordinateur : lit le nom, le numéro de collection et l’année imprimés sur chaque carte, et estime les notes et l’état. Pas de prix ni d’autres candidats.",
+  localBack: {
+    label: "Utiliser le recto et le verso pour l’identification",
+    hint: "Associe le recto et le verso de chaque carte et montre les deux au modèle : les cartes de sport impriment le numéro, l’année et la série au dos. Activé par défaut pour les cartes de sport. Environ deux fois plus long par carte.",
+  },
   identifyAs: "Identifier comme",
   grading: "Gradation",
   imagesPerCard: "Images par carte",

@@ -1156,7 +1156,17 @@ impl Runner {
             .clone()
             .unwrap_or_else(|| item.summary.front_path.clone());
         let model = &session.options.local_model;
-        let (rec, raw) = self.local.identify(model, Path::new(&image)).await?;
+        // The back, when the session reads both sides (on by default for sports cards, which print the number, year
+        // and set there).
+        let back = item
+            .back_preview_path
+            .as_deref()
+            .filter(|_| session.options.both_sides)
+            .map(Path::new);
+        let (rec, raw) = self
+            .local
+            .identify(model, Path::new(&image), back, session.id_mode)
+            .await?;
         let grading = session.options.grading;
         self.db.save_recognition(
             item.summary.id,
@@ -2119,6 +2129,87 @@ pub(crate) mod tests {
     }
 
     /// A session identified by the on-device model: no token, no API calls; the answer becomes the card.
+    /// A local session that reads both sides: Qwen gets front and back in one question; LFM asks about the front,
+    /// then about the back of a sports card or the bottom strip of a trading card.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_session_reads_the_back_of_sports_cards() {
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        RgbImage::from_pixel(630, 880, Rgb([200, 40, 40]))
+            .save(cards.join("reaves_front.png"))
+            .unwrap();
+        RgbImage::from_pixel(630, 880, Rgb([240, 240, 240]))
+            .save(cards.join("reaves_back.png"))
+            .unwrap();
+        let db = Db::memory().unwrap();
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            Settings {
+                api_base_url: "http://127.0.0.1:9".into(),
+                ..Settings::default()
+            },
+            "",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let reaves = r#"{"name": "Austin Reaves", "card_number": "No. 76", "set_name": "2023 Panini Prizm Basketball",
+            "set_code": "", "year": "2023", "game": "basketball"}"#;
+        let pikachu = r#"{"name": "Pikachu", "card_number": "No. 76", "set_name": "Base Set", "set_code": "",
+            "year": "1999", "game": "pokemon"}"#;
+        // Sports sessions read both sides with every model; a small model reads a trading card's number off its
+        // front even then, and without the flag no model is shown the back.
+        for (model, kind, both_sides, answer, images) in [
+            ("qwen3.5-4b", IdMode::Sport, true, reaves, "front+back"),
+            ("lfm2.5-vl-3b", IdMode::Sport, true, reaves, "front+back"),
+            ("lfm2.5-vl-450m", IdMode::Tcg, true, pikachu, "front+strip"),
+            ("qwen3.5-9b", IdMode::Sport, false, reaves, "front"),
+        ] {
+            crate::local::testing::install_fake(&runner.local, answer);
+            let new = NewSession {
+                name: model.into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: kind,
+                options: SessionOptions {
+                    engine: Engine::Local,
+                    local_model: model.into(),
+                    pairing: Pairing::FrontBack,
+                    both_sides,
+                    ..SessionOptions::default()
+                },
+            };
+            let session = db.create_session(&new).unwrap();
+            runner.start(&session.id).unwrap();
+            let started = Instant::now();
+            while runner.is_running(&session.id) {
+                assert!(
+                    started.elapsed() < Duration::from_secs(20),
+                    "run did not finish"
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            let items = db.items(&session.id).unwrap();
+            assert_eq!(items.len(), 1, "front and back are one card");
+            let item = db.item(items[0].id).unwrap();
+            assert_eq!(item.summary.status, ItemStatus::Done, "{model}");
+            let raw = item.recognition.unwrap();
+            assert_eq!(raw["images"], images, "{model}");
+            assert_eq!(item.summary.card.card_number, "76");
+            if model.starts_with("qwen") {
+                assert_eq!(item.summary.card.set_name, "2023 Panini Prizm Basketball");
+            } else {
+                // LFM isn't asked for a set name.
+                assert_eq!(item.summary.card.set_name, "");
+            }
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn local_model_session_without_a_token() {
         let dir = tempfile::tempdir().unwrap();
