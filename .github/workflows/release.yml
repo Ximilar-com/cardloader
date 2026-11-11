@@ -21,8 +21,7 @@ jobs:
             args: --target universal-apple-darwin
           # Local models on the GPU through llama.cpp's Vulkan backend (macOS has Metal built in).
           - name: Windows x64
-            # Visual Studio 2022, as in ci.yml: Visual Studio 18's MSBuild fails the Vulkan shader generator step.
-            os: windows-2022
+            os: windows-latest
             args: --features vulkan
           - name: Linux x64
             os: ubuntu-22.04

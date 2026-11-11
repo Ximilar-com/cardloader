@@ -1,7 +1,7 @@
 name: Vulkan SDK
 description: >-
   Installs LunarG's Vulkan SDK on Windows and Linux runners: the headers, glslc and SPIRV-Headers that llama.cpp's
-  Vulkan backend (the `vulkan` cargo feature) builds with. The built app needs none of it; it uses the GPU driver's
+  Vulkan backend (the `vulkan` cargo feature) builds with, and on Windows makes CMake build with Ninja. The built app needs none of it; it uses the GPU driver's
   Vulkan loader when there is one.
 inputs:
   version:
@@ -21,6 +21,13 @@ runs:
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         "VULKAN_SDK=C:\VulkanSDK\$v" | Out-File -FilePath $env:GITHUB_ENV -Append
         "C:\VulkanSDK\$v\Bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        # llama.cpp builds its Vulkan shader generator as a CMake ExternalProject. Under the Visual Studio generator
+        # MSBuild ran that project's steps out of order (install before configure: "Not a file: …cmake_install.cmake",
+        # "cannot find the batch label specified - VCEnd"), with Visual Studio 2022 and 18 alike. Ninja runs them in
+        # order; the cmake crate hands it the MSVC environment.
+        choco install ninja --no-progress -y
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     - name: Vulkan SDK (Linux)
       if: runner.os == 'Linux'

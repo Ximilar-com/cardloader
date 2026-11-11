@@ -18,9 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # windows-2022 (Visual Studio 2022): on the Visual Studio 18 image, MSBuild fails llama.cpp's Vulkan shader
-        # generator step ("cannot find the batch label specified - VCEnd").
-        os: [ubuntu-22.04, macos-latest, windows-2022]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     env:
       # Windows and Linux build llama.cpp's Vulkan backend, as releases do (macOS has Metal built in).
