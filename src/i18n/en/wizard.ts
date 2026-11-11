@@ -13,6 +13,8 @@ export default {
     tcgHint: "Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana…",
     sport: "Sports cards",
     sportHint: "Baseball, basketball, football, hockey, soccer…",
+    comics: "Comics",
+    comicsHint: "Comic books, magazines and manga",
   },
   games: {
     title: "Which games?",

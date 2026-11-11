@@ -2228,6 +2228,214 @@ pub(crate) mod tests {
         }
     }
 
+    /// A session of comics goes to comics_id (one record with its language, the front only even when the session
+    /// has backs), and the comic's series, issue and publisher become the card's name, number and set.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn comics_session_end_to_end() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/collectibles/v2/comics_id"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"records": [{"_objects": [
+                {"name": "Comics", "Top Category": [{"name": "Comics", "prob": 1.0}], "_identification": {
+                    "best_match": {"name": "Planet Comics", "title": "The Lost World", "number": "34",
+                        "date": "January 1945", "publisher": "Fiction House",
+                        "links": {"ebay.com": "https://example.com/planet-34"},
+                        "price_stats": [{"stats_type": "ungraded", "value": {"median": 310.0}}]},
+                    "alternatives": [], "distances": [0.21]}}]}]})))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let comics = dir.path().join("comics");
+        std::fs::create_dir_all(&comics).unwrap();
+        for name in ["planet-f.png", "planet-b.png"] {
+            RgbImage::from_pixel(660, 1000, Rgb([90, 140, 40]))
+                .save(comics.join(name))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            Settings {
+                api_base_url: server.uri(),
+                ..Settings::default()
+            },
+            "token",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "Comics".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: comics.to_string_lossy().into_owned(),
+                id_mode: IdMode::Comics,
+                options: SessionOptions {
+                    pairing: Pairing::FrontBack,
+                    both_sides: true,
+                    slab: true,
+                    known_category: true,
+                    ..SessionOptions::default()
+                },
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        let started = Instant::now();
+        while runner.is_running(&session.id) {
+            assert!(
+                started.elapsed() < Duration::from_secs(20),
+                "run did not finish"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+
+        let items = db.items(&session.id).unwrap();
+        assert_eq!(items.len(), 1, "front and back are one comic");
+        let item = db.item(items[0].id).unwrap();
+        assert_eq!(item.summary.status, ItemStatus::Done, "{item:?}");
+        assert_eq!(item.summary.id_type.as_deref(), Some("comics"));
+        let card = &item.summary.card;
+        assert_eq!(
+            (
+                card.name.as_str(),
+                card.card_number.as_str(),
+                card.set_name.as_str(),
+                card.year.as_str(),
+                card.subcategory.as_str(),
+                card.full_name.as_str()
+            ),
+            (
+                "Planet Comics",
+                "34",
+                "Fiction House",
+                "January 1945",
+                "Comics",
+                "Planet Comics #34 The Lost World"
+            )
+        );
+        assert_eq!(item.summary.confidence.as_deref(), Some("high"));
+        assert_eq!(item.summary.price, Some(310.0));
+        assert_eq!(item.calls, 1);
+        assert_eq!(
+            item.recognition.unwrap()["endpoint"],
+            "collectibles/v2/comics_id"
+        );
+
+        let requests = server.received_requests().await.unwrap();
+        assert!(
+            requests
+                .iter()
+                .all(|r| r.url.path() == "/collectibles/v2/comics_id"),
+            "nothing but comics_id is called"
+        );
+        let sent = bodies(&requests, "/collectibles/v2/comics_id");
+        assert_eq!(sent.len(), 1);
+        let body = &sent[0];
+        assert_eq!(body["price_stats"], true);
+        assert_eq!(body["slab_id"], true);
+        assert!(
+            body.get("slab_grade").is_none(),
+            "comics_id has no slab_grade"
+        );
+        let records = body["records"].as_array().unwrap();
+        assert_eq!(records.len(), 1, "a comic's back is never sent");
+        assert_eq!(records[0]["_id"], "front");
+        assert_eq!(records[0]["lang"], "en");
+        assert_eq!(records[0]["Top Category"], "Comics");
+    }
+
+    /// A local session of comics asks about a cover: models that read small print get one question, small ones a
+    /// second about the top of the cover, and neither is shown the back.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_session_reads_comics_covers() {
+        let dir = tempfile::tempdir().unwrap();
+        let comics = dir.path().join("comics");
+        std::fs::create_dir_all(&comics).unwrap();
+        for name in ["planet_front.png", "planet_back.png"] {
+            RgbImage::from_pixel(660, 1000, Rgb([90, 140, 40]))
+                .save(comics.join(name))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            Settings {
+                api_base_url: "http://127.0.0.1:9".into(),
+                ..Settings::default()
+            },
+            "",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        // The fake gives every question the same answer; each question reads its own fields from it.
+        crate::local::testing::install_fake(
+            &runner.local,
+            r#"{"title": "Planet Comics", "issue": "No. 34", "publisher": "Fiction House", "year": "1945"}"#,
+        );
+        for (model, images) in [("qwen3.5-4b", "front"), ("lfm2.5-vl-450m", "front+top")] {
+            let session = db
+                .create_session(&NewSession {
+                    name: model.into(),
+                    source_kind: SourceKind::Folder,
+                    source_ref: comics.to_string_lossy().into_owned(),
+                    id_mode: IdMode::Comics,
+                    options: SessionOptions {
+                        engine: Engine::Local,
+                        local_model: model.into(),
+                        pairing: Pairing::FrontBack,
+                        both_sides: true,
+                        ..SessionOptions::default()
+                    },
+                })
+                .unwrap();
+            runner.start(&session.id).unwrap();
+            let started = Instant::now();
+            while runner.is_running(&session.id) {
+                assert!(
+                    started.elapsed() < Duration::from_secs(20),
+                    "run did not finish"
+                );
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            let items = db.items(&session.id).unwrap();
+            assert_eq!(items.len(), 1, "front and back are one comic");
+            let item = db.item(items[0].id).unwrap();
+            assert_eq!(item.summary.status, ItemStatus::Done, "{model}");
+            assert_eq!(item.summary.id_type.as_deref(), Some("comics"), "{model}");
+            assert_eq!(item.summary.confidence.as_deref(), Some("local"));
+            let card = &item.summary.card;
+            assert_eq!(card.full_name, "Planet Comics #34", "{model}");
+            assert_eq!(
+                (
+                    card.name.as_str(),
+                    card.card_number.as_str(),
+                    card.set_name.as_str(),
+                    card.year.as_str(),
+                    card.subcategory.as_str()
+                ),
+                ("Planet Comics", "34", "Fiction House", "1945", "Comics"),
+                "{model}"
+            );
+            let raw = item.recognition.unwrap();
+            assert_eq!(raw["images"], images, "{model}");
+            assert_eq!(
+                raw["answers"].as_array().unwrap().len(),
+                images.split('+').count(),
+                "{model}"
+            );
+            assert_eq!(item.calls, 0);
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn local_model_session_without_a_token() {
         let dir = tempfile::tempdir().unwrap();

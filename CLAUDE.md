@@ -69,7 +69,8 @@ src/
   lib/api.ts      TypeScript types + wrappers for every command and event
   lib/cardview.ts one Row/CardView shape for local items and Cards Cloud rows
   lib/demo.ts     mockIPC answers for `npm run dev` outside Tauri
-  lib/setup.ts    first-run setup answers ↔ the default settings they become (only the settings are stored)
+  lib/setup.ts    first-run setup answers ↔ the default settings they become (only the settings are stored): one
+                  kind of collectible (TCG, sport, comics) is the default "Identify as", several are Auto
   i18n/           the app's languages: index.ts (`t`, `useT`, `rich`, plurals, `locale()`), languages.ts (codes,
                   native names, flags), en/<area>.ts (the English source) and one folder per language mirroring it
   pages/          DashboardPage (home: totals, needs attention, 7-day bars, activity heatmap, last sessions,
@@ -208,7 +209,14 @@ state from them.
   "Identify as" is TCG, Sport or Comics (the dialog maps Auto/Slab to TCG; MCP and older sessions may keep Auto) and
   limits the grammar's `game` to that kind; the dialog turns "Use front and back for identification" on for Sport
   (`withKindDefaults`), as MCP `create_session` does. The stored raw record says what was sent (`images`: `front`,
-  `front+back`, `front+strip`). Answers are constrained by hand-written GBNF grammars (field order matters; a
+  `front+back`, `front+strip`, `front+top`). A session of **comics** asks about a cover instead
+  (`identify::COMIC_PROMPT`, fields named `title`/`issue`/`publisher`/`year` and stored as Ximilar's comics_id is
+  read: name, number, set name, year): Qwen3.5 in one question, LFM the title off the whole cover and the issue
+  number off its enlarged top quarter (`COVER_TOP_FRACTION`); the back is never shown, and the dialog hides
+  "Use front and back" for comics. Asked only for the issue number, LFM 450M answered the price ("No. 99 MAY
+  10¢") or the prompt's example number, so `COVER_TOP_PROMPT` asks for price and month first and gives no example
+  number, and an issue equal to the price is dropped (`parse_comic`). Measured on 11 public-domain 1940s covers
+  (`CARDLOADER_KIND=comics`): issue numbers 9/11 for Qwen3.5 4B and 9B, 4/11 for LFM 450M; modern covers aren't. Answers are constrained by hand-written GBNF grammars (field order matters; a
   schema-generated grammar sorts keys). Local items have `confidence = "local"`,
   no distance or price, `calls = 0`, and `recognition.endpoint = "local/<model>"`; concurrency is 1.
   `real_model_scores_cards` scores a model on a labelled CSV (`CARDLOADER_TRUTH`, `CARDLOADER_BACKS=1`,

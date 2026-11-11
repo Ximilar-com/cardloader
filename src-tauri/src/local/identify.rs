@@ -10,6 +10,10 @@
 //! on the whole card (Qwen3.5, `Family::reads_whole_card`) get one question with every field, and with the card's
 //! back as a second image when the session has it: sports cards print the number, year and set there. The strip
 //! assumes the card fills the picture; the whole card doesn't.
+//!
+//! A session of comics asks about a cover instead: the series title, the issue number, the publisher and the year,
+//! stored where Ximilar's comics_id puts them (name, number, set name, year). Small models read the title off the
+//! whole cover and the issue number off its enlarged top, where the number sits by the date and the price.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -53,6 +57,39 @@ set_code: the short set code, only if it is printed; \
 year: the copyright or release year, only if it is printed; \
 game: which game or sport the card belongs to. \
 Use an empty string for anything you cannot read clearly. Do not guess.";
+
+/// The top of a comic's cover holding the issue number, as a fraction of the height.
+pub const COVER_TOP_FRACTION: f64 = 0.25;
+
+/// The one question about a comic of models that read small print. The fields are named as a cover says them:
+/// asked for a "card number", a model looks for one.
+pub const COMIC_PROMPT: &str =
+    "This is the front cover of a comic book (a comic, magazine or manga). \
+Fill in the JSON fields from what is printed on the cover: \
+title: the title of the series as its logo prints it (e.g. The Amazing Spider-Man), not the title of a story; \
+issue: the issue or volume number as printed, usually after \"No.\" or \"#\" by the date or the price, not the \
+price, the date or the barcode; \
+publisher: the publisher, only if it is printed (e.g. Marvel, DC, Image); \
+year: the year of the cover date, only if it is printed. \
+Use an empty string for anything you cannot read clearly. Do not guess.";
+
+/// Small models' first question about a comic: the whole cover.
+pub const COVER_PROMPT: &str =
+    "This is the front cover of a comic book (a comic, magazine or manga). \
+Fill in the JSON fields from what is printed on the cover: \
+title: the title of the series as its logo prints it (e.g. The Amazing Spider-Man), not the title of a story; \
+year: the year of the cover date, only if it is printed. \
+Use an empty string for anything you cannot read clearly. Do not guess.";
+
+/// Their second: the top of the cover, enlarged. It asks for the price and the month first: a small model asked
+/// only for the issue number answers the price, the largest number there ("No. 99 MAY 10¢"), and an example
+/// number in the prompt comes back as the answer.
+pub const COVER_TOP_PROMPT: &str =
+    "This is the top of the front cover of a comic book. Read the small print: \
+price: the cover price, e.g. 10¢; \
+month: the month of the cover date, e.g. MAY; \
+issue: the issue number, printed after \"No.\" or \"#\". \
+Use an empty string for anything you cannot read clearly.";
 
 /// The one question of models that read the whole card; `back`: the second image is the card's back.
 pub fn whole_prompt(back: bool) -> String {
@@ -145,12 +182,37 @@ pub fn whole_grammar(kind: IdMode) -> String {
     )
 }
 
-/// The fields of a card as a model answers them; a question that doesn't ask for a field leaves it empty.
+/// One question about a comic's cover (`COMIC_PROMPT`).
+pub fn comic_grammar() -> String {
+    object_grammar(
+        &[
+            ("title", "s80"),
+            ("issue", "s16"),
+            ("publisher", "s80"),
+            ("year", "s8"),
+        ],
+        "",
+    )
+}
+
+pub fn cover_grammar() -> String {
+    object_grammar(&[("title", "s80"), ("year", "s8")], "")
+}
+
+pub fn cover_top_grammar() -> String {
+    object_grammar(&[("price", "s8"), ("month", "s16"), ("issue", "s16")], "")
+}
+
+/// The fields of a card as a model answers them; a question that doesn't ask for a field leaves it empty. A comic's
+/// title, issue and publisher are its name, number and set name, as Ximilar's comics_id is read.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct Answer {
+    #[serde(alias = "title")]
     name: String,
+    #[serde(alias = "issue")]
     card_number: String,
+    #[serde(alias = "publisher")]
     set_name: String,
     set_code: String,
     year: String,
@@ -162,6 +224,10 @@ fn json_object(text: &str) -> Result<Value, String> {
     let end = text.rfind('}').ok_or("the model's answer was cut off")?;
     serde_json::from_str(&text[start..=end])
         .map_err(|e| format!("the model's answer is not valid JSON: {e}"))
+}
+
+fn text_of(value: &Value) -> &str {
+    value.as_str().unwrap_or_default()
 }
 
 fn clean(text: &str) -> String {
@@ -176,8 +242,8 @@ fn clean(text: &str) -> String {
 /// The collector number without what models copy around it: "#" or "No." (sports cards print "No. 76"), a leading
 /// rarity letter set apart ("C 0123", Magic) or a regulation mark on a number out of a plain total ("D025/202",
 /// Pokémon). Other letters are the number's ("H25/H32", a sports card's "T87-12"). "125197" read without its slash
-/// is "125/197": six digits are taken as two halves.
-fn collector_number(raw: &str, sport: bool) -> String {
+/// is "125/197": six digits are taken as two halves. `verbatim` (sports cards, comics): every letter is the number's.
+fn collector_number(raw: &str, verbatim: bool) -> String {
     let n = clean(raw);
     let n = n.trim_start_matches('#').trim();
     let n = match n.get(..3).map(str::to_ascii_lowercase).as_deref() {
@@ -192,7 +258,7 @@ fn collector_number(raw: &str, sport: bool) -> String {
     let plain_total = rest
         .split_once('/')
         .is_some_and(|(_, total)| !total.is_empty() && total.bytes().all(|b| b.is_ascii_digit()));
-    let n = if !sport
+    let n = if !verbatim
         && first.is_some_and(|c| c.is_ascii_alphabetic())
         && (apart || (digit(rest) && plain_total))
     {
@@ -245,6 +311,39 @@ pub fn parse_whole(text: &str) -> Result<(Recognition, Value), String> {
     Ok((recognition(answer), json!({ "card": raw })))
 }
 
+/// A comic's answers as a recognition: the cover's (`COMIC_PROMPT`), or a small model's about the cover
+/// (`COVER_PROMPT`) and then about its top (`COVER_TOP_PROMPT`), which gives the issue number.
+pub fn parse_comic(cover: &str, top: Option<&str>) -> Result<(Recognition, Value), String> {
+    let cover_raw = json_object(cover)?;
+    let mut answer: Answer =
+        serde_json::from_value(cover_raw.clone()).map_err(|e| e.to_string())?;
+    let mut raw = json!({ "card": cover_raw });
+    if let Some(top) = top {
+        let top_raw = json_object(top).ok();
+        let t: Answer = top_raw
+            .clone()
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        // The price again is the price, not the issue.
+        let digits = |v: &str| -> String { v.chars().filter(char::is_ascii_digit).collect() };
+        let price = digits(
+            top_raw
+                .as_ref()
+                .map(|v| text_of(&v["price"]))
+                .unwrap_or_default(),
+        );
+        answer.card_number = if !price.is_empty() && digits(&t.card_number) == price {
+            String::new()
+        } else {
+            t.card_number
+        };
+        raw["top"] = json!(top_raw);
+    }
+    // The session says they are comics; the questions don't ask.
+    answer.game = "comics".into();
+    Ok((recognition(answer), raw))
+}
+
 fn recognition(a: Answer) -> Recognition {
     let game = GAMES.iter().find(|g| g.0 == a.game.trim());
     let year: String = clean(&a.year)
@@ -264,7 +363,7 @@ fn recognition(a: Answer) -> Recognition {
         } else {
             String::new()
         },
-        card_number: collector_number(&a.card_number, game.is_some_and(|g| g.1 == "sport")),
+        card_number: collector_number(&a.card_number, game.is_some_and(|g| g.1 != "tcg")),
         set_name: clean(&a.set_name),
         year: if year.len() == 4 { year } else { String::new() },
         subcategory: game.map(|g| g.2.to_string()).unwrap_or_default(),
@@ -397,6 +496,82 @@ mod tests {
         )
         .unwrap();
         assert_eq!(r.card.card_number, "025/202");
+    }
+
+    #[test]
+    fn reads_a_comics_cover() {
+        // One question with every field, named as a cover says them.
+        let (r, raw) = parse_comic(
+            r#"{"title": "Planet Comics", "issue": "No. 34", "publisher": "Fiction House", "year": "1945"}"#,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            (r.id_type.as_str(), r.confidence.as_deref()),
+            ("comics", Some("local"))
+        );
+        assert_eq!(
+            (
+                r.card.name.as_str(),
+                r.card.card_number.as_str(),
+                r.card.set_name.as_str(),
+                r.card.year.as_str(),
+                r.card.subcategory.as_str(),
+                r.card.full_name.as_str()
+            ),
+            (
+                "Planet Comics",
+                "34",
+                "Fiction House",
+                "1945",
+                "Comics",
+                "Planet Comics #34"
+            )
+        );
+        assert_eq!(raw["card"]["issue"], "No. 34");
+        assert!(raw.get("top").is_none());
+        // A small model's two answers: the issue number is the top's, whatever the first answer put there.
+        let (r, raw) = parse_comic(
+            r#"{"title": "Fight Comics", "year": "", "issue": "10"}"#,
+            Some(r##"{"issue": "#82"}"##),
+        )
+        .unwrap();
+        assert_eq!(r.card.full_name, "Fight Comics #82");
+        assert_eq!(raw["top"]["issue"], "#82");
+        // A small model's favourite wrong answer is the price: then the issue wasn't read.
+        let (r, raw) = parse_comic(
+            r#"{"title": "Jumbo Comics", "year": ""}"#,
+            Some(r#"{"price": "10¢", "month": "MAY", "issue": "10"}"#),
+        )
+        .unwrap();
+        assert_eq!(r.card.card_number, "");
+        assert_eq!(r.card.full_name, "Jumbo Comics");
+        assert_eq!(raw["top"]["issue"], "10", "the answer is kept as given");
+        let (r, _) = parse_comic(
+            r#"{"title": "Jumbo Comics", "year": ""}"#,
+            Some(r#"{"price": "10¢", "month": "MAY", "issue": "No. 99"}"#),
+        )
+        .unwrap();
+        assert_eq!(r.card.card_number, "99");
+        assert!(!COVER_TOP_PROMPT.contains("129") && !COMIC_PROMPT.contains("129"));
+        // An issue's letters are its own: a trading card's "D025/202" would lose its first.
+        let (r, _) = parse_comic(r#"{"title": "X", "issue": "A12/3"}"#, None).unwrap();
+        assert_eq!(r.card.card_number, "A12/3");
+        let (r, _) = parse_comic(r#"{"title": "X", "year": "1999"}"#, Some("no answer")).unwrap();
+        assert_eq!(r.card.card_number, "");
+        let (empty, _) = parse_comic(r#"{"title": "", "issue": "5"}"#, None).unwrap();
+        assert!(empty.confidence.is_none());
+        let root = comic_grammar();
+        let root = root.lines().next().unwrap();
+        let order: Vec<_> = ["title", "issue", "publisher", "year"]
+            .iter()
+            .map(|f| root.find(&format!(r#"\"{f}\""#)).unwrap())
+            .collect();
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{root}");
+        assert!(cover_grammar().starts_with(r#"root ::= "{" space "\"title\"""#));
+        let top = cover_top_grammar();
+        assert!(top.starts_with(r#"root ::= "{" space "\"price\"""#));
+        assert!(top.find("month").unwrap() < top.find("issue").unwrap());
     }
 
     #[test]

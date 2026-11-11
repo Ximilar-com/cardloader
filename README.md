@@ -15,10 +15,10 @@
 Cardloader is an open-source desktop app for Windows, macOS and Linux, built with [Tauri 2](https://tauri.app)
 (Rust) and React.
 
-- **Home and setup.** On first launch, five questions (what you scan, which game, whether you grade, check
-  condition or want prices, how cards come in, and whether the Ximilar API or a local model identifies them) set
-  the defaults of new sessions; run them again any time from Home or Settings. Home shows the cards analysed in the
-  last 7 days, a year of activity, the last sessions and those defaults.
+- **Home and setup.** On first launch, five questions (what you scan: trading card games, sports cards or comics;
+  which game; whether you grade, check condition or want prices; how cards come in; and whether the Ximilar API or a
+  local model identifies them) set the defaults of new sessions; run them again any time from Home or Settings. Home
+  shows the cards analysed in the last 7 days, a year of activity, the last sessions and those defaults.
 - **Sessions.** Each analysis of a folder, or each run of the scanner, is a session. The table fills in as
   results arrive; click a card to see its images, the best match, price statistics, grading and links. If the
   match is wrong, select one of the other candidates instead; the correction is also sent to Cards Cloud.
@@ -174,6 +174,13 @@ baseball cards in holders: 47 against 4B's 32 and 450M's 10); elsewhere it reads
   card (when the session reads both sides) or the enlarged bottom edge of the front, which works when the card fills
   the picture (a scan), not on a photo of a card on a table. The answer's game is one of the session's kind of
   cards. The answers are held to a fixed JSON shape, so they always parse.
+- **Comics.** A local session of comics asks about the cover instead: the title of the series, the issue number,
+  and the publisher and year when they are printed. The Qwen3.5 models read the cover in one look; the LFM models
+  read the title off the whole cover and the issue number off its enlarged top quarter, where older comics print it
+  by the date and the price. On scans of 11 covers from the 1940s, Qwen3.5 4B and 9B each got 8 titles and 9 issue
+  numbers right (the titles missed lost a letter behind the artwork); LFM2.5-VL 450M got 7 titles and 4 numbers, and
+  gave a wrong number on 3. Modern covers, which often print the number in the barcode box, weren't measured. The
+  back cover is never read.
 - What it can't do: tell reprints and variants apart, give a match score, other candidates or prices.
   Rows show a **Local** tag instead of High/Medium/Low. Cards Cloud sync still works (with your Ximilar token).
 - **Grading and condition (estimates).** A local session can also grade: each side gets one more question, and

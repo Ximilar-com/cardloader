@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  BookOpen,
   CheckCircle2,
   Circle,
   Cpu,
@@ -149,6 +150,7 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
                 [
                   ["tcg", t("wizard.interests.tcg"), t("wizard.interests.tcgHint"), Layers],
                   ["sport", t("wizard.interests.sport"), t("wizard.interests.sportHint"), Trophy],
+                  ["comics", t("wizard.interests.comics"), t("wizard.interests.comicsHint"), BookOpen],
                 ] as [Interest, string, string, LucideIcon][]
               ).map(([value, label, hint, icon]) => (
                 <Tile

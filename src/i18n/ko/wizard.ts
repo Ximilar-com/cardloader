@@ -16,6 +16,8 @@ const messages: Messages<typeof en> = {
     tcgHint: "Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana…",
     sport: "스포츠 카드",
     sportHint: "야구, 농구, 미식축구, 하키, 축구…",
+    comics: "만화",
+    comicsHint: "코믹북, 잡지, 망가",
   },
   games: {
     title: "게임 선택",

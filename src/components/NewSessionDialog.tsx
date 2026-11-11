@@ -586,7 +586,8 @@ export default function NewSessionDialog({
             ) : (
               kind !== "csv" && <div />
             )}
-            {local && (
+            {/* A comic is read off its cover: its back says nothing about it. */}
+            {local && sessionIdMode !== "comics" && (
               <div className="col-span-2">
                 <Check
                   label={t("newSession.localBack.label")}

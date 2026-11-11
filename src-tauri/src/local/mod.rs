@@ -31,7 +31,7 @@ const STRIP_LONG_EDGE: u32 = 1024;
 const MAX_ANSWER_TOKENS: u32 = 160;
 /// Every field at once, the set name included.
 const MAX_WHOLE_TOKENS: u32 = 240;
-/// JPEGs of one card: the front, its back if there is one, and the bottom strip of the front.
+/// JPEGs of one card: the front, its back if there is one, and the part of the front with the number.
 type Images = (Vec<u8>, Option<Vec<u8>>, Vec<u8>);
 
 /// Something that answers a prompt about images (llama.cpp in the app, a fake in tests): one image, or several of
@@ -467,6 +467,7 @@ impl LocalModels {
     /// Identifies the card in `front` (a file) with model `id`; `kind` is what the session holds (its "Identify
     /// as"). `back`, the card's back when the session reads both sides, is sent to models that read the whole card;
     /// small models read it for a sports card (number, year and set are printed there), else the front's bottom.
+    /// A comic (`IdMode::Comics`) is asked about as a cover (`identify::COMIC_PROMPT`), never with its back.
     /// Returns the recognition and the raw record stored with the item.
     pub async fn identify(
         &self,
@@ -479,10 +480,13 @@ impl LocalModels {
             catalog::find(id).ok_or_else(|| Error::msg(format!("unknown local model {id}")))?;
         let engine = self.engine(id).await?;
         let whole = spec.family.reads_whole_card();
+        // A comic is read off its cover: the back is an advert.
+        let comic = kind == IdMode::Comics;
         let front = front.to_path_buf();
-        let back = back.map(Path::to_path_buf);
-        // The whole card, its back, and the enlarged bottom strip of the front for small models.
-        let (card, back, strip) = tokio::task::spawn_blocking(move || -> Result<Images> {
+        let back = back.filter(|_| !comic).map(Path::to_path_buf);
+        // The whole card, its back, and for small models the enlarged part of the front with the number: the bottom
+        // strip of a card, the top of a comic's cover.
+        let (card, back, part) = tokio::task::spawn_blocking(move || -> Result<Images> {
             let img = imaging::open(&front)?;
             let card = imaging::jpeg_bytes(&imaging::fit_long_edge(&img, CARD_LONG_EDGE), 90)?;
             let back = back
@@ -491,16 +495,45 @@ impl LocalModels {
                     imaging::jpeg_bytes(&imaging::fit_long_edge(&b, CARD_LONG_EDGE), 90)
                 })
                 .transpose()?;
-            let top = (img.height() as f64 * (1.0 - identify::STRIP_FRACTION)) as u32;
-            let strip = img.crop_imm(0, top, img.width(), img.height() - top);
-            let strip = imaging::jpeg_bytes(&imaging::fit_long_edge(&strip, STRIP_LONG_EDGE), 92)?;
-            Ok((card, back, strip))
+            let part = if comic {
+                let height = (img.height() as f64 * identify::COVER_TOP_FRACTION) as u32;
+                img.crop_imm(0, 0, img.width(), height.max(1))
+            } else {
+                let top = (img.height() as f64 * (1.0 - identify::STRIP_FRACTION)) as u32;
+                img.crop_imm(0, top, img.width(), img.height() - top)
+            };
+            let part = imaging::jpeg_bytes(&imaging::fit_long_edge(&part, STRIP_LONG_EDGE), 92)?;
+            Ok((card, back, part))
         })
         .await
         .map_err(|e| Error::msg(e.to_string()))??;
         let started = Instant::now();
         let (answers, sent) =
             tokio::task::spawn_blocking(move || -> Result<(Vec<String>, &str)> {
+                if comic && whole {
+                    let answer = engine.generate(
+                        &[&card],
+                        identify::COMIC_PROMPT,
+                        Some(&identify::comic_grammar()),
+                        MAX_WHOLE_TOKENS,
+                    )?;
+                    return Ok((vec![answer], "front"));
+                }
+                if comic {
+                    let first = engine.generate(
+                        &[&card],
+                        identify::COVER_PROMPT,
+                        Some(&identify::cover_grammar()),
+                        MAX_ANSWER_TOKENS,
+                    )?;
+                    let second = engine.generate(
+                        &[&part],
+                        identify::COVER_TOP_PROMPT,
+                        Some(&identify::cover_top_grammar()),
+                        MAX_ANSWER_TOKENS,
+                    )?;
+                    return Ok((vec![first, second], "front+top"));
+                }
                 if whole {
                     // Both sides in one question: measured on sports cards, faster than asking about the front first.
                     let mut all: Vec<&[u8]> = vec![&card];
@@ -527,7 +560,7 @@ impl LocalModels {
                     Some(back) if kind == IdMode::Sport || identify::is_sport(&first) => {
                         (back, identify::BACK_PROMPT, "front+back")
                     }
-                    _ => (strip.as_slice(), identify::STRIP_PROMPT, "front+strip"),
+                    _ => (part.as_slice(), identify::STRIP_PROMPT, "front+strip"),
                 };
                 let second = engine.generate(
                     &[image],
@@ -540,7 +573,9 @@ impl LocalModels {
             .await
             .map_err(|e| Error::msg(e.to_string()))??;
         let seconds = started.elapsed().as_secs_f64();
-        let (recognition, parsed) = if whole {
+        let (recognition, parsed) = if comic {
+            identify::parse_comic(&answers[0], answers.get(1).map(String::as_str))
+        } else if whole {
             identify::parse_whole(&answers[0])
         } else {
             identify::parse_answers(&answers[0], answers.get(1).map(String::as_str))
@@ -550,7 +585,7 @@ impl LocalModels {
             "endpoint": format!("local/{id}"),
             "model": id,
             "seconds": (seconds * 100.0).round() / 100.0,
-            // What the model saw: the card, then its back or its enlarged bottom strip.
+            // What the model saw: the card, then its back, its enlarged bottom strip or the top of a comic's cover.
             "images": sent,
             "answers": answers,
             "response": parsed,
@@ -880,8 +915,10 @@ mod real_model {
             .map(|e| e.unwrap().path())
             .collect();
         paths.sort();
+        // The session's "Identify as", as in `real_model_scores_cards`.
+        let kind = IdMode::parse(&std::env::var("CARDLOADER_KIND").unwrap_or_default());
         for path in paths.iter().filter(|p| imaging::is_supported(p)) {
-            let (r, raw) = local.identify(&id, path, None, IdMode::Auto).await.unwrap();
+            let (r, raw) = local.identify(&id, path, None, kind).await.unwrap();
             println!(
                 "{:<28} {:>5.2}s  {:<6} {}  | {}",
                 path.file_name().unwrap().to_string_lossy(),
@@ -893,7 +930,8 @@ mod real_model {
             println!(
                 "EVAL {}",
                 json!({"file": path.file_name().unwrap().to_string_lossy(), "seconds": raw["seconds"],
-                       "name": r.card.name, "number": r.card.card_number, "game": r.card.subcategory})
+                       "name": r.card.name, "number": r.card.card_number, "set": r.card.set_name,
+                       "year": r.card.year, "game": r.card.subcategory})
             );
         }
     }

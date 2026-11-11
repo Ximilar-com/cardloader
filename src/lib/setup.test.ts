@@ -37,6 +37,17 @@ describe("setup", () => {
     expect(answersToSettings(answers({ interests: ["sport"] }), base).defaultIdMode).toBe("sport");
   });
 
+  it("makes comics sessions for a comics collector", () => {
+    const s = answersToSettings(answers({ interests: ["comics"], games: ["Pokemon"] }), base);
+    expect(s.defaultIdMode).toBe("comics");
+    expect(s.defaultSubcategory).toBe("");
+    expect(answersFromSettings(s).interests).toEqual(["comics"]);
+    expect(answersToSettings(answers({ interests: ["comics", "tcg"] }), base).defaultIdMode).toBe("auto");
+    // Which kinds were mixed isn't stored.
+    expect(answersFromSettings({ ...base, defaultIdMode: "auto" }).interests).toEqual(["tcg", "sport", "comics"]);
+    expect(answersFromSettings({ ...base, defaultIdMode: "slab" }).interests).toEqual(["tcg", "sport", "comics"]);
+  });
+
   it("grades when asked, else reads condition", () => {
     expect(answersToSettings(answers({ goals: ["grading", "condition"] }), base).defaultGrading).toBe("grade");
     expect(answersToSettings(answers({ goals: ["condition"] }), base).defaultGrading).toBe("condition");

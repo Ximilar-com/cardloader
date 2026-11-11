@@ -3,7 +3,9 @@
 
 import type { Engine, GradingMode, IdMode, Settings, SourceKind } from "./api";
 
-export type Interest = "tcg" | "sport";
+export type Interest = "tcg" | "sport" | "comics";
+/** In the order the setup shows them. */
+export const INTERESTS: Interest[] = ["tcg", "sport", "comics"];
 export type Goal = "grading" | "condition" | "prices";
 
 export interface SetupAnswers {
@@ -19,9 +21,9 @@ export interface SetupAnswers {
 export const SOURCE_ORDER: SourceKind[] = ["scanner", "folder", "watch_folder", "csv"];
 
 export function answersToSettings<T extends Settings>(answers: SetupAnswers, settings: T): T {
-  const tcg = answers.interests.includes("tcg");
-  const sport = answers.interests.includes("sport");
-  const idMode: IdMode = tcg && !sport ? "tcg" : sport && !tcg ? "sport" : "auto";
+  // One kind of collectible is every session's "Identify as"; several are told apart per card.
+  const kinds = INTERESTS.filter((i) => answers.interests.includes(i));
+  const idMode: IdMode = kinds.length === 1 ? kinds[0] : "auto";
   const grading: GradingMode = answers.goals.includes("grading")
     ? "grade"
     : answers.goals.includes("condition")
@@ -41,8 +43,9 @@ export function answersToSettings<T extends Settings>(answers: SetupAnswers, set
 }
 
 export function answersFromSettings(settings: Settings): SetupAnswers {
-  const interests: Interest[] =
-    settings.defaultIdMode === "tcg" ? ["tcg"] : settings.defaultIdMode === "sport" ? ["sport"] : ["tcg", "sport"];
+  // Which kinds "auto" stood for isn't stored: it reads back as all of them.
+  const one = INTERESTS.find((i) => i === settings.defaultIdMode);
+  const interests: Interest[] = one ? [one] : [...INTERESTS];
   const goals: Goal[] = [];
   if (settings.defaultGrading === "grade") goals.push("grading");
   if (settings.defaultGrading === "condition") goals.push("condition");
