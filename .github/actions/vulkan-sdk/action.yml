@@ -1,8 +1,9 @@
 name: Vulkan SDK
 description: >-
   Installs LunarG's Vulkan SDK on Windows and Linux runners: the headers, glslc and SPIRV-Headers that llama.cpp's
-  Vulkan backend (the `vulkan` cargo feature) builds with, and on Windows makes CMake build with Ninja. The built app needs none of it; it uses the GPU driver's
-  Vulkan loader when there is one.
+  Vulkan backend (the `vulkan` cargo feature) builds with. On Windows it also makes CMake build with Ninja and
+  gives cargo a short target folder (CARGO_TARGET_DIR), both of which that build needs there. The built app needs
+  none of it; it uses the GPU driver's Vulkan loader when there is one.
 inputs:
   version:
     description: LunarG Vulkan SDK version
@@ -28,6 +29,11 @@ runs:
         choco install ninja --no-progress -y
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
+        # That project's build folder is nested deep inside cargo's: under <workspace>\target its paths pass CMake's
+        # 250 characters and its compiler check fails (rc.exe on a manifest it can't reach). A target folder at the
+        # drive's root keeps them short.
+        $target = Join-Path (Split-Path -Qualifier $env:GITHUB_WORKSPACE) "t"
+        "CARGO_TARGET_DIR=$target" | Out-File -FilePath $env:GITHUB_ENV -Append
 
     - name: Vulkan SDK (Linux)
       if: runner.os == 'Linux'

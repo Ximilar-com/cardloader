@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,7 +42,9 @@ mkdirSync(binaries, { recursive: true });
 
 run("rustup", ["target", "add", HELPER_TARGET]);
 run("cargo", ["build", "--release", "-p", "cardloader-twain", "--target", HELPER_TARGET]);
-const built = join(root, "target", HELPER_TARGET, "release", "cardloader-twain.exe");
+// Cargo's target folder is elsewhere when CARGO_TARGET_DIR says so (the Windows CI builds use a short one).
+const targetDir = process.env.CARGO_TARGET_DIR ? resolve(root, process.env.CARGO_TARGET_DIR) : join(root, "target");
+const built = join(targetDir, HELPER_TARGET, "release", "cardloader-twain.exe");
 const dest = join(binaries, `cardloader-twain-${appTarget}.exe`);
 copyFileSync(built, dest);
 console.log(`prepare-sidecar: ${dest}`);

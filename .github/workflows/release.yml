@@ -123,5 +123,6 @@ jobs:
           path: |
             target/release/bundle/
             target/universal-apple-darwin/release/bundle/
+            ${{ env.CARGO_TARGET_DIR }}/release/bundle/
           if-no-files-found: error
           retention-days: 7
