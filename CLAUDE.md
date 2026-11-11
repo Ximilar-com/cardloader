@@ -252,7 +252,11 @@ state from them.
   next to the exe and `tauri.linux.conf.json` in `/usr/lib/Cardloader/llama`, found through the binary's DT_RPATH
   `$ORIGIN/../lib/Cardloader/llama`. At startup `llama::load_backend_modules` loads the modules from there (or the
   build folder for `cargo test`/`tauri dev`); a GPU module whose driver is missing doesn't load, so the app runs on
-  the CPU. `local::tests::lists_the_cpu` fails if no backend module was found.
+  the CPU. `local::tests::lists_the_cpu` fails if no backend module was found. On Windows the Vulkan build needs
+  two things the `vulkan-sdk` action sets for CI and releases: `CMAKE_GENERATOR=Ninja` (under the Visual Studio
+  generator MSBuild ran the steps of llama.cpp's shader generator, a CMake ExternalProject, out of order) and a
+  short `CARGO_TARGET_DIR` (that project's nested build folder otherwise passes CMake's 250-character paths);
+  `prepare-sidecar.mjs` follows `CARGO_TARGET_DIR`. A local Windows build with `--features vulkan` needs both too.
 - `llama-cpp-2`'s `LlamaSampler::sample` already accepts the token; accepting it again corrupts the grammar
   (`GGML_ASSERT(!stacks.empty())`). The llama.cpp backend can be initialised once per process (`OnceLock`).
 - Real-model checks are opt-in (`#[ignore]`): `real_model_reads_cards` (needs `CARDLOADER_MODELS`, `CARDLOADER_CARDS`)
