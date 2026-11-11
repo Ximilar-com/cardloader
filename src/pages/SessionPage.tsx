@@ -82,11 +82,11 @@ function SessionView({ id }: { id: string }) {
   /** Cards to publish (all drafts: null), awaiting confirmation. */
   const [publishing, setPublishing] = useState<{ ids: number[] | null; count: number } | null>(null);
   const [params] = useSearchParams();
-  const [filter, setFilter] = useState<RowFilter>(() => {
+  const [filter, setFilterState] = useState<RowFilter>(() => {
     const f = params.get("filter");
     return f === "review" || f === "failed" || f === "corrected" || f === "agent" ? f : "all";
   });
-  const [query, setQuery] = useState("");
+  const [query, setQueryState] = useState("");
   const [sort, setSort] = useState<Sort | null>(null);
   /** Cards ticked for a bulk action, and the last one ticked (Shift extends from it). */
   const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -197,7 +197,22 @@ function SessionView({ id }: { id: string }) {
     }),
     [rows],
   );
-  const checkedIds = [...checked].map(Number);
+  // Bulk actions act on the ticked cards that are shown: a ticked card that a filter or the search hides now (e.g.
+  // accepted under "To review") is neither counted nor acted on.
+  const checkedRows = shown.filter((r) => checked.has(r.key));
+  const checkedIds = checkedRows.map((r) => Number(r.key));
+  // ...and are forgotten when the filter or the search changes, so they don't come back ticked later.
+  const forgetHidden = () => {
+    if (checkedRows.length < checked.size) setChecked(new Set(checkedRows.map((r) => r.key)));
+  };
+  const setFilter = (f: RowFilter) => {
+    setFilterState(f);
+    forgetHidden();
+  };
+  const setQuery = (q: string) => {
+    setQueryState(q);
+    forgetHidden();
+  };
 
   const onSort = (key: SortKey) =>
     setSort((s) =>
@@ -205,7 +220,7 @@ function SessionView({ id }: { id: string }) {
     );
 
   const onCheck = (key: string, range: boolean) => {
-    const next = new Set(checked);
+    const next = new Set(checkedRows.map((r) => r.key));
     const from = shown.findIndex((r) => r.key === anchor.current);
     const to = shown.findIndex((r) => r.key === key);
     if (range && from >= 0 && to >= 0) {
@@ -456,12 +471,12 @@ function SessionView({ id }: { id: string }) {
         </header>
 
         {rows.length > 0 &&
-          (checked.size > 0 ? (
+          (checkedRows.length > 0 ? (
             <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
-              <span className="font-medium">{t("session.bulk.selected", { count: checked.size })}</span>
+              <span className="font-medium">{t("session.bulk.selected", { count: checkedRows.length })}</span>
               <span className="flex-1" />
               {/* Accept and Unaccept share the first place: a card shows the one it can do. */}
-              {rows.some((r) => (!r.reviewed || r.byAgent) && checked.has(r.key)) && (
+              {checkedRows.some((r) => !r.reviewed || r.byAgent) && (
                 <button
                   className="btn px-2 py-1 text-xs"
                   onClick={() => accept(checkedIds)}
@@ -470,7 +485,7 @@ function SessionView({ id }: { id: string }) {
                   <Check className="h-3.5 w-3.5" /> {t("session.bulk.accept")}
                 </button>
               )}
-              {rows.some((r) => r.accepted && checked.has(r.key)) && (
+              {checkedRows.some((r) => r.accepted) && (
                 <button
                   className="btn px-2 py-1 text-xs"
                   onClick={() =>

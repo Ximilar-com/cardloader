@@ -13,6 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::error::Result;
 use crate::imaging;
@@ -55,9 +56,22 @@ pub async fn read_picture(path: PathBuf) -> std::result::Result<Vec<u8>, ApiErro
         .map_err(|e| ApiError::Decode(format!("the picture can't be read: {e}")))
 }
 
-/// The card's condition as Ximilar's grading named it, if it graded the condition.
-pub fn graded_condition(item: &ItemSummary) -> Option<CardCondition> {
-    item.condition.as_deref().and_then(CardCondition::read)
+/// The card's condition as its grading named it, if it graded the condition, read on the scale the `grading`
+/// record names. Without a record the scale is unknown.
+pub fn graded_condition(item: &ItemSummary, grading: Option<&Value>) -> Option<CardCondition> {
+    let scale = grading.and_then(grading_scale);
+    CardCondition::read_on(item.condition.as_deref()?, scale)
+}
+
+/// The scale a grading record names: the local model's `scale`, else the mode of its condition result (Ximilar's
+/// mode id, the local model's scale name). An imported condition names none.
+fn grading_scale(grading: &Value) -> Option<&str> {
+    grading["scale"].as_str().or_else(|| {
+        grading["response"]["records"][0]["_objects"]
+            .as_array()?
+            .iter()
+            .find_map(|o| o["Condition"][0]["mode"].as_str())
+    })
 }
 
 /// The card is in a graded slab whose label was read.
@@ -211,5 +225,42 @@ mod tests {
             Some(CardCondition::VeryGood)
         );
         assert_eq!(CardCondition::read("9.5"), None);
+    }
+
+    /// Cardmarket's "Light Played" comes after its "Good"; on another scale (Whatnot's) it is Lightly Played.
+    #[test]
+    fn conditions_are_read_on_their_scale() {
+        use CardCondition::*;
+        for scale in ["cardmarket", "Cardmarket"] {
+            assert_eq!(
+                CardCondition::read_on("Light Played", Some(scale)),
+                Some(VeryGood)
+            );
+        }
+        assert_eq!(
+            CardCondition::read_on("Light Played", Some("tcgplayer")),
+            Some(Excellent)
+        );
+        assert_eq!(
+            CardCondition::read_on("Light Played", None),
+            Some(Excellent)
+        );
+        assert_eq!(
+            CardCondition::read_on("Lightly Played", Some("cardmarket")),
+            Some(Excellent)
+        );
+        // Down Cardmarket's scale, no step reads better than the one above it.
+        let rank = |c: CardCondition| {
+            [NearMint, Excellent, VeryGood, Poor]
+                .iter()
+                .position(|x| *x == c)
+        };
+        let steps: Vec<Option<usize>> = crate::local::grade::scale("cardmarket")
+            .labels
+            .iter()
+            .map(|(label, _, _)| CardCondition::read_on(label, Some("cardmarket")).and_then(rank))
+            .collect();
+        assert!(steps.iter().all(Option::is_some), "{steps:?}");
+        assert!(steps.windows(2).all(|w| w[0] <= w[1]), "{steps:?}");
     }
 }

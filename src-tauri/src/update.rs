@@ -65,12 +65,8 @@ impl Updates {
     }
 
     /// Downloads and installs the update found by `check`, then restarts the app (Windows: its installer does).
-    pub async fn install(&self, app: &AppHandle, busy: bool) -> Result<()> {
-        if busy {
-            return Err(Error::msg(
-                "a session, sync, eBay job or export is still running; update once it has finished",
-            ));
-        }
+    /// `busy` tells whether anything runs that the restart would cut off.
+    pub async fn install(&self, app: &AppHandle, busy: impl Fn() -> bool) -> Result<()> {
         let update = self
             .found
             .lock()
@@ -79,19 +75,93 @@ impl Updates {
             .ok_or_else(|| Error::msg("no update to install; check for updates first"))?;
         let mut downloaded = 0u64;
         let mut last = Instant::now();
-        update
-            .download_and_install(
-                |chunk, total| {
-                    downloaded += chunk as u64;
-                    if last.elapsed() > Duration::from_millis(100) {
-                        last = Instant::now();
-                        let _ = app.emit("update-progress", UpdateProgress { downloaded, total });
-                    }
-                },
-                || {},
-            )
-            .await?;
+        let download = async {
+            let bytes = update
+                .download(
+                    |chunk, total| {
+                        downloaded += chunk as u64;
+                        if last.elapsed() > Duration::from_millis(100) {
+                            last = Instant::now();
+                            let _ =
+                                app.emit("update-progress", UpdateProgress { downloaded, total });
+                        }
+                    },
+                    || {},
+                )
+                .await?;
+            Ok(bytes)
+        };
+        let install = |bytes: Vec<u8>| Ok(update.install(bytes)?);
+        download_then_install(busy, download, install).await?;
         app.request_restart();
         Ok(())
+    }
+}
+
+/// Installs what `download` fetched unless something is running. `busy` is asked before the download and again
+/// right before installing: a session the user or an agent starts while the update downloads would be cut off
+/// by the restart.
+async fn download_then_install(
+    busy: impl Fn() -> bool,
+    download: impl std::future::Future<Output = Result<Vec<u8>>>,
+    install: impl FnOnce(Vec<u8>) -> Result<()>,
+) -> Result<()> {
+    if busy() {
+        return Err(Error::msg(
+            "a session, sync, eBay job or export is still running; update once it has finished",
+        ));
+    }
+    let bytes = download.await?;
+    if busy() {
+        return Err(Error::msg(
+            "a session, sync, eBay job or export started while the update downloaded; update once it has finished",
+        ));
+    }
+    install(bytes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[tokio::test]
+    async fn nothing_installs_while_something_runs() {
+        let running = AtomicBool::new(false);
+        let installed = AtomicBool::new(false);
+        let busy = || running.load(Ordering::SeqCst);
+        let install = |bytes: Vec<u8>| {
+            assert_eq!(bytes, b"bundle");
+            installed.store(true, Ordering::SeqCst);
+            Ok(())
+        };
+
+        // A session starts while the update downloads.
+        let download = async {
+            running.store(true, Ordering::SeqCst);
+            Ok(b"bundle".to_vec())
+        };
+        let err = download_then_install(busy, download, install)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("started while"), "{err}");
+        assert!(!installed.load(Ordering::SeqCst));
+
+        // Running before: not even downloaded.
+        let downloaded = AtomicBool::new(false);
+        let download = async {
+            downloaded.store(true, Ordering::SeqCst);
+            Ok(b"bundle".to_vec())
+        };
+        assert!(download_then_install(busy, download, install)
+            .await
+            .is_err());
+        assert!(!downloaded.load(Ordering::SeqCst) && !installed.load(Ordering::SeqCst));
+
+        running.store(false, Ordering::SeqCst);
+        download_then_install(busy, async { Ok(b"bundle".to_vec()) }, install)
+            .await
+            .unwrap();
+        assert!(installed.load(Ordering::SeqCst));
     }
 }

@@ -255,6 +255,11 @@ impl SettingsStore {
         self.settings.lock().unwrap().clone()
     }
 
+    /// The settings file, in the app's config folder.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub fn view(&self) -> SettingsView {
         let mut settings = self.get();
         let storage = if self.keychain_secret(Secret::ApiToken).is_some() {

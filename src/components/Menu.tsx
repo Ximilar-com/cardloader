@@ -33,14 +33,20 @@ export default function Menu({
   useEffect(() => {
     if (!at) return;
     const close = () => setAt(null);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    // Escape closes only the menu: taken before the window's other listeners (the detail panel's) and marked
+    // as handled.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      close();
+    };
     window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     window.addEventListener("resize", close);
     window.addEventListener("scroll", close, true);
     return () => {
       window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("resize", close);
       window.removeEventListener("scroll", close, true);
     };

@@ -60,15 +60,11 @@ impl Imgbb {
                 .query(&[("key", self.key.as_str())])
                 .multipart(form);
             async move {
-                let resp = req
-                    .send()
-                    .await
-                    .map_err(|e| ApiError::Network(e.to_string()))?;
+                // reqwest's errors name the URL, and the key is in it.
+                let network = |e: reqwest::Error| ApiError::Network(e.without_url().to_string());
+                let resp = req.send().await.map_err(network)?;
                 let status = resp.status();
-                let text = resp
-                    .text()
-                    .await
-                    .map_err(|e| ApiError::Network(e.to_string()))?;
+                let text = resp.text().await.map_err(network)?;
                 let body: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
                 if !status.is_success() {
                     // {"status_code": 400, "error": {"message": "Invalid API v1 key.", "code": 100}}
@@ -217,6 +213,22 @@ mod tests {
         assert!(
             body.contains(&crate::imaging::b64(b"jpeg")),
             "the picture goes as base64"
+        );
+    }
+
+    /// The key is in the request's URL, which reqwest's errors repeat: offline, it would reach the export's
+    /// `imageError` (shown to the user and agents) and the log.
+    #[tokio::test]
+    async fn errors_never_show_the_key() {
+        let host = Imgbb::new("http://127.0.0.1:9", "secret-imgbb-key").unwrap();
+        let err = host
+            .upload(b"jpeg", "card", &CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, ApiError::Network(_)), "{err:?}");
+        assert!(
+            !format!("{err} {err:?}").contains("secret-imgbb-key"),
+            "{err:?}"
         );
     }
 }

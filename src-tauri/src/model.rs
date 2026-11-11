@@ -114,6 +114,16 @@ impl CardCondition {
             _ => return None,
         })
     }
+
+    /// [`CardCondition::read`] on the scale the condition was graded on (a scale id or name, e.g. `cardmarket`):
+    /// Cardmarket's "Light Played" is below its "Good", where Whatnot's is the step below Near Mint.
+    pub fn read_on(text: &str, scale: Option<&str>) -> Option<CardCondition> {
+        let cardmarket = scale.is_some_and(|s| s.eq_ignore_ascii_case("cardmarket"));
+        if cardmarket && text.trim().eq_ignore_ascii_case("light played") {
+            return Some(CardCondition::VeryGood);
+        }
+        CardCondition::read(text)
+    }
 }
 
 str_enum!(

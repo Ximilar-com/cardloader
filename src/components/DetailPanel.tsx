@@ -20,7 +20,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { t, useT } from "../i18n";
 import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
-import { basename, decimal, grade, price } from "../lib/format";
+import { basename, decimal, grade, parseAmount, price } from "../lib/format";
 import { ErrorNote } from "./Modal";
 import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
@@ -73,7 +73,8 @@ export default function DetailPanel({
   // Reviewing from the keyboard: A accepts, E edits, 1–9 pick a candidate, Delete deletes, Escape closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey || editing) return;
+      // A key something else took (Escape closing an open menu) isn't for the panel.
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || editing) return;
       if ((e.target as HTMLElement)?.closest("input, textarea, select") || document.querySelector("[role=dialog]"))
         return;
       const candidate = /^[1-9]$/.test(e.key) ? view.alternatives[Number(e.key) - 1] : undefined;
@@ -673,9 +674,10 @@ function EditForm({
   const set = (k: keyof ItemEdit, v: string) => setEdit((e) => ({ ...e, [k]: v }));
 
   const submit = () => {
-    const text = priceText.trim().replace(",", ".").replace(/^\$/, "");
-    const value = text === "" ? null : Number(text);
-    if (value != null && (!Number.isFinite(value) || value < 0)) return setError(t("detail.edit.priceInvalid"));
+    // Empty: no price.
+    const empty = priceText.trim() === "";
+    const value = empty ? null : parseAmount(priceText);
+    if (!empty && (value == null || value < 0)) return setError(t("detail.edit.priceInvalid"));
     setBusy(true);
     setError(null);
     onSave({ ...edit, price: value }).catch((e) => {

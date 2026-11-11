@@ -650,11 +650,13 @@ impl Runner {
             .unwrap()
             .insert(id.to_string(), cancel.clone());
         let close = self.db.session(id)?.status == SessionStatus::Completed;
-        let (_tx, finished) = watch::channel(Some(close));
+        let (tx, finished) = watch::channel(Some(close));
         let runner = self.clone();
         let id = id.to_string();
         tauri::async_runtime::spawn(async move {
             crate::sync::run(runner.clone(), id.clone(), client, finished, cancel).await;
+            // Held until here: with the sender gone, `finished.changed()` returns at once and the retries don't wait.
+            drop(tx);
             runner.syncs.lock().unwrap().remove(&id);
             runner.emit_session(&id);
         });
@@ -815,8 +817,10 @@ impl Runner {
             let _ = poller.await;
         }
         let source_result = source_task.await.unwrap_or(Ok(()));
+        // The source has ended (it held the only sender), so ingest ends once it has stored the units sent: a
+        // scanner's pages would have no other way in. They stay queued; a stopped run analyses nothing more.
         if let Some(task) = ingest_task {
-            task.abort();
+            ingest_result = Some(task.await.unwrap_or(Ok(())));
         }
 
         // The remote session is closed only when the run completed.
@@ -1195,13 +1199,14 @@ impl Runner {
             .collect();
         let scale = crate::local::grade::scale(&session.options.condition_mode);
         match self.local.grade(model, &sides, grading, scale).await {
-            Ok(g) => self.db.save_grading(
-                item.summary.id,
-                g.grade,
-                g.condition.as_deref(),
-                &g.raw,
-                &[],
-            )?,
+            Ok(g) => {
+                // A grade's condition is a label of the scale too, and the same label means another step on another
+                // scale ("Light Played" on Cardmarket's and Whatnot's): exports read it on this one.
+                let mut raw = g.raw;
+                raw["scale"] = json!(scale.id);
+                self.db
+                    .save_grading(item.summary.id, g.grade, g.condition.as_deref(), &raw, &[])?
+            }
             Err(e) => self.db.set_item_status(
                 item.summary.id,
                 ItemStatus::Error,
@@ -1259,7 +1264,20 @@ impl Runner {
                         self.emit_session(&session.id);
                     }
                     Err(ApiError::Cancelled) => return,
-                    Err(e) => tracing::warn!("grading status of item {item_id}: {e}"),
+                    Err(e) if e.failure() == Failure::Retry => {
+                        tracing::warn!("grading status of item {item_id}: {e}")
+                    }
+                    // Asking again won't help (the token changed, the job expired): without this the poller would
+                    // keep the session running forever.
+                    Err(e) => {
+                        let _ = self.db.set_item_status(
+                            item_id,
+                            ItemStatus::Error,
+                            Some(&format!("grading: {e}")),
+                        );
+                        self.emit_item(item_id);
+                        self.emit_session(&session.id);
+                    }
                 }
             }
             tokio::select! {
@@ -2277,6 +2295,10 @@ pub(crate) mod tests {
         );
         let grading = item.grading.clone().unwrap();
         assert_eq!(grading["engine"], "local/lfm2.5-vl-3b");
+        assert_eq!(
+            grading["scale"], "ebay_tcg",
+            "exports read the condition on it"
+        );
         assert_eq!(grading["response"]["records"][0]["grades"]["surface"], 7.0);
         assert_eq!(item.summary.card.full_name, "Pikachu #58/102");
         assert_eq!(item.summary.confidence.as_deref(), Some("local"));
@@ -2429,6 +2451,8 @@ pub(crate) mod tests {
         .unwrap();
         db.set_hosted_images(id, &["https://i.example.com/old.jpg".into()])
             .unwrap();
+        db.set_ebay_images(id, &["https://i.ebayimg.com/old.jpg".into()])
+            .unwrap();
 
         let turned = runner.turn_item(id).unwrap();
         let new_preview = turned.preview_path.clone().unwrap();
@@ -2466,6 +2490,10 @@ pub(crate) mod tests {
         assert!(
             turned.hosted_images.is_empty(),
             "exports upload the upright picture"
+        );
+        assert!(
+            turned.ebay_images.is_empty(),
+            "so do eBay drafts made or updated from now on"
         );
         // Turning several: a card already upright is left as it is.
         assert_eq!(runner.turn_items(&[id]).unwrap(), (0, 1));
@@ -2915,5 +2943,239 @@ pub(crate) mod tests {
             .unwrap();
         assert_eq!(again.without_images, 0);
         assert_eq!(imgbb.received_requests().await.unwrap().len(), 2);
+    }
+
+    fn test_runner(dir: &Path, api_base: &str, db: &Db) -> Arc<Runner> {
+        let store = Arc::new(SettingsStore::for_test(
+            dir.join("settings.json"),
+            Settings {
+                api_base_url: api_base.into(),
+                ..Settings::default()
+            },
+            "token",
+        ));
+        Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.join("data"),
+        )
+    }
+
+    async fn wait_run(runner: &Runner, id: &str) {
+        let started = Instant::now();
+        while runner.is_running(id) {
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "run did not finish"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    }
+
+    /// More cards than one flush uploads images of: the last pass of a synced run uploads every image, and so
+    /// does Upload for a session that didn't sync.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn every_image_reaches_cards_cloud() {
+        let server = mock_ximilar().await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = 60;
+        let mut text = String::from("Image,Name,Price\n");
+        for i in 0..cards {
+            RgbImage::from_pixel(60, 84, Rgb([i as u8, 90, 200]))
+                .save(dir.path().join(format!("{i}.png")))
+                .unwrap();
+            text.push_str(&format!("{i}.png,Card {i},1.5\n"));
+        }
+        let csv = dir.path().join("cards.csv");
+        std::fs::write(&csv, text).unwrap();
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        let images = || async {
+            bodies(
+                &server.received_requests().await.unwrap(),
+                "/cards-cloud/v2/session/remote-1/images/",
+            )
+            .len()
+        };
+
+        for sync_remote in [true, false] {
+            let session = db
+                .create_session(&NewSession {
+                    name: "Inventory".into(),
+                    source_kind: SourceKind::Csv,
+                    source_ref: csv.to_string_lossy().into_owned(),
+                    id_mode: IdMode::Tcg,
+                    options: SessionOptions {
+                        sync_remote,
+                        ..SessionOptions::default()
+                    },
+                })
+                .unwrap();
+            let rows = source::csv_file::read(&csv).unwrap().rows;
+            assert_eq!(
+                runner.import_rows(&session.id, rows, false).await.unwrap(),
+                cards
+            );
+            let before = images().await;
+            runner.start(&session.id).unwrap();
+            wait_run(&runner, &session.id).await;
+            if !sync_remote {
+                assert_eq!(images().await, before);
+                runner.sync_now(&session.id).unwrap();
+                runner.wait_idle(&session.id).await;
+            }
+            assert_eq!(images().await - before, cards, "sync_remote: {sync_remote}");
+            let s = db.session(&session.id).unwrap();
+            assert_eq!(s.counts.synced, cards as i64);
+            assert_eq!(s.sync_error, None);
+        }
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            bodies(&requests, "/cards-cloud/v2/session/remote-1/close/").len(),
+            2
+        );
+    }
+
+    /// Upload waits between its attempts while Cards Cloud is busy (429) instead of spending them at once.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn upload_backs_off_while_cards_cloud_is_busy() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/cards-cloud/v2/session/"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"id": "remote-1", "status": "live"})),
+            )
+            .mount(&server)
+            .await;
+        let rows = "/cards-cloud/v2/session/remote-1/identifications/";
+        Mock::given(method("POST"))
+            .and(path(rows))
+            .respond_with(ResponseTemplate::new(429).set_body_json(json!({"detail": "Slow down."})))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        let session = db
+            .create_session(&NewSession {
+                name: "Busy".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: dir.path().to_string_lossy().into_owned(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        let id = db
+            .insert_item(&session.id, "/a.png", None, &ItemImages::default(), None)
+            .unwrap();
+        db.claim_next(&session.id).unwrap();
+        let card = CardFields {
+            name: "Mew".into(),
+            ..Default::default()
+        };
+        db.save_recognition(
+            id,
+            "tcg",
+            &card,
+            None,
+            None,
+            None,
+            None,
+            &Value::Null,
+            1,
+            ItemStatus::Done,
+        )
+        .unwrap();
+
+        runner.sync_now(&session.id).unwrap();
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        let attempts = server
+            .received_requests()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|r| r.url.path() == rows)
+            .count();
+        assert_eq!(attempts, 1, "the next attempt waits");
+        let error = db.session(&session.id).unwrap().sync_error.unwrap();
+        assert!(error.contains("retrying"), "{error}");
+        runner.stop(&session.id).unwrap();
+        runner.wait_idle(&session.id).await;
+        assert!(!runner.busy());
+    }
+
+    /// A grading job Ximilar no longer knows (404) fails its card: the run ends instead of polling forever.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_lost_grading_job_fails_its_card() {
+        let server = mock_ximilar().await;
+        Mock::given(method("GET"))
+            .and(path("/account/v2/request/job-1/status"))
+            .respond_with(ResponseTemplate::new(404).set_body_json(json!({"detail": "Not found."})))
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        RgbImage::from_pixel(630, 880, Rgb([200, 30, 30]))
+            .save(cards.join("a.png"))
+            .unwrap();
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        let session = db
+            .create_session(&NewSession {
+                name: "Graded".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions {
+                    grading: GradingMode::Grade,
+                    ..SessionOptions::default()
+                },
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Completed, "{s:?}");
+        let item = &db.items(&session.id).unwrap()[0];
+        assert_eq!(item.status, ItemStatus::Error);
+        let error = item.error.as_deref().unwrap();
+        assert!(error.starts_with("grading: HTTP 404"), "{error}");
+    }
+
+    /// Stopping a session keeps every card its source had sent: each has its item, queued for the next run (a
+    /// scanner's pages are never read again). The folder source goes on until it has sent every file.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn stopping_keeps_the_cards_already_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        for i in 0..30u8 {
+            RgbImage::from_pixel(120, 168, Rgb([i, 60, 60]))
+                .save(cards.join(format!("{i:02}.png")))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        // Nothing listens on port 9: a card analysed would fail.
+        let runner = test_runner(dir.path(), "http://127.0.0.1:9", &db);
+        let session = db
+            .create_session(&NewSession {
+                name: "Stopped".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        runner.stop(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Stopped);
+        assert_eq!((s.counts.total, s.counts.queued), (30, 30), "{s:?}");
     }
 }

@@ -3,7 +3,7 @@
 
 import clsx from "clsx";
 import { Bot, CircleQuestionMark, Check, ExternalLink, MapPin, RotateCw, Search, Undo2, X } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import DetailPanel from "../components/DetailPanel";
 import { ErrorNote } from "../components/Modal";
@@ -52,11 +52,23 @@ export default function CardsPage() {
     return () => clearTimeout(timer);
   }, [query, filter]);
 
-  // Edits, picks and accepts from here or elsewhere: patch the card, keep its session and copies.
+  const selectedRef = useRef<string | null>(null);
   useEffect(() => {
-    const un = onItemUpdated((item) =>
-      setResult((r) => r && { ...r, cards: r.cards.map((c) => (c.id === item.id ? { ...c, ...item } : c)) }),
-    );
+    selectedRef.current = selected;
+  }, [selected]);
+
+  // Edits, picks and accepts from here or elsewhere: patch the card, keep its session and copies; read the open
+  // card again, so the panel (and what its buttons do) follows.
+  useEffect(() => {
+    const un = onItemUpdated((item) => {
+      setResult((r) => r && { ...r, cards: r.cards.map((c) => (c.id === item.id ? { ...c, ...item } : c)) });
+      if (String(item.id) !== selectedRef.current) return;
+      api
+        .getItem(item.id)
+        // Another card may have been opened meanwhile.
+        .then((fresh) => setDetail((d) => (d?.id === fresh.id ? fresh : d)))
+        .catch(() => {});
+    });
     return () => void un.then((f) => f());
   }, []);
 
@@ -92,7 +104,16 @@ export default function CardsPage() {
     for (const [sessionId, ids] of groups) n += await f(sessionId, ids);
     return n;
   };
-  const checkedCards = [...checked].map((k) => byId.get(k)).filter(Boolean) as ItemSummary[];
+  // The ticked cards that are shown: one a new search or filter left out is neither counted nor acted on.
+  const checkedRows = rows.filter((r) => checked.has(r.key));
+  const checkedCards = checkedRows.map((r) => byId.get(r.key)!);
+  const keepShown = (c: Set<string>) => new Set(rows.filter((r) => c.has(r.key)).map((r) => r.key));
+  // A new search or filter forgets ticks that are hidden now, so they don't come back ticked with its results.
+  const search = (q: string, f = filter) => {
+    setQuery(q);
+    setFilter(f);
+    if (checkedRows.length < checked.size) setChecked(keepShown);
+  };
 
   const onSort = (key: SortKey) =>
     setSort((s) =>
@@ -122,11 +143,11 @@ export default function CardsPage() {
           <p className="mt-0.5 text-xs text-slate-500">{t("cards.intro")}</p>
         </header>
 
-        {checked.size > 0 ? (
+        {checkedRows.length > 0 ? (
           <div className="flex items-center gap-2 border-b border-slate-200 bg-accent/5 px-4 py-2 text-sm dark:border-slate-800 dark:bg-accent/10">
-            <span className="font-medium">{t("cards.selected", { count: checked.size })}</span>
+            <span className="font-medium">{t("cards.selected", { count: checkedRows.length })}</span>
             <span className="flex-1" />
-            {rows.some((r) => (!r.reviewed || r.byAgent) && checked.has(r.key)) && (
+            {checkedRows.some((r) => !r.reviewed || r.byAgent) && (
               <button
                 className="btn px-2 py-1 text-xs"
                 onClick={() =>
@@ -138,7 +159,7 @@ export default function CardsPage() {
                 <Check className="h-3.5 w-3.5" /> {t("cards.accept")}
               </button>
             )}
-            {rows.some((r) => r.accepted && checked.has(r.key)) && (
+            {checkedRows.some((r) => r.accepted) && (
               <button
                 className="btn px-2 py-1 text-xs"
                 onClick={() =>
@@ -172,7 +193,7 @@ export default function CardsPage() {
         ) : (
           <div className="flex items-center gap-1.5 border-b border-slate-200 px-4 py-2 dark:border-slate-800">
             {FILTERS.map((key) => (
-              <Chip key={key} on={filter === key} onClick={() => setFilter(key)}>
+              <Chip key={key} on={filter === key} onClick={() => search(query, key)}>
                 {key === "review" && <CircleQuestionMark className="h-3.5 w-3.5" />}
                 {key === "agent" && <Bot className="h-3.5 w-3.5" />}
                 {t(`cards.filter.${key}`)}
@@ -185,8 +206,8 @@ export default function CardsPage() {
                 className="input w-64 py-1 pl-7 text-sm"
                 placeholder={t("cards.searchPlaceholder")}
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+                onChange={(e) => search(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && search("")}
                 aria-label={t("cards.search")}
                 autoFocus
               />
@@ -215,7 +236,7 @@ export default function CardsPage() {
               checked={checked}
               onCheck={(key) =>
                 setChecked((c) => {
-                  const next = new Set(c);
+                  const next = keepShown(c);
                   if (next.has(key)) next.delete(key);
                   else next.add(key);
                   return next;

@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::imgbb::Hosting;
@@ -387,7 +388,8 @@ pub fn inventory_csv(products: &[Product], location: &str) -> String {
     text
 }
 
-pub fn preview(item: &ItemSummary) -> Preview {
+/// `grading`: the card's grading record, which names the scale of its condition.
+pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
     let plan = listing::plan(item);
     let (category, condition) = match &plan {
         Ok(p) => {
@@ -396,7 +398,7 @@ pub fn preview(item: &ItemSummary) -> Preview {
                 .next()
                 .unwrap_or_default()
                 .to_string();
-            let condition = match (graded_condition(item), &p.graded) {
+            let condition = match (graded_condition(item, grading), &p.graded) {
                 (Some(g), None) => format!("{} (from grading)", condition_name(p.kind, g)),
                 _ => p.condition_label(),
             };
@@ -474,7 +476,8 @@ pub async fn export(
                 } else {
                     Vec::new()
                 };
-                let condition = graded_condition(&item.summary).unwrap_or(options.condition);
+                let condition = graded_condition(&item.summary, item.grading.as_ref())
+                    .unwrap_or(options.condition);
                 cards.push(Card {
                     item,
                     plan,

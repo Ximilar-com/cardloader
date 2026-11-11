@@ -6,6 +6,7 @@
 //! cards are sold as Listings with Photos and TCGplayer has no sports cards, so neither is listed.
 
 use serde::Serialize;
+use serde_json::Value;
 
 use super::{csv_line, graded_condition, slabbed, tcgplayer_product, PricedItem, Skipped};
 use crate::ebay::listing::{self, Kind, Preview};
@@ -65,7 +66,8 @@ pub fn problem(item: &ItemSummary) -> Option<String> {
         .then(|| "graded cards are sold as Listings with Photos on TCGplayer, one by one".into())
 }
 
-pub fn preview(item: &ItemSummary) -> Preview {
+/// `grading`: the card's grading record, which names the scale of its condition.
+pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
     let card = &item.card;
     let number = if card.card_number.is_empty() {
         String::new()
@@ -85,7 +87,7 @@ pub fn preview(item: &ItemSummary) -> Preview {
                 .collect::<Vec<_>>()
                 .join(" · "),
         ),
-        condition: Some(match graded_condition(item) {
+        condition: Some(match graded_condition(item, grading) {
             Some(c) => format!("{} (from grading)", condition_name(c)),
             None => "Ungraded".into(),
         }),
@@ -107,7 +109,7 @@ pub fn row(item: &ItemDetail, price: f64, condition: CardCondition) -> Vec<Strin
         s.card.set_name.clone(),
         s.card.name.clone(),
         s.card.card_number.clone(),
-        condition_name(graded_condition(s).unwrap_or(condition)).to_string(),
+        condition_name(graded_condition(s, item.grading.as_ref()).unwrap_or(condition)).to_string(),
         "1".into(),
         format!("{:.2}", ((price * 100.0).round() / 100.0).max(0.01)),
         product.clone().unwrap_or_default(),
@@ -193,9 +195,85 @@ mod tests {
         assert!(export.skipped[1].reason.contains("sports"));
     }
 
+    /// Cardmarket's "Light Played" is below its "Good": a card graded so is Moderately Played. Elsewhere (Whatnot's
+    /// scale, in an imported list) "Light Played" is the step below Near Mint.
+    #[test]
+    fn cardmarket_light_played_is_moderately_played() {
+        use serde_json::{json, Value};
+        let light_played = |grading: Value| {
+            let mut card = item("tcg", "Pokemon");
+            card.summary.condition = Some("Light Played".into());
+            card.grading = Some(grading);
+            card
+        };
+        let ximilar = light_played(
+            json!({"endpoint": "condition", "response": {"records": [{"_objects": [
+            {"name": "Card", "Condition": [{"label": "Light Played", "mode": "cardmarket"}]}]}]}}),
+        );
+        let local_condition = light_played(
+            json!({"endpoint": "condition", "engine": "local/lfm2.5-vl-3b", "response": {"records": [
+                {"_id": "card", "_objects": [{"Condition": [{"label": "Light Played", "mode": "Cardmarket"}]}]}]}}),
+        );
+        let local_grade = light_played(
+            json!({"endpoint": "grade", "engine": "local/lfm2.5-vl-3b", "scale": "cardmarket", "response": {
+                "records": [{"_id": "card", "grades": {"final": 4.5, "condition": "Light Played"}}]}}),
+        );
+        let imported = light_played(json!({"endpoint": "imported", "response": {"records": [
+            {"grades": {"final": null, "condition": "Light Played"}}]}}));
+        let priced = PricedItem {
+            item_id: 1,
+            price: 2.0,
+        };
+        let (text, _) = csv(
+            &[
+                (ximilar, priced),
+                (local_condition, priced),
+                (local_grade, priced),
+                (imported, priced),
+            ],
+            CardCondition::NearMint,
+        );
+        let conditions: Vec<&str> = text
+            .lines()
+            .skip(1)
+            .map(|l| l.split(',').nth(4).unwrap())
+            .collect();
+        assert_eq!(
+            conditions,
+            [
+                "Moderately Played",
+                "Moderately Played",
+                "Moderately Played",
+                "Lightly Played"
+            ]
+        );
+    }
+
+    /// The preview names the condition the file gets, on the scale the card was graded on.
+    #[test]
+    fn the_preview_and_the_file_agree_on_the_condition() {
+        let mut card = item("tcg", "Pokemon");
+        card.summary.condition = Some("Light Played".into());
+        card.grading = Some(
+            serde_json::json!({"endpoint": "condition", "response": {"records": [{"_objects": [
+            {"name": "Card", "Condition": [{"label": "Light Played", "mode": "cardmarket"}]}]}]}}),
+        );
+        let shown = preview(&card.summary, card.grading.as_ref())
+            .condition
+            .unwrap();
+        let priced = PricedItem {
+            item_id: 1,
+            price: 2.0,
+        };
+        let (text, _) = csv(&[(card, priced)], CardCondition::NearMint);
+        let written = text.lines().nth(1).unwrap().split(',').nth(4).unwrap();
+        assert_eq!(written, "Moderately Played");
+        assert_eq!(shown, "Moderately Played (from grading)");
+    }
+
     #[test]
     fn the_preview_names_the_product_line() {
-        let p = preview(&item("tcg", "YuGiOh!").summary);
+        let p = preview(&item("tcg", "YuGiOh!").summary, None);
         assert_eq!(p.category.as_deref(), Some("YuGiOh · Guilds of Ravnica"));
         assert_eq!(p.price, Some(0.23));
         assert_eq!(p.problem, None);

@@ -119,7 +119,9 @@ state from them.
   (`recognition::ident_pointer`) and TS (`cardview::matchOf`) must choose the same way.
 - **Front and back** (`both_sides`): the back preview is a second record (`_id: "back"`) in the same request, for
   sport_id and custom endpoints only (`Endpoint::reads_backs`). The card is the side whose best match is closest
-  (front on a tie, `ident_pointer` / `matchOf`); a back with an error status doesn't fail the card. `magic_ai` is a
+  (front on a tie, `ident_pointer` / `matchOf`), except that a side the user picked a candidate on stays the card:
+  `select_alternative` marks that identification `_picked`, since the pick's distance is larger and the other side
+  would win again. A back with an error status doesn't fail the card. `magic_ai` is a
   sport_id root flag (≤ 2 records); a response with `magic_ai_used` counts one more call. A custom endpoint path
   replaces the standard path and is read as the session's type, so stored recognitions carry `id_type`
   (`Endpoint::of_raw`).
@@ -149,8 +151,8 @@ state from them.
 - Items: `rev` counts result changes, `synced_rev` what Cards Cloud has. Imported CSV cards start at `rev = 1`.
 - **Review**: every identified card (`done`/`grading`) is "to review" until `reviewed`, whatever its confidence
   (`db::TO_REVIEW` and `cardview::needsReview` must agree). Imported CSV cards start reviewed. Accepting, picking
-  or editing sets `reviewed`; a new
-  recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
+  or editing the card's fields or price sets `reviewed` (an edit of only `notes` or `location` leaves the review as
+  it was); a new recognition clears it. A typed edit of card fields or price bumps `picks` (so it is PATCHed like a pick) and sets
   `edited`; `notes` and `location` stay local (CSV only). Deleted cards' files go into `removed_files`, which
   `known_paths` includes, so running the folder again doesn't bring them back.
 - **AI agents (MCP)**: the server runs inside the app, never in a second process: a second `Db::open` would pause
@@ -162,17 +164,20 @@ state from them.
   the token, relays stdin lines concurrently, and opens the app only from a macOS bundle (`open`), since starting a
   second exe would share the database. `wait_for_session` long-polls ≤ 120 s. Agents' reviews go through
   `Reviewer::Agent { note }`: `items.agent_reviewed` + `review_note`; the user accepting such a card makes it theirs,
-  an agent never takes over a user's accept, a new recognition clears both (`byAgent` in `cardview.ts`).
+  an agent never takes over a user's accept (it can't unaccept one either; `Db::set_reviewed`), a new recognition
+  clears both (`byAgent` in `cardview.ts`). What an agent names is checked where it is used: an export path must be a
+  `.csv` outside the app's data and config folders and not a link (`tools::writable`), and an id put into a Cards
+  Cloud path is one path segment (`cards_cloud::path_id`), or `..` would send the user's token to another endpoint.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail
   and preview files (new names: the webview caches by path) from the preview turned 180°, the scan turned in place
   when it is cardloader's (under the session dir; never the user's folders), the tag rewritten to `rotation_ok`
-  with `found` keeping Ximilar's value (`recognition::mark_upright`), and `hosted_images` cleared so exports
-  upload the upright picture. The back (preview and scan) turns with it, as a card fed upside down has both sides
+  with `found` keeping Ximilar's value (`recognition::mark_upright`), and `hosted_images` and `ebay_images` cleared
+  so exports and the next eBay draft job upload the upright picture. The back (preview and scan) turns with it, as a card fed upside down has both sides
   so, unless Ximilar read the back and tagged it upright (`recognition::back_rotation`). `turn_items` (ticked
   rows, the agents' `turn_cards_upright`) turns only the cards tagged upside down: rows don't carry the tag. Cards
-  Cloud's image and live eBay listings keep the old picture.
+  Cloud's image keeps the old picture, as does a live eBay listing until a draft job updates it.
 - **Offline**: a card whose API call still fails after the retries with a network error, 429 or 5xx goes back to
   the queue and the session pauses with the reason in `sessions.error` (`Runner::pause_with`); Resume clears it.
   The dispatcher waits for cards in flight before a run ends, so a card put back is never stranded.
@@ -183,7 +188,10 @@ state from them.
   totals of all matches; `copies` counts identified cards with the same name, set and number (case-insensitive).
   Export dialogs can set the chosen cards' prices from the market price (`PricedCards::adjustPrice`); nothing
   about pricing is stored.
-- Settings left unsaved survive leaving the page (`useUnsavedSettings`, a dot on the sidebar).
+- Settings left unsaved survive leaving the page (`useUnsavedSettings`, a dot on the sidebar). `save_settings`
+  replaces everything, so the draft is rebased onto what is stored when the page opens and again before saving
+  (`lib/settings.ts`): only what the user changed is sent, and settings saved meanwhile by the New session dialog,
+  the setup wizard or an agent stay.
 - A run that completes or fails (not one the user stopped) sends an OS notification when the window isn't focused
   (`EventSink::finished`, `tauri-plugin-notification` from Rust, so no capability).
 - The Windows scanner path never runs TWAIN in the app process: `cardloader-twain` is a sidecar speaking JSON lines
@@ -208,7 +216,9 @@ state from them.
 - **Local grading** (`local::grade`): one more generation per side after identification, stored in Ximilar's shape
   (`records[0].grades`, `records[0]._objects[0].Condition`) so the UI reads both alike; the card takes the worse side.
   `condition_mode` names a scale (`tcgplayer`, `cardmarket`, `ebay_tcg`, `ebay_sport`; Ximilar gets `ebay` for both
-  eBay ones). Small models echo the numbers a prompt suggests: spell out every step of a numeric scale, and expect
+  eBay ones). The stored record names its `scale`, and exports read the condition on it (`market::graded_condition`,
+  `CardCondition::read_on`): "Light Played" is below "Good" on Cardmarket's scale and the step under Near Mint on
+  Whatnot's. Small models echo the numbers a prompt suggests: spell out every step of a numeric scale, and expect
   condition labels to be more useful than numeric grades (`real_model_grades_cards`).
 - **Adding a model**: add a `ModelSpec` to `local::catalog::MODELS` (the default first, then smallest first) with a pinned revision
   (`https://huggingface.co/api/models/<repo>` → `sha`), file sizes and SHA-256 (`.../tree/main` → `lfs.oid`), a GGUF

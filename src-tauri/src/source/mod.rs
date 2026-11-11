@@ -104,23 +104,27 @@ pub async fn folder(
     known: HashSet<String>,
     tx: mpsc::Sender<Unit>,
 ) -> Result<()> {
-    let files: Vec<PathBuf> = list_images(&dir)?
-        .into_iter()
-        .filter(|p| !known.contains(&p.to_string_lossy().into_owned()))
-        .collect();
-    let units = match pairing {
-        Pairing::Single => files
-            .into_iter()
-            .map(|front| Unit { front, back: None })
-            .collect(),
-        Pairing::FrontBack => pair_files(&files),
-    };
-    for unit in units {
+    for unit in folder_units(&dir, pairing, &known)? {
         if tx.send(unit).await.is_err() {
             break;
         }
     }
     Ok(())
+}
+
+/// The cards of `dir`'s images that aren't in the session (`known`).
+fn folder_units(dir: &Path, pairing: Pairing, known: &HashSet<String>) -> Result<Vec<Unit>> {
+    let files: Vec<PathBuf> = list_images(dir)?
+        .into_iter()
+        .filter(|p| !known.contains(&p.to_string_lossy().into_owned()))
+        .collect();
+    Ok(match pairing {
+        Pairing::Single => files
+            .into_iter()
+            .map(|front| Unit { front, back: None })
+            .collect(),
+        Pairing::FrontBack => pair_files(&files),
+    })
 }
 
 /// The rows of a CSV that have an image and aren't in the session yet (identified rows were imported
@@ -158,10 +162,10 @@ pub async fn watch_folder(
     tx: mpsc::Sender<Unit>,
     cancel: CancellationToken,
 ) -> Result<()> {
-    folder(dir.clone(), pairing, known.clone(), tx.clone()).await?;
-    let mut seen: HashSet<PathBuf> = list_images(&dir)?.into_iter().collect();
-    seen.extend(known.iter().map(PathBuf::from));
-
+    // A missing folder fails as in `list_images`, before the watcher would say it its own way.
+    if !dir.is_dir() {
+        return Err(Error::msg(format!("folder not found: {}", dir.display())));
+    }
     let (ev_tx, mut ev_rx) = mpsc::unbounded_channel::<PathBuf>();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
@@ -176,6 +180,20 @@ pub async fn watch_folder(
     watcher
         .watch(&dir, RecursiveMode::NonRecursive)
         .map_err(|e| Error::msg(format!("cannot watch {}: {e}", dir.display())))?;
+
+    // Listed once the watch runs: a file that lands while the backlog is sent waits among the events, and one in
+    // both the listing and the events is taken once (`seen`).
+    let backlog = folder_units(&dir, pairing, &known)?;
+    let mut seen: HashSet<PathBuf> = backlog
+        .iter()
+        .flat_map(|u| std::iter::once(u.front.clone()).chain(u.back.clone()))
+        .chain(known.iter().map(PathBuf::from))
+        .collect();
+    for unit in backlog {
+        if tx.send(unit).await.is_err() {
+            break;
+        }
+    }
 
     let mut pairer = StreamPairer::default();
     loop {
@@ -269,6 +287,68 @@ mod tests {
         assert!(unit.front.ends_with("a_front.jpg"));
         assert!(unit.back.unwrap().ends_with("a_back.jpg"));
         assert!(rx.recv().await.is_none());
+    }
+
+    /// A card whose files land while the folder's backlog is still going in arrives once, paired.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn watch_folder_takes_files_that_land_during_the_backlog() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Watch events name the real path (macOS: /private/var/…), as the listing then does too.
+        let dir = tmp.path().canonicalize().unwrap();
+        for i in 0..6 {
+            for side in ["front", "back"] {
+                std::fs::write(dir.join(format!("c{i}_{side}.jpg")), b"x").unwrap();
+            }
+        }
+        let (tx, mut rx) = mpsc::channel(1);
+        let cancel = CancellationToken::new();
+        let source = tokio::spawn(watch_folder(
+            dir.clone(),
+            Pairing::FrontBack,
+            HashSet::new(),
+            tx,
+            cancel.clone(),
+        ));
+        // A slow consumer: the backlog is still being sent when the new card lands.
+        let mut units = vec![rx.recv().await.unwrap()];
+        std::fs::write(dir.join("new_front.jpg"), b"front").unwrap();
+        std::fs::write(dir.join("new_back.jpg"), b"back").unwrap();
+        let started = std::time::Instant::now();
+        while !units.iter().any(|u| u.front.ends_with("new_front.jpg")) {
+            assert!(
+                started.elapsed() < Duration::from_secs(15),
+                "the new card never came: {units:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            if let Ok(Some(unit)) =
+                tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
+            {
+                units.push(unit);
+            }
+        }
+        // A repeat would follow within a moment.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        cancel.cancel();
+        while let Some(unit) = rx.recv().await {
+            units.push(unit);
+        }
+        source.await.unwrap().unwrap();
+
+        assert_eq!(units.len(), 7, "{units:?}");
+        let new: Vec<&Unit> = units
+            .iter()
+            .filter(|u| u.front.ends_with("new_front.jpg"))
+            .collect();
+        assert_eq!(new.len(), 1, "{units:?}");
+        assert!(new[0].back.as_ref().unwrap().ends_with("new_back.jpg"));
+        for i in 0..6 {
+            let front = format!("c{i}_front.jpg");
+            assert_eq!(
+                units.iter().filter(|u| u.front.ends_with(&front)).count(),
+                1,
+                "{units:?}"
+            );
+        }
     }
 
     #[test]

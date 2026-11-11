@@ -291,7 +291,7 @@ struct SetLocation {
 struct ExportCsv {
     /// The session id, or "latest".
     session_id: String,
-    /// Where to write the file (absolute path).
+    /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
     /// Replace the file if it exists (default false).
     overwrite: Option<bool>,
@@ -301,6 +301,7 @@ struct ExportCsv {
 struct ExportTcgplayer {
     /// The session id, or "latest".
     session_id: String,
+    /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
     /// For cards whose condition wasn't graded (default near_mint).
     condition: Option<CardCondition>,
@@ -354,6 +355,7 @@ struct EbayRefresh {
 struct ExportWhatnot {
     /// The session id, or "latest".
     session_id: String,
+    /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
     options: whatnot::Options,
     /// Default: every identified card at its market price.
@@ -365,6 +367,7 @@ struct ExportWhatnot {
 struct ExportShopify {
     /// The session id, or "latest".
     session_id: String,
+    /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
     options: shopify::Options,
     /// Default: every identified card at its market price.
@@ -696,7 +699,7 @@ impl Handler {
             "export_csv" => {
                 let a: ExportCsv = args(a)?;
                 let id = self.session_id(&a.session_id)?;
-                let path = writable(&a.path, a.overwrite)?;
+                let path = self.export_path(&a.path, a.overwrite)?;
                 let items = self.state.db.items(&id)?;
                 crate::export::write_csv(&items, &path)?;
                 out(json!({"path": path, "cards": items.len()}))
@@ -704,7 +707,7 @@ impl Handler {
             "export_tcgplayer" => {
                 let a: ExportTcgplayer = args(a)?;
                 let id = self.session_id(&a.session_id)?;
-                let path = writable(&a.path, a.overwrite)?;
+                let path = self.export_path(&a.path, a.overwrite)?;
                 let items = self.priced(&id, a.items)?;
                 let export = self.state.export_tcgplayer(
                     &id,
@@ -794,7 +797,7 @@ impl Handler {
             "export_whatnot" => {
                 let a: ExportWhatnot = args(a)?;
                 let id = self.session_id(&a.session_id)?;
-                let path = writable(&a.path, a.overwrite)?;
+                let path = self.export_path(&a.path, a.overwrite)?;
                 let items = self.priced(&id, a.items)?;
                 let export = self
                     .state
@@ -805,7 +808,7 @@ impl Handler {
             "export_shopify" => {
                 let a: ExportShopify = args(a)?;
                 let id = self.session_id(&a.session_id)?;
-                let path = writable(&a.path, a.overwrite)?;
+                let path = self.export_path(&a.path, a.overwrite)?;
                 let items = self.priced(&id, a.items)?;
                 let export = self
                     .state
@@ -1132,11 +1135,13 @@ impl Handler {
         for (session, ids) in self.by_session(&a.item_ids)? {
             let mut identified = Vec::new();
             for id in ids {
-                let status = self.state.db.item_summary(id)?.status;
-                if matches!(status, ItemStatus::Done | ItemStatus::Grading) {
-                    identified.push(id);
+                let item = self.state.db.item_summary(id)?;
+                if !matches!(item.status, ItemStatus::Done | ItemStatus::Grading) {
+                    skipped.push(json!({"id": id, "why": format!("{} cards can't be accepted", item.status.as_str())}));
+                } else if item.reviewed && !item.agent_reviewed {
+                    skipped.push(json!({"id": id, "why": "the user accepted it; it stays theirs"}));
                 } else {
-                    skipped.push(json!({"id": id, "why": format!("{} cards can't be accepted", status.as_str())}));
+                    identified.push(id);
                 }
             }
             changed += self
@@ -1257,6 +1262,15 @@ impl Handler {
                 })
                 .collect()),
         }
+    }
+
+    /// Where an export may write (see `writable`): never in the app's data folder (the database, sessions'
+    /// files) or its config folder (settings).
+    fn export_path(&self, path: &str, overwrite: Option<bool>) -> Result<PathBuf> {
+        let data = self.state.runner.data_dir.as_path();
+        let config = self.state.settings.path().parent();
+        let app_dirs: Vec<&Path> = std::iter::once(data).chain(config).collect();
+        writable(path, overwrite, &app_dirs)
     }
 }
 
@@ -1403,22 +1417,48 @@ fn expand(path: &str) -> PathBuf {
     }
 }
 
-/// Where an export may write: an absolute path in an existing folder, not an existing file unless allowed.
-fn writable(path: &str, overwrite: Option<bool>) -> Result<PathBuf> {
+/// Where an export may write: an absolute `.csv` path (every export is one CSV file) in an existing folder outside
+/// `app_dirs`, not a link, and not an existing file unless allowed. The agent names the path, so without this an
+/// export could replace the database, the settings or a card's scan.
+fn writable(path: &str, overwrite: Option<bool>, app_dirs: &[&Path]) -> Result<PathBuf> {
     let path = expand(path);
     if !path.is_absolute() {
         return Err(Error::msg("give the file's absolute path"));
     }
-    if !path.parent().is_some_and(Path::is_dir) {
-        return Err(Error::msg(format!("no such folder: {}", path.display())));
+    if !path
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("csv"))
+    {
+        return Err(Error::msg(
+            "exports are CSV files: give a path ending in .csv",
+        ));
     }
-    if path.exists() && !overwrite.unwrap_or(false) {
-        return Err(Error::msg(format!(
+    // The real folder, with links and `..` resolved, is what must lie outside the app's folders.
+    let folder = path
+        .parent()
+        .and_then(|p| p.canonicalize().ok())
+        .filter(|p| p.is_dir())
+        .ok_or_else(|| Error::msg(format!("no such folder: {}", path.display())))?;
+    if app_dirs
+        .iter()
+        .filter_map(|d| d.canonicalize().ok())
+        .any(|d| folder.starts_with(d))
+    {
+        return Err(Error::msg(
+            "exports can't be written into Cardloader's own folders; choose another folder",
+        ));
+    }
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.file_type().is_symlink() => Err(Error::msg(format!(
+            "{} is a link; give the path of a file",
+            path.display()
+        ))),
+        Ok(_) if !overwrite.unwrap_or(false) => Err(Error::msg(format!(
             "{} exists; pass overwrite true to replace it",
             path.display()
-        )));
+        ))),
+        _ => Ok(path),
     }
-    Ok(path)
 }
 
 /// The folder's name and today's date, e.g. "pokemon-en · Oct 27".

@@ -212,16 +212,28 @@ fn sniff_delimiter(text: &str) -> u8 {
         .unwrap_or(b',')
 }
 
-/// "$1,234.50", "12,5" (with `;` files), "€ 3" → a number.
+/// "$1,234.50", "1.234,50", "12,5", "€ 3" → a number. With both separators the last one is the decimal point.
+/// Commas alone are decimal in `;` files; elsewhere a single comma is, unless three digits follow it ("1,234").
 fn parse_number(raw: &str, decimal_comma: bool) -> Option<f64> {
     let kept: String = raw
         .chars()
         .filter(|c| c.is_ascii_digit() || matches!(c, '.' | ',' | '-'))
         .collect();
-    let normalised = if decimal_comma && !kept.contains('.') {
-        kept.replace(',', ".")
-    } else {
-        kept.replace(',', "")
+    let normalised = match (kept.rfind('.'), kept.rfind(',')) {
+        (Some(dot), Some(comma)) if comma > dot => kept.replace('.', "").replace(',', "."),
+        (Some(_), Some(_)) => kept.replace(',', ""),
+        (None, Some(comma)) => {
+            let decimals = &kept[comma + 1..];
+            let single = kept.matches(',').count() == 1;
+            let cents =
+                (1..=2).contains(&decimals.len()) && decimals.bytes().all(|b| b.is_ascii_digit());
+            if decimal_comma || (single && cents) {
+                kept.replace(',', ".")
+            } else {
+                kept.replace(',', "")
+            }
+        }
+        (_, None) => kept,
     };
     normalised.parse::<f64>().ok().filter(|v| v.is_finite())
 }
@@ -439,5 +451,32 @@ mod tests {
         assert_eq!(parse_number("$1,234.50", false), Some(1234.5));
         assert_eq!(parse_number("n/a", false), None);
         assert_eq!(normalise(" Collector Number "), "collector_number");
+    }
+
+    #[test]
+    fn numbers_with_either_decimal_separator() {
+        // Both separators: the last one is the decimal point.
+        assert_eq!(parse_number("$1,234.50", false), Some(1234.5));
+        assert_eq!(parse_number("1.234,50", true), Some(1234.5));
+        assert_eq!(parse_number("1.234,50 €", false), Some(1234.5));
+        assert_eq!(parse_number("1,234,567.89", true), Some(1234567.89));
+        assert_eq!(parse_number("1.234.567,89", false), Some(1234567.89));
+        // Commas only: decimal in `;` files; elsewhere unless one is followed by exactly three digits.
+        assert_eq!(parse_number("12,5", true), Some(12.5));
+        assert_eq!(parse_number("1,234", true), Some(1.234));
+        assert_eq!(parse_number("12,50", false), Some(12.5));
+        assert_eq!(parse_number("12,5", false), Some(12.5));
+        assert_eq!(parse_number("1,234", false), Some(1234.0));
+        assert_eq!(parse_number("1,234,567", false), Some(1234567.0));
+        // Dots only: as written.
+        assert_eq!(parse_number("12.50", true), Some(12.5));
+        assert_eq!(parse_number("1234.5", false), Some(1234.5));
+        assert_eq!(parse_number("€ 3", true), Some(3.0));
+        assert_eq!(parse_number("€ 3", false), Some(3.0));
+
+        let tabs = parse("name\tprice\nMew\t12,50\n", Path::new("/")).unwrap();
+        assert_eq!(tabs.rows[0].price, Some(12.5));
+        let semicolons = parse("name;price\nMew;1.234,50\n", Path::new("/")).unwrap();
+        assert_eq!(semicolons.rows[0].price, Some(1234.5));
     }
 }

@@ -29,8 +29,8 @@ enum Flush {
     Stopped(String),
 }
 
-/// Runs until `finished` holds `Some(close)`: then one last flush (a few attempts), and the remote
-/// session is closed when `close` is true.
+/// Runs until `finished` holds `Some(close)`: then a last pass until every image is up (a few attempts), and
+/// the remote session is closed when `close` is true.
 pub async fn run(
     runner: Arc<Runner>,
     session_id: String,
@@ -67,6 +67,14 @@ pub async fn run(
                     sync.error(None);
                 }
                 if let Some(close) = close {
+                    // A flush uploads one batch of images; nothing follows the last pass.
+                    if sync.images_left() {
+                        if cancel.is_cancelled() {
+                            break;
+                        }
+                        runner.emit_session(&session_id);
+                        continue;
+                    }
                     if close {
                         if let Err(e) = sync.api.close(&remote).await {
                             sync.error(Some(&format!("could not close the remote session: {e}")));
@@ -117,6 +125,13 @@ impl Sync {
     fn error(&self, error: Option<&str>) {
         let _ = self.runner.db.set_remote(&self.session_id, None, error);
         self.runner.emit_session(&self.session_id);
+    }
+
+    fn images_left(&self) -> bool {
+        self.runner
+            .db
+            .images_to_upload(&self.session_id, 1)
+            .is_ok_and(|ids| !ids.is_empty())
     }
 
     /// The remote session id: the one we have (reopened if closed), else a new one.
@@ -217,6 +232,8 @@ impl Sync {
             .unwrap_or_default();
         for id in ids {
             let Ok(item) = self.runner.db.item(id) else {
+                // Settled like an image that can't be read, or the last pass would ask for it forever.
+                let _ = self.runner.db.mark_image_synced(id);
                 continue;
             };
             let Some(preview) = item.preview_path.clone() else {

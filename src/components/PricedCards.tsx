@@ -6,7 +6,7 @@ import { Percent } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { rich, t as translate, useT } from "../i18n";
 import type { CardCondition, EbayPreview } from "../lib/api";
-import { fileUrl } from "../lib/format";
+import { fileUrl, parseAmount } from "../lib/format";
 import { Check } from "./NewSessionDialog";
 import type { SelectOption } from "./Select";
 
@@ -22,8 +22,8 @@ export function conditions(): SelectOption<CardCondition>[] {
 
 /** A price as typed, if it is one. */
 export function parsePrice(text: string | undefined): number | null {
-  const n = Number((text ?? "").replace(",", ".").trim());
-  return text?.trim() && Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+  const n = parseAmount(text ?? "");
+  return n != null && n > 0 ? Math.round(n * 100) / 100 : null;
 }
 
 /** A price from the market price: `percent` of it, ending in .99 if asked, never below `min`. */
@@ -137,8 +137,8 @@ function AdjustPrices({ onApply }: { onApply: (percent: number, ninetyNine: bool
   const [ninetyNine, setNinetyNine] = useState(true);
   const [min, setMin] = useState("0.99");
   const p = Number(percent.replace(",", "."));
-  const m = Number(min.replace(",", ".") || 0);
-  const valid = Number.isFinite(p) && p > 0 && p <= 1000 && Number.isFinite(m) && m >= 0;
+  const m = min.trim() === "" ? 0 : parseAmount(min);
+  const valid = Number.isFinite(p) && p > 0 && p <= 1000 && m != null && m >= 0;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-accent/5 px-3 py-2 text-sm dark:border-slate-800">
       <label className="flex items-center gap-1.5">
@@ -172,7 +172,7 @@ function AdjustPrices({ onApply }: { onApply: (percent: number, ninetyNine: bool
       <button
         className="btn btn-primary px-2 py-0.5 text-xs"
         disabled={!valid}
-        onClick={() => onApply(p, ninetyNine, m)}
+        onClick={() => onApply(p, ninetyNine, m ?? 0)}
       >
         {t("market.priced.apply")}
       </button>

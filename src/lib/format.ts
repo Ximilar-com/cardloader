@@ -17,6 +17,27 @@ export function decimal(value: number, digits: number): string {
   return value.toLocaleString(locale(), { minimumFractionDigits: digits, maximumFractionDigits: digits });
 }
 
+/**
+ * An amount as typed, or null if it isn't one (empty included). A leading "$" and spaces are ignored. With both
+ * "." and "," the last one is the decimal separator ("1,250.00", "1.250,00"); commas each before exactly three
+ * digits separate thousands ("1,250", "1,250,000"), a lone comma before one or two is the decimal point ("12,5").
+ * The Rust CSV import reads prices the same way.
+ */
+export function parseAmount(text: string): number | null {
+  let s = text.trim().replace(/^\$\s*/, "");
+  if (s.includes(".") && s.includes(",")) {
+    const decimal = s.lastIndexOf(".") > s.lastIndexOf(",") ? "." : ",";
+    s = s.replaceAll(decimal === "." ? "," : ".", "").replace(",", ".");
+  } else if (s.includes(",")) {
+    const [head, ...groups] = s.split(",");
+    if (!/^-?\d+$/.test(head)) return null;
+    if (groups.length === 1 && /^\d{1,2}$/.test(groups[0])) s = `${head}.${groups[0]}`;
+    else if (groups.every((g) => /^\d{3}$/.test(g))) s = head + groups.join("");
+    else return null;
+  }
+  return /^-?(\d+\.?\d*|\.\d+)$/.test(s) ? Number(s) : null;
+}
+
 export function basename(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? path;

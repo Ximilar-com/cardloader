@@ -254,12 +254,15 @@ impl Db {
         Ok(())
     }
 
-    /// After a restart nothing is running: running sessions become paused, half-done items queued.
+    /// After a restart nothing is running: running sessions become paused, half-done items queued. An item
+    /// waiting for grading without a job (the app quit before it was submitted) has nothing to poll, so it is
+    /// half-done too.
     pub fn recover_interrupted(&self) -> Result<()> {
         self.with(|c| {
             c.execute_batch(
                 "UPDATE sessions SET status = 'paused' WHERE status = 'running';
-                 UPDATE items SET status = 'queued' WHERE status = 'recognizing';",
+                 UPDATE items SET status = 'queued' WHERE status = 'recognizing'
+                    OR (status = 'grading' AND grading_job_id IS NULL);",
             )
         })
     }
@@ -609,7 +612,8 @@ impl Db {
     }
 
     /// The user typed the card's fields or price. Like a pick, it reaches Cards Cloud as a PATCH (`picks`
-    /// counts it); notes and the location stay local.
+    /// counts it); notes and the location stay local. Only a changed card or price accepts it: notes or a location
+    /// alone leave the review as it was (a card to review stays so, the user's accept stays theirs).
     pub fn save_edit(&self, id: i64, edit: &ItemEdit, by: &Reviewer) -> Result<()> {
         let card = &edit.card;
         self.with(|c| {
@@ -622,8 +626,10 @@ impl Db {
                  UPDATE items SET
                     picks = picks + (SELECT changed FROM card), edited = edited OR (SELECT changed FROM card),
                     name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6, series = ?7,
-                    year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12, reviewed = 1,
-                    updated_at = ?13, agent_reviewed = ?14, review_note = ?15
+                    year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12,
+                    reviewed = reviewed OR (SELECT changed FROM card), updated_at = ?13,
+                    agent_reviewed = CASE WHEN (SELECT changed FROM card) THEN ?14 ELSE agent_reviewed END,
+                    review_note = CASE WHEN (SELECT changed FROM card) THEN ?15 ELSE review_note END
                  WHERE id = ?1",
                 params![
                     id,
@@ -658,7 +664,7 @@ impl Db {
     }
 
     /// The card's images were turned upright: new thumbnail and preview (and back preview, when the back turned
-    /// too), the response says it is upright, and pictures hosted for exports are uploaded again.
+    /// too), the response says it is upright, and pictures hosted for exports and eBay drafts are uploaded again.
     pub fn save_turned(
         &self,
         id: i64,
@@ -670,7 +676,7 @@ impl Db {
         self.with(|c| {
             c.execute(
                 "UPDATE items SET thumb_path = ?2, preview_path = ?3, recognition = ?4, hosted_images = NULL,
-                    updated_at = ?5, back_preview_path = COALESCE(?6, back_preview_path)
+                    ebay_images = NULL, updated_at = ?5, back_preview_path = COALESCE(?6, back_preview_path)
                  WHERE id = ?1",
                 params![id, thumb, preview, raw.to_string(), now(), back_preview],
             )
@@ -679,7 +685,7 @@ impl Db {
     }
 
     /// Accepts the cards' matches (or takes that back); returns how many changed. The user accepting a card an
-    /// agent accepted makes it theirs; an agent never takes over the user's accept.
+    /// agent accepted makes it theirs; an agent never takes over the user's accept, nor takes it back.
     pub fn set_reviewed(
         &self,
         session_id: &str,
@@ -699,8 +705,8 @@ impl Db {
                 } else {
                     c.execute(
                         "UPDATE items SET reviewed = 0, agent_reviewed = 0, review_note = NULL
-                         WHERE id = ?1 AND session_id = ?2 AND reviewed = 1",
-                        params![id, session_id],
+                         WHERE id = ?1 AND session_id = ?2 AND reviewed = 1 AND (agent_reviewed = 1 OR NOT ?3)",
+                        params![id, session_id, by.is_agent()],
                     )?
                 };
             }
@@ -1512,5 +1518,49 @@ mod tests {
         assert_eq!(s.status, SessionStatus::Paused);
         assert_eq!(s.counts.queued, 1);
         assert!(s.started_at.is_some());
+    }
+
+    /// The app quit after a card was identified but before its grading job was submitted: no job to poll, so it
+    /// is analysed again. A card whose job was submitted waits for the poller.
+    #[test]
+    fn recover_requeues_cards_without_a_grading_job() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let mut ids = Vec::new();
+        for i in 0..2 {
+            let id = db
+                .insert_item(
+                    &s.id,
+                    &format!("/{i}.jpg"),
+                    None,
+                    &ItemImages::default(),
+                    None,
+                )
+                .unwrap();
+            db.claim_next(&s.id).unwrap();
+            db.save_recognition(
+                id,
+                "tcg",
+                &CardFields::default(),
+                None,
+                None,
+                None,
+                None,
+                &Value::Null,
+                1,
+                ItemStatus::Grading,
+            )
+            .unwrap();
+            ids.push(id);
+        }
+        db.set_grading_job(ids[1], "job-1").unwrap();
+        db.recover_interrupted().unwrap();
+        assert_eq!(db.item_summary(ids[0]).unwrap().status, ItemStatus::Queued);
+        assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Grading);
+        assert_eq!(
+            db.grading_jobs(&s.id).unwrap(),
+            vec![(ids[1], "job-1".to_string())]
+        );
+        assert_eq!(db.claim_next(&s.id).unwrap(), Some(ids[0]));
     }
 }

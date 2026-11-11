@@ -59,6 +59,7 @@ import {
   type SettingsView,
 } from "../lib/api";
 import { bytes, dateTime, gradingLabels, idModeLabels, sourceLabels } from "../lib/format";
+import { rebaseSettings } from "../lib/settings";
 import { useUpdate } from "../lib/update";
 
 const DEFAULT_API = "https://api.ximilar.com";
@@ -127,12 +128,14 @@ export default function SettingsPage() {
 
   useEffect(() => {
     api.getSettings().then((v) => {
-      // Edits left unsaved on an earlier visit stay; otherwise start from what is stored.
+      // Edits left unsaved on an earlier visit stay, on top of what is stored now (the New session dialog, the
+      // setup wizard or an agent may have saved settings since); otherwise start from what is stored.
       const { saved, draft } = useUnsavedSettings.getState();
+      const stored = strip(v);
       setViewState(v);
       useUnsavedSettings.setState({
-        saved: strip(v),
-        draft: isUnsaved(saved, draft) ? { ...draft!, ebay: { ...draft!.ebay, username: v.ebay.username } } : strip(v),
+        saved: stored,
+        draft: isUnsaved(saved, draft) ? withUsername(rebaseSettings(saved!, draft!, stored), v) : stored,
       });
       // Show at once whether the saved token still works.
       if (v.tokenSet) {
@@ -163,7 +166,7 @@ export default function SettingsPage() {
   // The eBay connection changes on its own (not with Save): take the new state, keep the other edits.
   const applyView = (v: SettingsView) => {
     setView(v);
-    setDraft((d) => d && { ...d, ebay: { ...d.ebay, username: v.ebay.username } });
+    setDraft((d) => d && withUsername(d, v));
   };
   const setMcpSettings = (patch: Partial<McpSettings>) => set("mcp", { ...draft.mcp, ...patch });
   const setScan = <K extends keyof Settings["scan"]>(key: K, value: Settings["scan"][K]) =>
@@ -172,7 +175,10 @@ export default function SettingsPage() {
   const save = async () => {
     setError(null);
     try {
-      const v = await api.saveSettings({ ...draft, apiBaseUrl: draft.apiBaseUrl.trim() });
+      // Only what was changed here: settings saved elsewhere while the page was open stay.
+      const stored = await api.getSettings();
+      const next = withUsername(rebaseSettings(strip(view), draft, strip(stored)), stored);
+      const v = await api.saveSettings({ ...next, apiBaseUrl: next.apiBaseUrl.trim() });
       setView(v);
       setDraft(strip(v));
       setSaved(true);
@@ -1068,6 +1074,11 @@ function strip(s: Settings | SettingsView): Settings {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { tokenSet, tokenStorage, ebayCertSet, ebayConnected, imgbbKeySet, ...rest } = s as SettingsView;
   return rest;
+}
+
+/** The connected eBay seller is set by connecting, never by the form. */
+function withUsername(draft: Settings, stored: Settings): Settings {
+  return { ...draft, ebay: { ...draft.ebay, username: stored.ebay.username } };
 }
 
 function EbayTab({

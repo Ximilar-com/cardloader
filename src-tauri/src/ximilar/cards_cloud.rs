@@ -57,6 +57,20 @@ fn clip(text: &str, limit: usize) -> String {
     text.chars().take(limit).collect()
 }
 
+/// An id as one segment of a request path. Ids reach here from agents and pasted text: `..` (also as `%2e`), `/`,
+/// `?` or `#` would point the request, with the user's token, at another endpoint.
+fn path_id(id: &str) -> Result<&str, ApiError> {
+    let safe = !id.is_empty()
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if safe {
+        Ok(id)
+    } else {
+        Err(ApiError::BadId(clip(id, 80)))
+    }
+}
+
 /// One local item as an upload row.
 pub fn session_item(item: &ItemDetail, include_grading: bool) -> Value {
     let s = &item.summary;
@@ -255,21 +269,25 @@ impl CardsCloudApi {
     }
 
     pub async fn get(&self, id: &str) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(Method::GET, &format!("session/{id}/"), &[], None)
             .await
     }
 
     pub async fn reopen(&self, id: &str) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(Method::POST, &format!("session/{id}/reopen/"), &[], None)
             .await
     }
 
     pub async fn close(&self, id: &str) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(Method::POST, &format!("session/{id}/close/"), &[], None)
             .await
     }
 
     pub async fn upload(&self, id: &str, items: &[Value]) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(
             Method::POST,
             &format!("session/{id}/identifications/"),
@@ -285,6 +303,7 @@ impl CardsCloudApi {
         event_id: &str,
         image_b64: &str,
     ) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(
             Method::POST,
             &format!("session/{id}/images/"),
@@ -303,6 +322,7 @@ impl CardsCloudApi {
     }
 
     pub async fn rename(&self, id: &str, name: &str) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(
             Method::PATCH,
             &format!("session/{id}/"),
@@ -314,11 +334,13 @@ impl CardsCloudApi {
 
     /// Deletes the remote session with its rows and images.
     pub async fn delete(&self, id: &str) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(Method::DELETE, &format!("session/{id}/"), &[], None)
             .await
     }
 
     pub async fn summary(&self, id: &str) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(Method::GET, &format!("session/{id}/summary/"), &[], None)
             .await
     }
@@ -361,6 +383,7 @@ impl CardsCloudApi {
     }
 
     pub async fn patch_identification(&self, id: &str, body: &Value) -> Result<Value, ApiError> {
+        let id = path_id(id)?;
         self.call(
             Method::PATCH,
             &format!("identification/{id}/"),
@@ -508,6 +531,68 @@ mod tests {
         api.rename("r1", &"x".repeat(300)).await.unwrap();
         assert_eq!(api.delete("r1").await.unwrap(), Value::Null);
         assert_eq!(api.list_sessions(1, " binder ").await.unwrap()["count"], 0);
+    }
+
+    /// An id that isn't one path segment would reach another of the user's endpoints with their token (the URL
+    /// parser collapses `..`, and `?` or `#` end the path): it is refused before any request.
+    #[tokio::test]
+    async fn ids_stay_in_their_path() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+        let server = MockServer::start().await;
+        let api = CardsCloudApi::new(XimilarClient::new(&server.uri(), "t", None).unwrap());
+        for id in [
+            "../../../account/v2/details",
+            "..",
+            "r1/../../../account/v2/details",
+            "%2e%2e",
+            "r1?workspace=other",
+            "r1#",
+            "r1/",
+            "",
+            " r1",
+            "r1\n",
+            "réunion",
+        ] {
+            let bad = |r: Result<Value, ApiError>| matches!(r, Err(ApiError::BadId(_)));
+            assert!(bad(api.get(id).await), "{id:?}");
+            assert!(bad(api.delete(id).await), "{id:?}");
+            assert!(bad(api.summary(id).await), "{id:?}");
+            assert!(bad(api.reopen(id).await), "{id:?}");
+            assert!(bad(api.close(id).await), "{id:?}");
+            assert!(bad(api.rename(id, "x").await), "{id:?}");
+            assert!(bad(api.upload(id, &[]).await), "{id:?}");
+            assert!(bad(api.upload_image(id, "e1", "aGk=").await), "{id:?}");
+            assert!(
+                bad(api.patch_identification(id, &json!({})).await),
+                "{id:?}"
+            );
+        }
+        let sent = server.received_requests().await.unwrap();
+        assert!(
+            sent.is_empty(),
+            "{:?}",
+            sent.iter().map(|r| r.url.to_string()).collect::<Vec<_>>()
+        );
+
+        let session = "1b4e28ba-2fa1-41d2-883f-0016d3cca427";
+        Mock::given(method("GET"))
+            .and(path(format!("/cards-cloud/v2/session/{session}/")))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": session})))
+            .mount(&server)
+            .await;
+        Mock::given(method("PATCH"))
+            .and(path("/cards-cloud/v2/identification/row_42/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "row_42"})))
+            .mount(&server)
+            .await;
+        assert_eq!(api.get(session).await.unwrap()["id"], session);
+        assert_eq!(
+            api.patch_identification("row_42", &json!({}))
+                .await
+                .unwrap()["id"],
+            "row_42"
+        );
     }
 
     #[test]

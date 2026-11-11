@@ -435,12 +435,10 @@ function updateItem(id: number, edit: ItemEdit): ItemDetail {
   const item = [...items.values()].flat().find((i) => i.id === id)!;
   const { notes, location, ...card } = edit;
   const changed = (Object.keys(card) as (keyof typeof card)[]).some((k) => (item[k] ?? "") !== (card[k] ?? ""));
-  Object.assign(item, changed ? { ...card, edited: true } : {}, {
+  // Only a change to the card or its price is a review: notes and the location alone leave it as it was.
+  Object.assign(item, changed ? { ...card, edited: true, reviewed: true, agentReviewed: false, reviewNote: "" } : {}, {
     notes: notes.trim(),
     location: location.trim(),
-    reviewed: true,
-    agentReviewed: false,
-    reviewNote: "",
     updatedAt: now(),
   });
   void emit("item-updated", summary(item));

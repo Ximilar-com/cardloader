@@ -25,6 +25,8 @@ pub enum ApiError {
     NoToken,
     #[error("eBay is not connected — connect it in Settings")]
     NotConnected,
+    #[error("{0:?} is not a Cards Cloud id")]
+    BadId(String),
 }
 
 /// What a failure means for the caller.
@@ -48,7 +50,7 @@ impl ApiError {
                 _ => Failure::Reject,
             },
             ApiError::NoToken | ApiError::NotConnected => Failure::Auth,
-            ApiError::Decode(_) | ApiError::Cancelled => Failure::Reject,
+            ApiError::Decode(_) | ApiError::Cancelled | ApiError::BadId(_) => Failure::Reject,
         }
     }
 

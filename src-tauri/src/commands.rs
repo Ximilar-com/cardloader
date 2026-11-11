@@ -559,7 +559,8 @@ pub async fn install_update(
     state: S<'_>,
     updates: State<'_, Updates>,
 ) -> Result<()> {
-    updates.install(&app, state.runner.busy()).await
+    let runner = state.runner.clone();
+    updates.install(&app, || runner.busy()).await
 }
 
 fn folder_size(dir: &std::path::Path) -> u64 {
@@ -631,88 +632,124 @@ pub async fn compare_local(
     model: Option<String>,
 ) -> Result<CompareReport> {
     use tauri::Emitter;
-    let model = model.unwrap_or_else(|| state.settings.get().local_model);
-    if !state.runner.local.is_ready(&model) {
-        return Err(Error::msg("download this model in Settings first"));
-    }
-    let cancel = CancellationToken::new();
     state
-        .runner
-        .local
-        .comparing
-        .lock()
-        .unwrap()
-        .insert(run_id.clone(), cancel.clone());
-    let items: Vec<ItemSummary> = state
-        .db
-        .items(&session_id)?
-        .into_iter()
-        .filter(|i| {
-            i.status == ItemStatus::Done
-                && !i.card.name.is_empty()
-                && i.confidence.as_deref() != Some(local::identify::LOCAL_CONFIDENCE)
+        .compare_local(&session_id, &run_id, model, |done, total, row| {
+            let _ = app.emit(
+                "compare-progress",
+                serde_json::json!({"runId": run_id, "done": done, "total": total, "row": row}),
+            );
         })
-        .collect();
-    let mut report = CompareReport {
-        model: model.clone(),
-        ..Default::default()
-    };
-    let total = items.len();
-    // As a local session would read them: of the same kind, with the back when this one sent Ximilar both sides.
-    let session = state.db.session(&session_id)?;
-    for item in items {
-        if cancel.is_cancelled() {
-            report.cancelled = true;
-            break;
+        .await
+}
+
+impl AppState {
+    /// `compare_local`, which `cancel_compare` stops by `run_id`. `progress` gets each card's row with how many
+    /// cards are done of how many.
+    pub async fn compare_local(
+        &self,
+        session_id: &str,
+        run_id: &str,
+        model: Option<String>,
+        progress: impl Fn(usize, usize, &CompareRow),
+    ) -> Result<CompareReport> {
+        let model = model.unwrap_or_else(|| self.settings.get().local_model);
+        if !self.runner.local.is_ready(&model) {
+            return Err(Error::msg("download this model in Settings first"));
         }
-        let detail = state.db.item(item.id)?;
-        let image = detail
-            .preview_path
-            .clone()
-            .unwrap_or_else(|| item.front_path.clone());
-        let back = detail
-            .back_preview_path
-            .as_deref()
-            .filter(|_| session.options.both_sides)
-            .map(std::path::Path::new);
-        let row = match state
-            .runner
-            .local
-            .identify(&model, std::path::Path::new(&image), back, session.id_mode)
-            .await
-        {
-            Ok((rec, raw)) => CompareRow {
-                item_id: item.id,
-                seq: item.seq,
-                ximilar: item.card.full_name.clone(),
-                local: rec.card.full_name.clone(),
-                name_matches: compare::names_match(&item.card.name, &rec.card.name),
-                number_matches: compare::numbers_match(
-                    &item.card.card_number,
-                    &rec.card.card_number,
-                ),
-                seconds: raw["seconds"].as_f64().unwrap_or_default(),
-                error: None,
-            },
-            Err(e) => CompareRow {
-                item_id: item.id,
-                seq: item.seq,
-                ximilar: item.card.full_name.clone(),
-                local: String::new(),
-                name_matches: false,
-                number_matches: false,
-                seconds: 0.0,
-                error: Some(e.to_string()),
-            },
-        };
-        report.add(row.clone(), &item.card.card_number);
-        let _ = app.emit(
-            "compare-progress",
-            serde_json::json!({"runId": run_id, "done": report.cards, "total": total, "row": row}),
-        );
+        let cancel = CancellationToken::new();
+        let comparing = &self.runner.local.comparing;
+        comparing
+            .lock()
+            .unwrap()
+            .insert(run_id.to_string(), cancel.clone());
+        let report = self
+            .compare_cards(session_id, &model, &cancel, progress)
+            .await;
+        comparing.lock().unwrap().remove(run_id);
+        report
     }
-    state.runner.local.comparing.lock().unwrap().remove(&run_id);
-    Ok(report)
+
+    async fn compare_cards(
+        &self,
+        session_id: &str,
+        model: &str,
+        cancel: &CancellationToken,
+        progress: impl Fn(usize, usize, &CompareRow),
+    ) -> Result<CompareReport> {
+        let items: Vec<ItemSummary> = self
+            .db
+            .items(session_id)?
+            .into_iter()
+            .filter(|i| {
+                i.status == ItemStatus::Done
+                    && !i.card.name.is_empty()
+                    && i.confidence.as_deref() != Some(local::identify::LOCAL_CONFIDENCE)
+            })
+            .collect();
+        let mut report = CompareReport {
+            model: model.to_string(),
+            ..Default::default()
+        };
+        let total = items.len();
+        // As a local session would read them: of the same kind, with the back when this one sent Ximilar both sides.
+        let session = self.db.session(session_id)?;
+        for item in items {
+            if cancel.is_cancelled() {
+                report.cancelled = true;
+                break;
+            }
+            // A card deleted since the list was read gets a row saying so; the others still count.
+            let read = match self.db.item(item.id) {
+                Ok(detail) => {
+                    let image = detail
+                        .preview_path
+                        .clone()
+                        .unwrap_or_else(|| item.front_path.clone());
+                    let back = detail
+                        .back_preview_path
+                        .as_deref()
+                        .filter(|_| session.options.both_sides)
+                        .map(std::path::Path::new);
+                    self.runner
+                        .local
+                        .identify(model, std::path::Path::new(&image), back, session.id_mode)
+                        .await
+                }
+                Err(Error::Db(rusqlite::Error::QueryReturnedNoRows)) => {
+                    Err(Error::msg("the card was deleted"))
+                }
+                Err(e) => Err(e),
+            };
+            let row = match read {
+                Ok((rec, raw)) => CompareRow {
+                    item_id: item.id,
+                    seq: item.seq,
+                    ximilar: item.card.full_name.clone(),
+                    local: rec.card.full_name.clone(),
+                    name_matches: compare::names_match(&item.card.name, &rec.card.name),
+                    number_matches: compare::numbers_match(
+                        &item.card.card_number,
+                        &rec.card.card_number,
+                    ),
+                    seconds: raw["seconds"].as_f64().unwrap_or_default(),
+                    error: None,
+                },
+                Err(e) => CompareRow {
+                    item_id: item.id,
+                    seq: item.seq,
+                    ximilar: item.card.full_name.clone(),
+                    local: String::new(),
+                    name_matches: false,
+                    number_matches: false,
+                    seconds: 0.0,
+                    error: Some(e.to_string()),
+                },
+            };
+            report.add(row.clone(), &item.card.card_number);
+            progress(report.cards, total, &row);
+        }
+        Ok(report)
+    }
 }
 
 #[tauri::command]
@@ -977,17 +1014,35 @@ pub fn export_preview(
     session_id: String,
     format: Format,
 ) -> Result<Vec<ebay_listing::Preview>> {
-    Ok(state
-        .db
-        .items(&session_id)?
-        .iter()
-        .filter(|i| i.status == ItemStatus::Done)
-        .map(|i| match format {
-            Format::Tcgplayer => tcgplayer::preview(i),
-            Format::Whatnot => whatnot::preview(i),
-            Format::Shopify => shopify::preview(i),
-        })
-        .collect())
+    state.export_preview(&session_id, format)
+}
+
+impl AppState {
+    pub fn export_preview(
+        &self,
+        session_id: &str,
+        format: Format,
+    ) -> Result<Vec<ebay_listing::Preview>> {
+        self.db
+            .items(session_id)?
+            .iter()
+            .filter(|i| i.status == ItemStatus::Done)
+            .map(|i| {
+                // The grading record names the scale its condition is on, as the files read it; only a card
+                // with a condition needs it.
+                let grading = match i.condition {
+                    Some(_) => self.db.item(i.id)?.grading,
+                    None => None,
+                };
+                let grading = grading.as_ref();
+                Ok(match format {
+                    Format::Tcgplayer => tcgplayer::preview(i, grading),
+                    Format::Whatnot => whatnot::preview(i, grading),
+                    Format::Shopify => shopify::preview(i, grading),
+                })
+            })
+            .collect()
+    }
 }
 
 /// Writes the TCGplayer list of the chosen ungraded cards.
@@ -1216,5 +1271,212 @@ mod tests {
         );
         assert_eq!(remote_session_id(&id.to_uppercase()).as_deref(), Some(id));
         assert_eq!(remote_session_id("not an id"), None);
+    }
+
+    /// The app without a Ximilar account, its files in `dir`.
+    fn app(dir: &std::path::Path) -> AppState {
+        let settings = Arc::new(SettingsStore::for_test(
+            dir.join("settings.json"),
+            Settings {
+                api_base_url: "http://127.0.0.1:9".into(),
+                ..Settings::default()
+            },
+            "",
+        ));
+        let db = Db::memory().unwrap();
+        let runner = Runner::new(
+            None,
+            Arc::new(crate::runner::tests::Recorder::default()),
+            db.clone(),
+            settings.clone(),
+            dir.join("data"),
+        );
+        AppState {
+            db,
+            settings,
+            runner,
+        }
+    }
+
+    fn session(state: &AppState, folder: &std::path::Path) -> Session {
+        state
+            .db
+            .create_session(&NewSession {
+                name: "Binder".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: folder.to_string_lossy().into_owned(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap()
+    }
+
+    /// A card deleted while the local model compares doesn't end the comparison: it gets a row with the reason,
+    /// and the run is forgotten (for `cancel_compare`) however it ends.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_comparison_outlives_a_deleted_card() {
+        use image::{Rgb, RgbImage};
+        let dir = tempfile::tempdir().unwrap();
+        let state = app(dir.path());
+        local::testing::install_fake(
+            &state.runner.local,
+            r#"{"name": "Pikachu", "year": "1999", "game": "pokemon", "card_number": "58/102", "set_code": ""}"#,
+        );
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        let s = session(&state, &cards);
+        let mut ids = Vec::new();
+        for name in ["Pikachu", "Mew"] {
+            let front = cards.join(format!("{name}.png"));
+            RgbImage::from_pixel(630, 880, Rgb([240, 200, 20]))
+                .save(&front)
+                .unwrap();
+            let id = state
+                .db
+                .insert_item(
+                    &s.id,
+                    &front.to_string_lossy(),
+                    None,
+                    &ItemImages::default(),
+                    None,
+                )
+                .unwrap();
+            state.db.claim_next(&s.id).unwrap();
+            let card = CardFields {
+                name: name.into(),
+                card_number: "58/102".into(),
+                ..Default::default()
+            };
+            state
+                .db
+                .save_recognition(
+                    id,
+                    "tcg",
+                    &card,
+                    Some("high"),
+                    Some(0.2),
+                    None,
+                    None,
+                    &Value::Null,
+                    1,
+                    ItemStatus::Done,
+                )
+                .unwrap();
+            ids.push(id);
+        }
+
+        let report = state
+            .compare_local(&s.id, "run-1", None, |done, total, _| {
+                assert_eq!(total, 2);
+                if done == 1 {
+                    state.db.delete_items(&s.id, &[ids[1]]).unwrap();
+                }
+            })
+            .await
+            .unwrap();
+        assert_eq!(report.cards, 2);
+        assert_eq!(report.rows[0].error, None);
+        assert!(report.rows[0].name_matches && report.rows[0].number_matches);
+        assert_eq!(report.rows[1].item_id, ids[1]);
+        assert_eq!(
+            report.rows[1].error.as_deref(),
+            Some("the card was deleted")
+        );
+        assert!(state.runner.local.comparing.lock().unwrap().is_empty());
+
+        // A failed comparison is forgotten too.
+        assert!(state
+            .compare_local("no-such-session", "run-2", None, |_, _, _| {})
+            .await
+            .is_err());
+        assert!(state.runner.local.comparing.lock().unwrap().is_empty());
+    }
+
+    /// Cardmarket's "Light Played" is Moderately Played: the export dialog's preview says what the file gets.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn export_previews_read_the_condition_as_the_files_do() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = app(dir.path());
+        let s = session(&state, dir.path());
+        let card = CardFields {
+            name: "Pikachu".into(),
+            full_name: "Pikachu 58/102".into(),
+            set_name: "Base Set".into(),
+            card_number: "58/102".into(),
+            subcategory: "Pokemon".into(),
+            ..Default::default()
+        };
+        let grading = serde_json::json!({"endpoint": "condition", "response": {"records": [{"_objects": [
+            {"name": "Card", "Condition": [{"label": "Light Played", "mode": "cardmarket"}]}]}]}});
+        let id = state
+            .db
+            .insert_imported(
+                &s.id,
+                "",
+                None,
+                &ItemImages::default(),
+                "tcg",
+                &card,
+                None,
+                None,
+                Some(2.0),
+                None,
+                Some("Light Played"),
+                Some(&grading),
+            )
+            .unwrap();
+        for format in [Format::Tcgplayer, Format::Whatnot, Format::Shopify] {
+            let previews = state.export_preview(&s.id, format).unwrap();
+            assert_eq!(
+                previews[0].condition.as_deref(),
+                Some("Moderately Played (from grading)"),
+                "{format:?}"
+            );
+        }
+
+        let priced = [PricedItem {
+            item_id: id,
+            price: 2.0,
+        }];
+        let file = dir.path().join("export.csv");
+        let path = file.to_string_lossy();
+        state
+            .export_tcgplayer(&s.id, &priced, CardCondition::NearMint, &path)
+            .unwrap();
+        let tcgplayer = std::fs::read_to_string(&file).unwrap();
+        assert!(tcgplayer.contains(",Moderately Played,"), "{tcgplayer}");
+        let options = whatnot::Options {
+            listing_type: whatnot::ListingType::BuyItNow,
+            shipping_profile: "Standard".into(),
+            offerable: false,
+            condition: CardCondition::NearMint,
+            upload_images: false,
+        };
+        state
+            .export_whatnot(&s.id, &priced, &options, &path, |_, _| {})
+            .await
+            .unwrap();
+        let whatnot = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            whatnot.contains(",Moderately Played,") && !whatnot.contains("Light Played"),
+            "{whatnot}"
+        );
+        let options = shopify::Options {
+            file: shopify::FileKind::Products,
+            grouping: shopify::Grouping::ByCard,
+            condition: CardCondition::NearMint,
+            active: false,
+            upload_images: false,
+            location: String::new(),
+        };
+        state
+            .export_shopify(&s.id, &priced, &options, &path, |_, _| {})
+            .await
+            .unwrap();
+        let shopify = std::fs::read_to_string(&file).unwrap();
+        assert!(
+            shopify.contains("Moderately Played") && !shopify.contains("Lightly Played"),
+            "{shopify}"
+        );
     }
 }

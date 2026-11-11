@@ -17,7 +17,8 @@ export default function Modal({
 }) {
   const t = useT();
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Not an Escape that a control inside already took, such as an open Select closing its list.
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);

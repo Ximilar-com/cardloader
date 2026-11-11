@@ -82,6 +82,11 @@ export default function NewSessionDialog({
   const [scanning, setScanning] = useState(false);
   const [idMode, setIdMode] = useState<IdMode>(from?.idMode ?? "auto");
   const [defaultPairing, setDefaultPairing] = useState<Pairing>("single");
+  /** "Images per card" as the user chose it: in this dialog, or for the session it copies (unless a scanner or
+   * reading backs set it there). */
+  const [chosenPairing, setChosenPairing] = useState<Pairing | null>(
+    from && from.sourceKind !== "scanner" && !from.options.bothSides ? from.options.pairing : null,
+  );
   const [options, setOptions] = useState<SessionOptions | null>(from?.options ?? null);
   const [tokenSet, setTokenSet] = useState(true);
   const [remoteSession, setRemoteSession] = useState("");
@@ -96,11 +101,12 @@ export default function NewSessionDialog({
       if (from?.sourceKind === "scanner") {
         setOptions((o) => o && { ...o, scan: s.scan, pairing: s.scan.duplex ? "front_back" : "single" });
       }
+      setDefaultPairing(s.defaultPairing);
+      // A scanner session keeps its scanner.
+      if (from?.sourceKind !== "scanner") setDevice(s.defaultScanner ?? "");
       if (from) return;
       setIdMode(s.defaultIdMode);
-      setDefaultPairing(s.defaultPairing);
       setFolder(s.defaultFolder ?? "");
-      setDevice(s.defaultScanner ?? "");
       const options: SessionOptions = {
         priceStats: s.priceStats,
         slab: false,
@@ -168,13 +174,12 @@ export default function NewSessionDialog({
     setError(null);
     api
       .listScanners()
-      .then((list) => {
-        setDevices(list);
-        if (list.length && !list.some((d) => d.id === device)) setDevice(list[0].id);
-      })
+      .then(setDevices)
       .catch((e) => setError(errorText(e)))
       .finally(() => setScanning(false));
   };
+  // Whichever of the settings and the scanner list comes first.
+  const scanner = scannerOf(devices, device);
 
   useEffect(() => {
     if (kind !== "scanner" || support) return;
@@ -187,8 +192,7 @@ export default function NewSessionDialog({
 
   const chooseSource = (k: SourceKind) => {
     setKind(k);
-    // A duplex scanner gives front + back of every card.
-    if (k === "scanner" && options?.scan.duplex) setOptions((o) => o && { ...o, pairing: "front_back" });
+    setOptions((o) => o && { ...o, pairing: pairingAfterSource(o, kind, k, chosenPairing ?? defaultPairing) });
   };
 
   const pickFolder = async () => {
@@ -211,7 +215,8 @@ export default function NewSessionDialog({
   // A local session holds one kind of cards (Auto and slabs are the API's).
   const sessionIdMode = local ? localKind(idMode) : idMode;
   // What "Images per card" goes back to when a local session stops reading backs.
-  const basePairing: Pairing = kind === "scanner" && options?.scan.duplex ? "front_back" : defaultPairing;
+  const basePairing: Pairing =
+    kind === "scanner" && options?.scan.duplex ? "front_back" : (chosenPairing ?? defaultPairing);
   const chooseEngine = (engine: Engine) =>
     setOptions(
       (o) =>
@@ -263,7 +268,7 @@ export default function NewSessionDialog({
     const session: NewSession = {
       name,
       sourceKind: kind,
-      sourceRef: kind === "scanner" ? device : kind === "csv" ? csvPath : folder,
+      sourceRef: kind === "scanner" ? scanner : kind === "csv" ? csvPath : folder,
       idMode: sessionIdMode,
       options: chosen,
     };
@@ -447,7 +452,7 @@ export default function NewSessionDialog({
               <label className="label">{t("newSession.scanner.label")}</label>
               <div className="flex gap-2">
                 <Select
-                  value={device}
+                  value={scanner}
                   onChange={setDevice}
                   disabled={editing}
                   aria-label={t("newSession.scanner.label")}
@@ -456,9 +461,9 @@ export default function NewSessionDialog({
                       ? devices.map((d) => ({ value: d.id, label: d.name || d.id, icon: ScanLine }))
                       : [
                           {
-                            value: device,
+                            value: scanner,
                             label:
-                              device ||
+                              scanner ||
                               (scanning ? t("newSession.scanner.searching") : t("newSession.scanner.noneFound")),
                             icon: ScanLine,
                           },
@@ -561,9 +566,10 @@ export default function NewSessionDialog({
                 <label className="label">{t("newSession.imagesPerCard")}</label>
                 <Select
                   value={options.pairing}
-                  onChange={(pairing) =>
-                    setOptions({ ...options, pairing, bothSides: pairing === "front_back" && options.bothSides })
-                  }
+                  onChange={(pairing) => {
+                    setChosenPairing(pairing);
+                    setOptions({ ...options, pairing, bothSides: pairing === "front_back" && options.bothSides });
+                  }}
                   options={pairingOptions()}
                 />
               </div>
@@ -659,6 +665,21 @@ function withKindDefaults(o: SessionOptions, mode: IdMode, basePairing: Pairing)
   const back = o.engine === "local" && localKind(mode) === "sport";
   if (back === o.bothSides) return o;
   return { ...o, bothSides: back, pairing: back ? "front_back" : basePairing };
+}
+
+/** "Images per card" after the source changes: a duplex scanner gives front + back of every card, and leaving the
+ * scanner goes back to `base` (the user's choice, else the default), or front + back while the session reads the
+ * backs. Any other change keeps it. */
+export function pairingAfterSource(o: SessionOptions, from: SourceKind, to: SourceKind, base: Pairing): Pairing {
+  if (to === "scanner" && o.scan.duplex) return "front_back";
+  if (from === "scanner" && to !== "scanner") return o.bothSides ? "front_back" : base;
+  return o.pairing;
+}
+
+/** The scanner a session uses: the wanted one (the default, or the session's) when it was found, else the first
+ * found. */
+export function scannerOf(devices: DeviceInfo[] | null, wanted: string): string {
+  return devices?.length && !devices.some((d) => d.id === wanted) ? devices[0].id : wanted;
 }
 
 const CATEGORY_OF: Partial<Record<IdMode, string>> = {

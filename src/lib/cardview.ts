@@ -332,8 +332,9 @@ export function rotationOf(response: Json): Rotation | null {
 }
 
 export function matchOf(response: Json): { ident: Json | null; slab: Json | null } {
-  // Same choice as the Rust side (`recognition::ident_pointer`): when the back was sent too, the side whose
-  // best match is closest; the front on a tie.
+  // Same choice as the Rust side (`recognition::ident_pointer`): when the back was sent too, the side the user
+  // picked a candidate on (`_picked`: the pick's distance is larger, so the other side would win again), else
+  // the side whose best match is closest; the front on a tie.
   const distance = (ident: Json | null) =>
     ident?.best_match && typeof ident.best_match === "object"
       ? typeof ident.distances?.[0] === "number"
@@ -343,6 +344,10 @@ export function matchOf(response: Json): { ident: Json | null; slab: Json | null
   let ident: Json | null = null;
   for (const record of response?.records ?? []) {
     const candidate = recordIdent(record);
+    if (candidate?._picked === true) {
+      ident = candidate;
+      break;
+    }
     if (candidate && (ident === null || distance(candidate) < distance(ident))) ident = candidate;
   }
   const objects: Json[] = response?.records?.[0]?._objects ?? [];

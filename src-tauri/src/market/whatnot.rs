@@ -5,6 +5,7 @@
 //! card, see `items.hosted_images`). Without pictures the listings import as drafts the seller adds photos to.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::imgbb::Hosting;
@@ -156,12 +157,13 @@ pub fn description(item: &ItemSummary, plan: &Listing) -> String {
     lines.join("\n")
 }
 
-pub fn preview(item: &ItemSummary) -> Preview {
+/// `grading`: the card's grading record, which names the scale of its condition.
+pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
     let plan = listing::plan(item);
     let (category, condition) = match &plan {
         Ok(p) => {
             let (category, sub) = category(item, p.kind);
-            let condition = match graded_condition(item) {
+            let condition = match graded_condition(item, grading) {
                 Some(g) if p.graded.is_none() => {
                     format!("{} (from grading)", condition(p.kind, false, g))
                 }
@@ -200,7 +202,7 @@ pub fn row(
 ) -> Vec<String> {
     let s = &item.summary;
     let (category, sub) = category(s, plan.kind);
-    let raw = graded_condition(s).unwrap_or(options.condition);
+    let raw = graded_condition(s, item.grading.as_ref()).unwrap_or(options.condition);
     let offerable = options.offerable && options.listing_type == ListingType::BuyItNow;
     let mut row = vec![
         category.to_string(),

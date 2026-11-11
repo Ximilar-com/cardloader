@@ -711,24 +711,30 @@ fn strip_images(mut resp: Value) -> Value {
 }
 
 /// Where the identification of the card is, as a JSON pointer into the response. Each record (the front,
-/// and the back when it was sent) offers its main object; the one with a best match and the smallest
-/// distance wins, the front on a tie.
+/// and the back when it was sent) offers its main object; the one the user picked a candidate on
+/// (`_picked`, see [`select_alternative`]) wins, else the one with a best match and the smallest distance, the
+/// front on a tie. `cardview::matchOf` chooses the same way.
 fn ident_pointer(resp: &Value) -> Option<String> {
     let records = resp["records"].as_array()?;
+    let pointers: Vec<String> = (0..records.len())
+        .filter_map(|i| record_ident_pointer(resp, i))
+        .collect();
+    let ident = |p: &String| resp.pointer(p).unwrap_or(&Value::Null);
+    if let Some(picked) = pointers.iter().find(|p| ident(p)["_picked"] == true) {
+        return Some(picked.clone());
+    }
     let distance = |p: &String| {
-        let ident = resp.pointer(p).unwrap_or(&Value::Null);
+        let ident = ident(p);
         if !ident["best_match"].is_object() {
             return f64::INFINITY;
         }
         ident["distances"][0].as_f64().unwrap_or(f64::MAX)
     };
     let mut best: Option<(String, f64)> = None;
-    for i in 0..records.len() {
-        if let Some(p) = record_ident_pointer(resp, i) {
-            let d = distance(&p);
-            if best.as_ref().is_none_or(|(_, b)| d < *b) {
-                best = Some((p, d));
-            }
+    for p in pointers {
+        let d = distance(&p);
+        if best.as_ref().is_none_or(|(_, b)| d < *b) {
+            best = Some((p, d));
         }
     }
     best.map(|(p, _)| p)
@@ -767,7 +773,8 @@ fn record_ident_pointer(resp: &Value, index: usize) -> Option<String> {
 
 /// Makes alternative `index` (an index into the response's `alternatives`) the best match, as when the user
 /// picks it. The previous best match becomes the first alternative; `distances` follow, so the stored response
-/// still parses to the picked card with its own distance and prices.
+/// still parses to the picked card with its own distance and prices. The changed identification is marked
+/// `_picked`: with front and back, the pick's distance may be larger than the other side's, which would then win.
 pub fn select_alternative(resp: &mut Value, index: usize) -> Result<(), String> {
     let pointer = ident_pointer(resp).ok_or("this card has no identification")?;
     let ident = resp
@@ -795,7 +802,36 @@ pub fn select_alternative(resp: &mut Value, index: usize) -> Result<(), String> 
             d[0] = Value::Null;
         }
     }
+    unmark_picks(resp);
+    if let Some(ident) = resp.pointer_mut(&pointer) {
+        ident["_picked"] = json!(true);
+    }
     Ok(())
+}
+
+/// Removes `_picked` from every identification of the response.
+fn unmark_picks(resp: &mut Value) {
+    let Some(records) = resp.get_mut("records").and_then(Value::as_array_mut) else {
+        return;
+    };
+    for record in records.iter_mut().filter_map(Value::as_object_mut) {
+        let objects = record
+            .get_mut("_objects")
+            .and_then(Value::as_array_mut)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_object_mut)
+            .filter_map(|o| o.get_mut("_identification"));
+        for ident in objects.filter_map(Value::as_object_mut) {
+            ident.remove("_picked");
+        }
+        if let Some(ident) = record
+            .get_mut("_identification")
+            .and_then(Value::as_object_mut)
+        {
+            ident.remove("_picked");
+        }
+    }
 }
 
 fn objects(record: &Value) -> Vec<&Value> {
@@ -1234,6 +1270,9 @@ mod tests {
             picked["records"][1]["_objects"][0]["_identification"]["best_match"]["name"],
             "Other"
         );
+        // The pick (0.5) is farther than the front (0.4), yet it is the card.
+        let r = parse(Endpoint::Sport, &picked);
+        assert_eq!((r.card.name.as_str(), r.distance), ("Other", Some(0.5)));
 
         // A back without a match (or with an error status) doesn't hide the front.
         let resp = json!({"records": [card("Front read", 0.4),
@@ -1242,6 +1281,54 @@ mod tests {
         // Same distance (e.g. magic_ai copies its answer to both sides): the front.
         let resp = json!({"records": [card("Front read", 0.0), card("Back read", 0.0)]});
         assert_eq!(parse(Endpoint::Sport, &resp).card.name, "Front read");
+    }
+
+    /// A pick stays the card, on whichever side it was made, whatever its distance: the side isn't chosen again.
+    #[test]
+    fn a_pick_keeps_its_side() {
+        let side = |name: &str, alternative: &str, distances: Value| {
+            json!({"_objects": [{"name": "Card", "_identification": {
+                "best_match": {"name": name}, "alternatives": [{"name": alternative}], "distances": distances}}]})
+        };
+        let picked_name = |resp: &Value| parse(Endpoint::Sport, resp).card.name;
+
+        // magic_ai answers both sides alike: the front wins the tie, and its other candidate is farther.
+        let mut resp = json!({"records": [side("Front read", "Front other", json!([0.0, 0.3])),
+            side("Back read", "Back other", json!([0.0, 0.25]))]});
+        select_alternative(&mut resp, 0).unwrap();
+        assert_eq!(picked_name(&resp), "Front other");
+        assert_eq!(parse(Endpoint::Sport, &resp).distance, Some(0.3));
+        assert_eq!(
+            candidates(&resp)[0].name,
+            "Front read",
+            "the candidates follow"
+        );
+        // Picking again works on the same side: back to the original match.
+        select_alternative(&mut resp, 0).unwrap();
+        assert_eq!(picked_name(&resp), "Front read");
+        assert_eq!(
+            resp["records"][0]["_objects"][0]["_identification"]["_picked"],
+            true
+        );
+
+        // A candidate without a distance, on the closer side.
+        let mut resp = json!({"records": [side("Front read", "Front other", json!([0.4])),
+            side("Back read", "Back other", json!([0.2]))]});
+        select_alternative(&mut resp, 0).unwrap();
+        let r = parse(Endpoint::Sport, &resp);
+        assert_eq!((r.card.name.as_str(), r.distance), ("Back other", None));
+
+        // The side changed last is the only one marked.
+        let mut resp = json!({"records": [side("Front read", "Front other", json!([0.1, 0.2])),
+            side("Back read", "Back other", json!([0.3, 0.4]))]});
+        for record in 0..2 {
+            resp["records"][record]["_objects"][0]["_identification"]["_picked"] = json!(true);
+        }
+        select_alternative(&mut resp, 0).unwrap();
+        assert_eq!(picked_name(&resp), "Front other");
+        assert!(resp["records"][1]["_objects"][0]["_identification"]
+            .get("_picked")
+            .is_none());
     }
 
     #[test]

@@ -73,8 +73,8 @@ describe("pricing and tiers", () => {
 });
 
 describe("matchOf", () => {
-  const side = (name: string, distance: number) => ({
-    _objects: [{ name: "Card", _identification: { best_match: { name }, distances: [distance] } }],
+  const side = (name: string, distance: number | null, extra: object = {}) => ({
+    _objects: [{ name: "Card", _identification: { best_match: { name }, distances: [distance], ...extra } }],
   });
 
   it("takes the closer side when the back was sent too (like the Rust side)", () => {
@@ -82,6 +82,19 @@ describe("matchOf", () => {
     expect(matchOf({ records: [side("Front", 0), side("Back", 0)] }).ident?.best_match.name).toBe("Front");
     const noBackMatch = { _objects: [{ name: "Card", _identification: { best_match: null } }] };
     expect(matchOf({ records: [side("Front", 0.4), noBackMatch] }).ident?.best_match.name).toBe("Front");
+  });
+
+  it("keeps the side the user picked a candidate on, whatever its distance", () => {
+    const picked = (name: string, distance: number | null) => side(name, distance, { _picked: true });
+    const card = (...records: object[]) => matchOf({ records }).ident?.best_match.name;
+    // The pick's distance is larger than the other side's best match: the pick still is the card.
+    expect(card(side("Front", 0.2), picked("Back", 0.5))).toBe("Back");
+    expect(card(picked("Front", 0.5), side("Back", 0.2))).toBe("Front");
+    // A pick without a distance (the Rust side writes null) too.
+    expect(card(side("Front", 0.1), picked("Back", null))).toBe("Back");
+    // Only `true` marks a pick.
+    expect(card(side("Front", 0.2), side("Back", 0.5, { _picked: false }))).toBe("Front");
+    expect(card(picked("Front", 0.5))).toBe("Front");
   });
 });
 

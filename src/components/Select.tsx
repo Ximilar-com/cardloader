@@ -55,13 +55,22 @@ export default function Select<T extends string>({
       if (!list.current?.contains(target) && !button.current?.contains(target)) setAt(null);
     };
     const onResize = () => setAt(null);
+    // Escape closes the list, wherever the focus is (WebKit doesn't focus a clicked button), before the window's
+    // other listeners see it; marked as handled, so a dialog or panel around doesn't close too.
+    const onEscape = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setAt(null);
+    };
     window.addEventListener("mousedown", close);
     window.addEventListener("scroll", close, true);
     window.addEventListener("resize", onResize);
+    window.addEventListener("keydown", onEscape, true);
     return () => {
       window.removeEventListener("mousedown", close);
       window.removeEventListener("scroll", close, true);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onEscape, true);
     };
   }, [at]);
 

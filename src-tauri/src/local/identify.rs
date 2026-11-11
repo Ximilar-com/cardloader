@@ -174,9 +174,10 @@ fn clean(text: &str) -> String {
 }
 
 /// The collector number without what models copy around it: "#" or "No." (sports cards print "No. 76"), a leading
-/// rarity letter ("C 0123", Magic) or regulation mark ("D025/202", Pokémon). "125197" read without its slash is
-/// "125/197": six digits are taken as two halves.
-fn collector_number(raw: &str) -> String {
+/// rarity letter set apart ("C 0123", Magic) or a regulation mark on a number out of a plain total ("D025/202",
+/// Pokémon). Other letters are the number's ("H25/H32", a sports card's "T87-12"). "125197" read without its slash
+/// is "125/197": six digits are taken as two halves.
+fn collector_number(raw: &str, sport: bool) -> String {
     let n = clean(raw);
     let n = n.trim_start_matches('#').trim();
     let n = match n.get(..3).map(str::to_ascii_lowercase).as_deref() {
@@ -185,13 +186,19 @@ fn collector_number(raw: &str) -> String {
     };
     let n = n.trim_start_matches('#').trim().to_string();
     let mut chars = n.chars();
-    let n = match (chars.next(), chars.as_str().trim_start()) {
-        (Some(c), rest)
-            if c.is_ascii_alphabetic() && rest.starts_with(|d: char| d.is_ascii_digit()) =>
-        {
-            rest.to_string()
-        }
-        _ => n,
+    let (first, rest) = (chars.next(), chars.as_str());
+    let digit = |s: &str| s.starts_with(|d: char| d.is_ascii_digit());
+    let apart = rest.starts_with(' ') && digit(rest.trim_start());
+    let plain_total = rest
+        .split_once('/')
+        .is_some_and(|(_, total)| !total.is_empty() && total.bytes().all(|b| b.is_ascii_digit()));
+    let n = if !sport
+        && first.is_some_and(|c| c.is_ascii_alphabetic())
+        && (apart || (digit(rest) && plain_total))
+    {
+        rest.trim_start().to_string()
+    } else {
+        n
     };
     if n.len() == 6 && n.bytes().all(|b| b.is_ascii_digit()) {
         format!("{}/{}", &n[..3], &n[3..])
@@ -257,7 +264,7 @@ fn recognition(a: Answer) -> Recognition {
         } else {
             String::new()
         },
-        card_number: collector_number(&a.card_number),
+        card_number: collector_number(&a.card_number, game.is_some_and(|g| g.1 == "sport")),
         set_name: clean(&a.set_name),
         year: if year.len() == 4 { year } else { String::new() },
         subcategory: game.map(|g| g.2.to_string()).unwrap_or_default(),
@@ -321,10 +328,10 @@ mod tests {
         .unwrap();
         assert_eq!(r.id_type, "sport");
         assert_eq!(r.card.full_name, "Shohei Ohtani #1019");
-        assert_eq!(collector_number("C 0123"), "0123");
-        assert_eq!(collector_number("D025/202"), "025/202");
-        assert_eq!(collector_number("SV107"), "SV107");
-        assert_eq!(collector_number("TG05/TG30"), "TG05/TG30");
+        assert_eq!(collector_number("C 0123", false), "0123");
+        assert_eq!(collector_number("D025/202", false), "025/202");
+        assert_eq!(collector_number("SV107", false), "SV107");
+        assert_eq!(collector_number("TG05/TG30", false), "TG05/TG30");
         assert_eq!(r.card.year, "");
         let (empty, _) = parse_answers(r#"{"name":"","year":"","game":"other"}"#, None).unwrap();
         assert!(empty.card.full_name.is_empty() && empty.confidence.is_none());
@@ -351,8 +358,8 @@ mod tests {
         );
         assert_eq!(r.card.full_name, "Austin Reaves #76");
         assert_eq!(raw["card"]["set_name"], "2023 Panini Prizm Basketball");
-        assert_eq!(collector_number("no.SIG-ZG"), "SIG-ZG");
-        assert_eq!(collector_number("#US199"), "US199");
+        assert_eq!(collector_number("no.SIG-ZG", false), "SIG-ZG");
+        assert_eq!(collector_number("#US199", false), "US199");
         // The two-question answer never takes a set name.
         let (two, _) = parse_answers(
             r#"{"name": "Pikachu", "year": "2023", "game": "pokemon", "set_name": "Pikachu"}"#,
@@ -364,6 +371,32 @@ mod tests {
         assert!(whole_prompt(false).contains("not the serial number"));
         assert!(whole_prompt(false).contains("with any letters before it"));
         assert!(!whole_prompt(false).contains("back:"));
+    }
+
+    /// Letters before the digits are part of the number, except a rarity letter set apart ("C 0123") or a
+    /// regulation mark on a number out of a plain total ("D025/202"); on a sports card they always are.
+    #[test]
+    fn letters_before_the_number() {
+        assert_eq!(collector_number("D 025/202", false), "025/202");
+        assert_eq!(collector_number("H25/H32", false), "H25/H32");
+        assert_eq!(collector_number("T87-12", false), "T87-12");
+        assert_eq!(collector_number("T87-12", true), "T87-12");
+        assert_eq!(collector_number("C 0123", true), "C 0123");
+        assert_eq!(collector_number("No. 76", true), "76");
+        assert_eq!(collector_number("125197", false), "125/197");
+        // The answer's game tells a sports card.
+        let (r, _) = parse_whole(
+            r#"{"name": "Mike Trout", "card_number": "T87-12", "set_name": "2022 Topps", "set_code": "",
+                "year": "2022", "game": "baseball"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.card.card_number, "T87-12");
+        let (r, _) = parse_whole(
+            r#"{"name": "Pikachu", "card_number": "D025/202", "set_name": "", "set_code": "", "year": "",
+                "game": "pokemon"}"#,
+        )
+        .unwrap();
+        assert_eq!(r.card.card_number, "025/202");
     }
 
     #[test]

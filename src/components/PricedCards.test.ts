@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { adjustPrice } from "./PricedCards";
+import { adjustPrice, parsePrice } from "./PricedCards";
+
+describe("parsePrice", () => {
+  it("reads thousands and decimal separators, and wants a positive amount", () => {
+    expect(parsePrice("1,250")).toBe(1250);
+    expect(parsePrice("1,250.00")).toBe(1250);
+    expect(parsePrice("1.250,00")).toBe(1250);
+    expect(parsePrice("12,5")).toBe(12.5);
+    expect(parsePrice(" $24.99 ")).toBe(24.99);
+    expect(parsePrice("9.999")).toBe(10);
+    expect(parsePrice("0")).toBeNull();
+    expect(parsePrice("-5")).toBeNull();
+    expect(parsePrice("")).toBeNull();
+    expect(parsePrice(undefined)).toBeNull();
+    expect(parsePrice("12,")).toBeNull();
+    expect(parsePrice("abc")).toBeNull();
+  });
+});
 
 describe("adjustPrice", () => {
   it("takes a share of the market price, ends in .99 and keeps a floor", () => {
