@@ -488,6 +488,8 @@ async fn exports_write_only_csv_files_outside_the_app() {
     }
     // Also through `..` from a folder outside.
     let inside_by_dots = out.join("..").join("data").join("cards.csv");
+    // Only unix adds to the list: making a link on Windows needs a privilege.
+    #[cfg_attr(not(unix), allow(unused_mut))]
     let mut refused = vec![
         (database, ".csv"),
         (settings, ".csv"),
