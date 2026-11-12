@@ -23,10 +23,9 @@ jobs:
           - name: Windows x64
             os: windows-latest
             args: --features vulkan
-          # --verbose: a failing AppImage shows what linuxdeploy said, not only that it failed.
           - name: Linux x64
             os: ubuntu-22.04
-            args: --features vulkan --verbose
+            args: --features vulkan
     runs-on: ${{ matrix.os }}
     env:
       # Signing is optional: these only take effect once the repository secrets exist.
@@ -114,16 +113,41 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }} ${{ env.TAURI_UPDATER_ARGS }}
 
+      # Tauri says only "failed to run linuxdeploy" when the AppImage fails: this runs it again on the folder Tauri
+      # prepared and shows what it said, and which shipped libraries don't find what they need.
+      - name: Why the AppImage failed
+        if: failure() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          appdir=$(find target/release/bundle/appimage -maxdepth 1 -name "*.AppDir" | head -1)
+          echo "AppDir: $appdir"
+          for f in "$appdir"/usr/bin/* "$appdir"/usr/lib/Cardloader/llama/*; do
+            missing=$(ldd "$f" 2>&1 | grep -i "not found" || true)
+            [ -n "$missing" ] && printf '%s\n%s\n' "$f" "$missing"
+          done
+          tool=$(find "$HOME/.cache/tauri" -name "linuxdeploy-x86_64.AppImage" | head -1)
+          OUTPUT="$RUNNER_TEMP/test.AppImage" ARCH=x86_64 APPIMAGE_EXTRACT_AND_RUN=1 "$tool" \
+            --appimage-extract-and-run --verbosity 1 --appdir "$appdir" --plugin gtk --output appimage 2>&1 | tail -120
+
       # A manual run without a tag creates no release: its installers are kept as workflow artifacts, to try a build
-      # (such as one from a branch) before tagging.
+      # (such as one from a branch) before tagging. Windows builds into CARGO_TARGET_DIR (see the Vulkan SDK action),
+      # and one upload takes files under one root only.
       - name: Installers as artifacts (manual runs)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && env.CARGO_TARGET_DIR == ''
         uses: actions/upload-artifact@v4
         with:
           name: installers-${{ runner.os }}
           path: |
             target/release/bundle/
             target/universal-apple-darwin/release/bundle/
-            ${{ env.CARGO_TARGET_DIR }}/release/bundle/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Installers as artifacts (manual runs, own target folder)
+        if: github.event_name == 'workflow_dispatch' && env.CARGO_TARGET_DIR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: installers-${{ runner.os }}
+          path: ${{ env.CARGO_TARGET_DIR }}/release/bundle/
           if-no-files-found: error
           retention-days: 7
