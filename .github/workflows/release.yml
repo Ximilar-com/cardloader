@@ -113,6 +113,19 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }} ${{ env.TAURI_SIGN_ARGS }} ${{ env.TAURI_UPDATER_ARGS }}
 
+      # The installed app finds llama.cpp's shared libraries through the binary's rpath
+      # (/usr/lib/Cardloader/llama): checked on the unpacked .deb, without the build's own library path.
+      - name: The .deb finds its libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          deb=$(find target/release/bundle/deb -name "*.deb" | head -1)
+          dpkg-deb -x "$deb" "$RUNNER_TEMP/deb"
+          ls -la "$RUNNER_TEMP/deb/usr/lib/Cardloader/llama"
+          missing=$(env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP/deb/usr/bin/cardloader" | grep "not found" || true)
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+          env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP/deb/usr/bin/cardloader" | grep -E "llama|ggml|mtmd"
+
       # Tauri says only "failed to run linuxdeploy" when the AppImage fails: this runs it again on the folder Tauri
       # prepared and shows what it said, and which shipped libraries don't find what they need.
       - name: Why the AppImage failed
