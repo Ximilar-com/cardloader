@@ -46,4 +46,6 @@ runs:
         sdk="$RUNNER_TEMP/vulkan-sdk/$v/x86_64"
         echo "VULKAN_SDK=$sdk" >> "$GITHUB_ENV"
         echo "$sdk/bin" >> "$GITHUB_PATH"
-        echo "LD_LIBRARY_PATH=$sdk/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+        # src-tauri/llama: the AppImage bundler (linuxdeploy) resolves every library it ships on its own, and
+        # llama.cpp's libraries carry no rpath to find each other (in the app, the binary's rpath does that).
+        echo "LD_LIBRARY_PATH=$sdk/lib:$GITHUB_WORKSPACE/src-tauri/llama${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"

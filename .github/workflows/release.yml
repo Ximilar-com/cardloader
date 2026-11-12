@@ -23,9 +23,10 @@ jobs:
           - name: Windows x64
             os: windows-latest
             args: --features vulkan
+          # --verbose: a failing AppImage shows what linuxdeploy said, not only that it failed.
           - name: Linux x64
             os: ubuntu-22.04
-            args: --features vulkan
+            args: --features vulkan --verbose
     runs-on: ${{ matrix.os }}
     env:
       # Signing is optional: these only take effect once the repository secrets exist.
