@@ -7,7 +7,7 @@
 //!    from the whole card (asked about the whole card, it reads the HP or attack text instead).
 //!
 //! and aren't asked for the set *name*: they fill it with whatever text is on the card. Models that read small print
-//! on the whole card (Qwen3.5, `Family::reads_whole_card`) get one question with every field, and with the card's
+//! on the whole card (Qwen3.5, `catalog::Profile::whole_card`) get one question with every field, and with the card's
 //! back as a second image when the session has it: sports cards print the number, year and set there. The strip
 //! assumes the card fills the picture; the whole card doesn't.
 //!

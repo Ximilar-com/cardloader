@@ -16,6 +16,8 @@ Thanks for helping! Issues and pull requests are welcome. Please report security
 - Rust commands live in `src-tauri/src/commands.rs`; their TypeScript types are in `src/lib/api.ts` — update both.
 - Database schema changes go in a new file in `src-tauri/migrations/` (append to `MIGRATIONS` in `db.rs`); never
   edit a released migration.
+- Another local model is one entry in `src-tauri/src/local/catalog.rs`, which `just model-entry` writes: see
+  [Adding another model](README.md#adding-another-model).
 - The runner's end-to-end tests (`src-tauri/src/runner.rs`) run a whole session against a mock Ximilar API with
   `wiremock`; extend them when you change the pipeline.
 - Don't commit API tokens, real customer data or personal paths. Use your own Ximilar token for manual testing; it

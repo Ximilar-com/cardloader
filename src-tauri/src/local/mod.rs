@@ -24,9 +24,8 @@ use crate::model::{GradingMode, IdMode};
 use crate::ximilar::recognition::Recognition;
 use catalog::ModelSpec;
 
-/// Long edges of the images given to the model. Over 512 px the model tiles the image (more detail, slower);
-/// the strip is enlarged so the collector number is readable.
-const CARD_LONG_EDGE: u32 = 768;
+/// Long edge of the part of a card a small model is shown again (its bottom strip, the top of a comic's cover),
+/// enlarged so the number is readable. The whole card's is the model's (`catalog::Profile::card_long_edge`).
 const STRIP_LONG_EDGE: u32 = 1024;
 const MAX_ANSWER_TOKENS: u32 = 160;
 /// Every field at once, the set name included.
@@ -479,7 +478,8 @@ impl LocalModels {
         let spec =
             catalog::find(id).ok_or_else(|| Error::msg(format!("unknown local model {id}")))?;
         let engine = self.engine(id).await?;
-        let whole = spec.family.reads_whole_card();
+        let whole = spec.profile.whole_card;
+        let edge = spec.profile.card_long_edge;
         // A comic is read off its cover: the back is an advert.
         let comic = kind == IdMode::Comics;
         let front = front.to_path_buf();
@@ -488,11 +488,11 @@ impl LocalModels {
         // strip of a card, the top of a comic's cover.
         let (card, back, part) = tokio::task::spawn_blocking(move || -> Result<Images> {
             let img = imaging::open(&front)?;
-            let card = imaging::jpeg_bytes(&imaging::fit_long_edge(&img, CARD_LONG_EDGE), 90)?;
+            let card = imaging::jpeg_bytes(&imaging::fit_long_edge(&img, edge), 90)?;
             let back = back
                 .map(|b| {
                     let b = imaging::open(&b)?;
-                    imaging::jpeg_bytes(&imaging::fit_long_edge(&b, CARD_LONG_EDGE), 90)
+                    imaging::jpeg_bytes(&imaging::fit_long_edge(&b, edge), 90)
                 })
                 .transpose()?;
             let part = if comic {
@@ -602,6 +602,9 @@ impl LocalModels {
         mode: GradingMode,
         scale: &'static grade::Scale,
     ) -> Result<grade::LocalGrading> {
+        let spec =
+            catalog::find(id).ok_or_else(|| Error::msg(format!("unknown local model {id}")))?;
+        let edge = spec.profile.card_long_edge;
         let engine = self.engine(id).await?;
         let paths = sides.to_vec();
         let images = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u8>>> {
@@ -609,7 +612,7 @@ impl LocalModels {
                 .iter()
                 .map(|p| {
                     let img = imaging::open(p)?;
-                    imaging::jpeg_bytes(&imaging::fit_long_edge(&img, CARD_LONG_EDGE), 90)
+                    imaging::jpeg_bytes(&imaging::fit_long_edge(&img, edge), 90)
                 })
                 .collect()
         })
@@ -773,18 +776,18 @@ mod real_model {
         let counter = updates.clone();
         local.on_change(move |_| *counter.lock().unwrap() += 1);
         let id = test_model();
+        let spec = catalog::find(&id).expect("CARDLOADER_MODEL is an id in catalog::MODELS");
         local.download(&id).unwrap();
+        // 1 MB/s at the least, whatever the model's size.
+        let limit = Duration::from_secs(900 + spec.size() / 1_000_000);
         let started = Instant::now();
         loop {
-            let status = local.status(catalog::find(&id).unwrap());
+            let status = local.status(spec);
             if status.state == ModelState::Ready {
                 break;
             }
             assert!(status.error.is_none(), "{:?}", status.error);
-            assert!(
-                started.elapsed() < Duration::from_secs(900),
-                "download too slow"
-            );
+            assert!(started.elapsed() < limit, "download too slow");
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
         println!(

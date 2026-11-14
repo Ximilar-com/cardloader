@@ -1,13 +1,13 @@
 # Cardloader — the same tasks as the Justfile, for those without `just` (https://just.systems).
 # On Windows prefer `just` (PowerShell recipes).
 
-.PHONY: help setup dev build sidecar lint fmt test icons clean install update-version
+.PHONY: help setup dev build sidecar lint fmt test icons clean install update-version model-entry
 
 BUNDLE_DIR := target/release/bundle
 UNAME := $(shell uname -s)
 
 help:
-	@echo "Targets: setup dev build install lint fmt test icons clean update-version"
+	@echo "Targets: setup dev build install lint fmt test icons clean update-version model-entry"
 
 setup:
 	npm ci
@@ -51,6 +51,10 @@ test:
 update-version:
 	@test -n "$(VERSION)" || { echo "usage: make update-version VERSION=0.2.0 [FLAGS=--dry-run]"; exit 1; }
 	node scripts/release.mjs $(VERSION) $(FLAGS)
+
+# make model-entry ARGS="owner/repo [model.gguf mmproj.gguf]": a catalog entry for another local model
+model-entry:
+	node scripts/model-entry.mjs $(ARGS)
 
 icons:
 	npx tauri icon assets/app-icon.svg -o src-tauri/icons

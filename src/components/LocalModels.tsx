@@ -44,6 +44,7 @@ function useSpeed(model: ModelStatus) {
   return model.state === "downloading" ? speed : null;
 }
 
+// A model added in a fork may name a tier of its own: it gets the plain badge.
 const TIER_STYLES: Record<string, string> = {
   Fast: "bg-sky-50 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
   Balanced: "bg-violet-50 text-violet-700 dark:bg-violet-950 dark:text-violet-300",
@@ -126,7 +127,12 @@ function ModelCard({ model }: { model: ModelStatus }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{model.name}</span>
-            <span className={clsx("rounded px-1.5 py-0.5 text-[11px] font-medium", TIER_STYLES[model.tier])}>
+            <span
+              className={clsx(
+                "rounded px-1.5 py-0.5 text-[11px] font-medium",
+                TIER_STYLES[model.tier] ?? "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+              )}
+            >
               {model.tier}
             </span>
             <span className="text-xs text-slate-500">

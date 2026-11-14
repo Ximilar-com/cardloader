@@ -2219,10 +2219,14 @@ pub(crate) mod tests {
             let raw = item.recognition.unwrap();
             assert_eq!(raw["images"], images, "{model}");
             assert_eq!(item.summary.card.card_number, "76");
-            if model.starts_with("qwen") {
+            if crate::local::catalog::find(model)
+                .unwrap()
+                .profile
+                .whole_card
+            {
                 assert_eq!(item.summary.card.set_name, "2023 Panini Prizm Basketball");
             } else {
-                // LFM isn't asked for a set name.
+                // A model that takes two looks (LFM) isn't asked for a set name.
                 assert_eq!(item.summary.card.set_name, "");
             }
         }
@@ -2502,7 +2506,9 @@ pub(crate) mod tests {
             Some("Near Mint or Better")
         );
         let grading = item.grading.clone().unwrap();
-        assert_eq!(grading["engine"], "local/lfm2.5-vl-3b");
+        // Whatever the default model is (a fork may choose another).
+        let engine = format!("local/{}", crate::local::catalog::DEFAULT_MODEL);
+        assert_eq!(grading["engine"], engine.as_str());
         assert_eq!(
             grading["scale"], "ebay_tcg",
             "exports read the condition on it"
@@ -2512,7 +2518,7 @@ pub(crate) mod tests {
         assert_eq!(item.summary.confidence.as_deref(), Some("local"));
         assert_eq!(item.summary.price, None);
         assert_eq!(item.calls, 0);
-        assert_eq!(item.recognition.unwrap()["endpoint"], "local/lfm2.5-vl-3b");
+        assert_eq!(item.recognition.unwrap()["endpoint"], engine.as_str());
 
         // Syncing still needs Ximilar.
         db.update_session_meta(

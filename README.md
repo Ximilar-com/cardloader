@@ -197,6 +197,89 @@ baseball cards in holders: 47 against 4B's 32 and 450M's 10); elsewhere it reads
   [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), which allows commercial use (GGUF files by
   Unsloth). Each is downloaded from Hugging Face after you accept its license, never bundled.
 - Models are stored in the app's data folder under `models/`; **Delete** in Settings removes them.
+- **Another model.** The five above are the ones Cardloader ships with. A fork can add any other vision model from
+  Hugging Face, however large: see [Adding another model](#adding-another-model).
+
+### Adding another model
+
+In your own fork, a model is one entry in the catalog, `MODELS` in
+[`src-tauri/src/local/catalog.rs`](src-tauri/src/local/catalog.rs); the app then lists it in Settings, downloads it
+and uses it like the others. Nothing else has to change. You need to build the app yourself
+([Development](#development)).
+
+**What the model must be**
+
+- A vision language model that [llama.cpp runs with pictures](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md)
+  (Gemma 3, Qwen2.5-VL, Pixtral, InternVL and others), as two GGUF files: the model and its vision projector
+  (`mmproj`). A text-only model can't read cards. A model newer than the llama.cpp Cardloader is built with also
+  needs a newer `llama-cpp-2` in `src-tauri/Cargo.toml`.
+- In a public Hugging Face repository that downloads without a login, each of the two as one file. A model split
+  into parts (`…-00001-of-00003.gguf`) isn't supported: take a smaller quant.
+- Small enough for your computer. To run fast, the files plus about a tenth have to fit in the GPU's memory (on a
+  Mac: in its memory). What doesn't fit runs on the CPU, slowly. A model runs on one GPU.
+
+**Steps**
+
+1. List the repository's files, then let the script write the entry with the pinned revision, the sizes and the
+   SHA-256 of the two files you chose (Q4_K_M is the usual model file; take the `mmproj` as F16 or Q8):
+   ```sh
+   just model-entry ggml-org/gemma-3-4b-it-GGUF
+   just model-entry ggml-org/gemma-3-4b-it-GGUF gemma-3-4b-it-Q4_K_M.gguf mmproj-model-f16.gguf
+   ```
+   Without `just`: `node scripts/model-entry.mjs …`. `--rev <commit>` pins an older revision.
+2. Paste what it prints at the end of `MODELS` and fill in the lines marked `TODO`: the name, who made the model, and
+   its license (the license note people accept before downloading is made from these).
+3. Check the entry and try the model:
+   ```sh
+   cargo test -p cardloader catalog   # says what is wrong with an entry
+   just dev                           # Settings → Local models → download it
+   ```
+   Then make a session with it, or run **Compare with local model** on a session Ximilar identified to see how
+   often the two agree.
+
+To make it the model new installs start with, set `DEFAULT_MODEL` to its id and move its entry to the top (an
+install that already has settings keeps the model chosen there).
+
+**The `profile` of an entry** holds what differs between models. `Profile::GENERAL` suits most; change single fields
+with `Profile { context_tokens: 16_384, ..Profile::GENERAL }`:
+
+| Field | `GENERAL` | Change it when |
+| --- | --- | --- |
+| `whole_card` | `true` | The model is small (under about 2B) and misreads the collector number: `false` asks twice, the second time about the enlarged bottom of the card (as the LFM models are asked). |
+| `answer_prefix` | `""` | The model thinks before answering and its answers are slow or worse than they should be: the text that ends its thinking, e.g. `"<think>\n\n</think>\n\n"` for Qwen3.5. |
+| `chat_template` | `None` (the one in the GGUF) | Loading fails with "llama.cpp doesn't know this model's chat template": the name of one of [llama.cpp's templates](https://github.com/ggml-org/llama.cpp/wiki/Templates-supported-by-llama_chat_apply_template), e.g. `Some("chatml")`. |
+| `context_tokens` | `8192` | A card fails with "more than the model's context": raise it (or lower `card_long_edge`). Pictures take most of it. |
+| `card_long_edge` | `1024` | Small print is misread: a larger picture shows more and takes longer. |
+
+The questions, and the grammar that holds each answer to its JSON fields, are the same for every model
+(`src-tauri/src/local/identify.rs`, `grade.rs`). Tried this way, Google's Gemma 3 4B (the commands above, with
+`Profile::GENERAL` as written) got 19 names and 18 numbers of the 20 Magic test cards right, at 15 s per card on
+an Apple M4.
+
+**Measuring it.** The opt-in tests run the real model outside the app. `CARDLOADER_MODELS` is a folder with
+`<id>/` inside, such as the app's own `models/` folder ([Where data lives](#where-data-lives)):
+
+```sh
+# Download with the app's downloader
+CARDLOADER_MODEL=<id> CARDLOADER_DOWNLOAD_TO=/path/to/models \
+  cargo test --release -p cardloader real_download -- --ignored --nocapture
+# Read every picture in a folder and print the answers
+CARDLOADER_MODEL=<id> CARDLOADER_MODELS=/path/to/models CARDLOADER_CARDS=/path/to/cards \
+  cargo test --release -p cardloader real_model_reads_cards -- --ignored --nocapture
+# Score against a CSV next to the pictures: columns file (or front, back), name (or player), number
+CARDLOADER_MODEL=<id> CARDLOADER_MODELS=/path/to/models CARDLOADER_TRUTH=/path/to/cards/truth.csv \
+  cargo test --release -p cardloader real_model_scores_cards -- --ignored --nocapture
+```
+
+`CARDLOADER_KIND=tcg`, `sport` or `comics` is the session's "Identify as"; `CARDLOADER_BACKS=1` sends the backs too.
+
+- Files you already have can be put into `models/<id>/` in the app's data folder under the names in the entry;
+  the app takes them as downloaded.
+- On Windows and Linux, build with `--features vulkan` (or `cuda`) for the GPU, as described under
+  [Development](#development).
+- For a pull request to Cardloader, a model also needs its measured memory, time per card and accuracy in the tables
+  above, an entry in [THIRD_PARTY.md](THIRD_PARTY.md) and a copy in `src/lib/demo.ts` (the browser demo). A private
+  fork needs none of these.
 
 ## Selling on eBay
 

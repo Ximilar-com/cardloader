@@ -61,7 +61,7 @@ src-tauri/src/
   mcp/            MCP server for AI agents: mod.rs (axum on 127.0.0.1, bearer token, start/stop from Settings,
                   <config>/mcp.json), tools.rs (tools by permission group, compact JSON, card pictures), prompts.rs,
                   bridge.rs (`cardloader mcp`: stdio ↔ the running app's HTTP server)
-  local/          on-device identification: catalog.rs (pinned model files + SHA-256, model families), download.rs
+  local/          on-device identification: catalog.rs (pinned model files + SHA-256, each model's `Profile`), download.rs
                   (resumable), llama.rs (llama.cpp engine, feature-gated: devices, GPU choice, fitting),
                   identify.rs (prompts, GBNF grammars, parsing), compare.rs (agreement with Ximilar), mod.rs
                   (LocalModels: status, downloads, the loaded model and the device it runs on)
@@ -198,11 +198,11 @@ state from them.
 - The Windows scanner path never runs TWAIN in the app process: `cardloader-twain` is a sidecar speaking JSON lines
   over stdio. It must be built for `i686-pc-windows-msvc` (`scripts/prepare-sidecar.mjs`).
 - Vite 8 no longer bundles esbuild; `vite.config.ts` uses `minify: !process.env.TAURI_ENV_DEBUG`.
-- **Local model** (`Engine::Local`), by `catalog::Family`. LFM: two generations per card — whole card (name, year,
+- **Local model** (`Engine::Local`), by the model's `catalog::Profile`. LFM: two generations per card — whole card (name, year,
   game) and the enlarged bottom strip (collector number, set code); a 450M model reads small print only when it is
   enlarged, and fills a "set name" with random card text, so that field isn't asked for. The strip is the bottom 12% of
   the image: it assumes the card fills it (scans), and on a phone photo it is the table. Qwen3.5
-  (`Family::reads_whole_card`): one generation with every field (`identify::whole_prompt`/`whole_grammar`), and with
+  (`Profile::whole_card`): one generation with every field (`identify::whole_prompt`/`whole_grammar`), and with
   the card's back as a second image when the session reads both sides (`both_sides`; `VisionModel::generate` takes
   several images, one mtmd marker each). With `both_sides`, LFM's second question is about the back instead of the
   strip when the card is a sports card (session `id_mode` Sport, or the first answer's game). A local session's
@@ -228,13 +228,19 @@ state from them.
   `CardCondition::read_on`): "Light Played" is below "Good" on Cardmarket's scale and the step under Near Mint on
   Whatnot's. Small models echo the numbers a prompt suggests: spell out every step of a numeric scale, and expect
   condition labels to be more useful than numeric grades (`real_model_grades_cards`).
-- **Adding a model**: add a `ModelSpec` to `local::catalog::MODELS` (the default first, then smallest first) with a pinned revision
-  (`https://huggingface.co/api/models/<repo>` → `sha`), file sizes and SHA-256 (`.../tree/main` → `lfs.oid`), a GGUF
-  quant plus its `mmproj` (F16 or Q8: a heavily quantized vision encoder reads worse), all from the repo in
-  `homepage`. Its `family` covers what llama.cpp's built-in chat templates miss: Qwen3.5's template turns thinking
-  off with an empty `<think></think>` that the built-in ChatML lacks (`Family::answer_prefix`). `maker` and
-  `commercial_limit` drive the license note. Measure it with the opt-in test (`CARDLOADER_MODEL=<id>`) and its peak
-  memory before writing its description; mirror it in `src/lib/demo.ts`. On Metal, peak RSS leaves out weights
+- **Adding a model**: add a `ModelSpec` to `local::catalog::MODELS` (the default first, then smallest first):
+  `just model-entry <owner/repo> [<model.gguf> <mmproj.gguf>]` (`scripts/model-entry.mjs`) lists a Hugging Face
+  repo's GGUF files and writes the entry with the pinned revision, file sizes and SHA-256; a GGUF quant plus its
+  `mmproj` (F16 or Q8: a heavily quantized vision encoder reads worse), both from the repo in `homepage`, each one
+  file (no split GGUFs, no gated repos). Everything model-specific is data in its `profile` (`catalog::Profile`),
+  so a fork adds a model without touching other code (README, "Adding another model"; keep that section true):
+  `whole_card` (one question or two looks), `answer_prefix` (Qwen3.5's template turns thinking off with an empty
+  `<think></think>` that llama.cpp's built-in ChatML lacks), `chat_template` (`None` = the GGUF's; llama-cpp-2 runs
+  no Jinja, so a template llama.cpp doesn't recognise fails at load and one of its built-in names goes here),
+  `context_tokens` and `card_long_edge`. `Profile::LFM` and `QWEN35` are what the shipped models were measured
+  with (`shipped_profiles_are_unchanged`); `GENERAL` is the start for others. `catalog_is_consistent` says what is
+  wrong with an entry. `maker` and `commercial_limit` drive the license note. Measure it with the opt-in test
+  (`CARDLOADER_MODEL=<id>`) and its peak memory before writing its description; mirror it in `src/lib/demo.ts`. On Metal, peak RSS leaves out weights
   the GPU holds, so a model larger than its RSS gets `memory_mb` from its files (Qwen3.5 9B). Score it with
   `real_model_scores_cards` on labelled cards (kept outside the repo) before writing the README's accuracy table:
   modern sports cards print the number only on the back (0 numbers from the front for every model), and asking for

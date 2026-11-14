@@ -11,30 +11,60 @@ pub struct ModelFile {
     pub sha256: &'static str,
 }
 
-/// What a model needs beyond its files: how its answers are prompted.
+/// What a model needs beyond its files: how it is run and asked. Everything that differs between models is here,
+/// so another model is one more entry in [`MODELS`], starting from [`Profile::GENERAL`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Family {
-    /// Liquid AI's LFM2.5-VL.
-    Lfm,
-    /// Qwen3.5 thinks before answering unless the answer opens with an empty thought, which its chat template adds
-    /// when thinking is off; llama.cpp's built-in (ChatML) template leaves it out.
-    Qwen35,
+pub struct Profile {
+    /// Reads small print on the whole card: one question covers every field, and the card's back can come with it.
+    /// `false` for a small model, which is asked twice: about the whole card, then about the enlarged part with
+    /// the number (`identify`).
+    pub whole_card: bool,
+    /// Text the model's answer starts with, after the formatted prompt: what turns a thinking model's thinking
+    /// off, when llama.cpp's template doesn't.
+    pub answer_prefix: &'static str,
+    /// `None` is the chat template in the GGUF file. llama.cpp runs no Jinja here: it recognises the templates of
+    /// the models it knows, and for a file whose template it doesn't, this names one of its built-in ones
+    /// ("chatml", "gemma", "llama3", "mistral-v7", …).
+    pub chat_template: Option<&'static str>,
+    /// The context window to run with. A question is short, but each picture takes hundreds to a few thousand
+    /// tokens, depending on the model's vision encoder and the picture's size.
+    pub context_tokens: u32,
+    /// Long edge (px) of the card pictures given to the model. Larger shows more of the small print and takes
+    /// more tokens and time.
+    pub card_long_edge: u32,
 }
 
-impl Family {
-    /// Reads small print on the whole card: one question covers every field, and the card's back can come with it.
-    /// LFM needs the bottom strip enlarged (`identify`).
-    pub fn reads_whole_card(self) -> bool {
-        matches!(self, Family::Qwen35)
-    }
+impl Profile {
+    /// Liquid AI's LFM2.5-VL: over 512 px it tiles the picture, and it reads small print only when it is enlarged.
+    pub const LFM: Profile = Profile {
+        whole_card: false,
+        answer_prefix: "",
+        chat_template: None,
+        context_tokens: 4096,
+        card_long_edge: 768,
+    };
 
-    /// Text the model's answer starts with, after the formatted prompt.
-    pub fn answer_prefix(self) -> &'static str {
-        match self {
-            Family::Lfm => "",
-            Family::Qwen35 => "<think>\n\n</think>\n\n",
-        }
-    }
+    /// Qwen3.5 thinks before answering unless the answer opens with an empty thought, which its chat template adds
+    /// when thinking is off; llama.cpp's built-in (ChatML) template leaves it out.
+    pub const QWEN35: Profile = Profile {
+        whole_card: true,
+        answer_prefix: "<think>\n\n</think>\n\n",
+        chat_template: None,
+        context_tokens: 4096,
+        card_long_edge: 768,
+    };
+
+    /// Where any other model starts: one question about a larger picture, with room for a vision encoder that
+    /// spends more tokens on it. Change single fields with `Profile { …, ..Profile::GENERAL }`.
+    // None of the models the app ships with uses it: it is for the ones added in a fork.
+    #[allow(dead_code)]
+    pub const GENERAL: Profile = Profile {
+        whole_card: true,
+        answer_prefix: "",
+        chat_template: None,
+        context_tokens: 8192,
+        card_long_edge: 1024,
+    };
 }
 
 pub struct ModelSpec {
@@ -53,8 +83,9 @@ pub struct ModelSpec {
     pub license_url: &'static str,
     /// The license limits commercial use (LFM: above a revenue threshold).
     pub commercial_limit: bool,
+    /// The Hugging Face repository both files come from.
     pub homepage: &'static str,
-    pub family: Family,
+    pub profile: Profile,
     /// The language model, then its vision projector (mmproj).
     pub model: ModelFile,
     pub mmproj: ModelFile,
@@ -70,6 +101,7 @@ impl ModelSpec {
     }
 }
 
+/// The model new installs start with: the id of an entry in [`MODELS`].
 pub const DEFAULT_MODEL: &str = "lfm2.5-vl-3b";
 
 const LFM_LICENSE: &str = "LFM Open License v1.0";
@@ -92,9 +124,13 @@ macro_rules! hf {
 }
 
 /// The default first, then smallest first: the order the Settings page and the pickers list them in.
+///
+/// Another model (any vision model llama.cpp runs, as one GGUF and its `mmproj` in a public Hugging Face
+/// repository) is one more entry: `just model-entry <owner/repo>` writes it with the pinned revision, sizes and
+/// SHA-256. See "Adding another model" in the README.
 pub const MODELS: &[ModelSpec] = &[
     ModelSpec {
-        id: DEFAULT_MODEL,
+        id: "lfm2.5-vl-3b",
         name: "LFM2.5-VL 3B",
         tier: "Accurate",
         params: "3B",
@@ -106,7 +142,7 @@ pub const MODELS: &[ModelSpec] = &[
         license_url: LFM_LICENSE_URL,
         commercial_limit: true,
         homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-3B-GGUF",
-        family: Family::Lfm,
+        profile: Profile::LFM,
         model: ModelFile {
             name: "LFM2.5-VL-3B-Q4_K_M.gguf",
             url: hf!("LiquidAI/LFM2.5-VL-3B-GGUF" @ "6f730e9a2c454e8af9adc29db58e638e01e5957f" / "LFM2.5-VL-3B-Q4_K_M.gguf"),
@@ -133,7 +169,7 @@ pub const MODELS: &[ModelSpec] = &[
         license_url: LFM_LICENSE_URL,
         commercial_limit: true,
         homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-450M-GGUF",
-        family: Family::Lfm,
+        profile: Profile::LFM,
         model: ModelFile {
             name: "LFM2.5-VL-450M-Q4_K_M.gguf",
             url: hf!("LiquidAI/LFM2.5-VL-450M-GGUF" @ "1abed04b6fe71314d8c446a1371c03d7c332266d" / "LFM2.5-VL-450M-Q4_K_M.gguf"),
@@ -160,7 +196,7 @@ pub const MODELS: &[ModelSpec] = &[
         license_url: LFM_LICENSE_URL,
         commercial_limit: true,
         homepage: "https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF",
-        family: Family::Lfm,
+        profile: Profile::LFM,
         model: ModelFile {
             name: "LFM2.5-VL-1.6B-Q4_K_M.gguf",
             url: hf!("LiquidAI/LFM2.5-VL-1.6B-GGUF" @ "36fc16bc95133424921bcc3da009e83b2f23ffb5" / "LFM2.5-VL-1.6B-Q4_K_M.gguf"),
@@ -189,7 +225,7 @@ pub const MODELS: &[ModelSpec] = &[
         license_url: APACHE_LICENSE_URL,
         commercial_limit: false,
         homepage: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF",
-        family: Family::Qwen35,
+        profile: Profile::QWEN35,
         model: ModelFile {
             name: "Qwen3.5-4B-Q4_K_M.gguf",
             url: hf!("unsloth/Qwen3.5-4B-GGUF" @ "e87f176479d0855a907a41277aca2f8ee7a09523" / "Qwen3.5-4B-Q4_K_M.gguf"),
@@ -220,7 +256,7 @@ pub const MODELS: &[ModelSpec] = &[
         license_url: APACHE_LICENSE_URL,
         commercial_limit: false,
         homepage: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
-        family: Family::Qwen35,
+        profile: Profile::QWEN35,
         model: ModelFile {
             name: "Qwen3.5-9B-Q4_K_M.gguf",
             url: hf!("unsloth/Qwen3.5-9B-GGUF" @ "3885219b6810b007914f3a7950a8d1b469d598a5" / "Qwen3.5-9B-Q4_K_M.gguf"),
@@ -248,27 +284,98 @@ mod tests {
     fn catalog_is_consistent() {
         let ids: std::collections::HashSet<_> = MODELS.iter().map(|m| m.id).collect();
         assert_eq!(ids.len(), MODELS.len(), "unique ids");
-        assert!(find(DEFAULT_MODEL).is_some());
+        assert!(
+            find(DEFAULT_MODEL).is_some(),
+            "DEFAULT_MODEL is the id of an entry"
+        );
         for m in MODELS {
+            let id = m.id;
+            // The id is the model's folder and part of what a card's record says read it (`local/<id>`).
+            assert!(
+                !id.is_empty()
+                    && id
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || ".-".contains(c)),
+                "{id}: an id is lowercase letters, digits, '.' and '-'"
+            );
             for f in m.files() {
-                assert!(f.url.ends_with(&format!("/{}", f.name)), "{}", f.url);
+                assert!(
+                    f.url.ends_with(&format!("/{}", f.name)),
+                    "{id}: {} isn't the file {}",
+                    f.url,
+                    f.name
+                );
                 // Each file comes from the model's own repository, at a pinned revision.
                 assert!(
                     f.url.starts_with(&format!("{}/resolve/", m.homepage)),
-                    "{}",
-                    f.url
+                    "{id}: {} isn't in the repository {}",
+                    f.url,
+                    m.homepage
                 );
-                assert_eq!(f.sha256.len(), 64);
-                assert!(f.size > 0);
+                assert!(
+                    f.name.ends_with(".gguf"),
+                    "{id}: {} isn't a GGUF file",
+                    f.name
+                );
+                assert!(
+                    f.sha256.len() == 64 && f.sha256.chars().all(|c| c.is_ascii_hexdigit()),
+                    "{id}: {} needs its SHA-256 (64 hex digits)",
+                    f.name
+                );
+                assert!(f.size > 0, "{id}: {} needs its size in bytes", f.name);
             }
-            assert!(m.name.ends_with(m.params), "{}", m.name);
-            assert!(m.homepage.starts_with("https://huggingface.co/"));
-            assert!(m.license_url.starts_with("https://"));
+            assert_ne!(
+                m.model.name, m.mmproj.name,
+                "{id}: the model and its mmproj are two files"
+            );
+            assert!(
+                m.name.ends_with(m.params),
+                "{id}: the name \"{}\" ends with its parameter count \"{}\"",
+                m.name,
+                m.params
+            );
+            assert!(
+                m.homepage.starts_with("https://huggingface.co/"),
+                "{id}: the homepage is the Hugging Face repository"
+            );
+            assert!(
+                m.license_url.starts_with("https://"),
+                "{id}: the license needs a link"
+            );
             assert!(
                 m.memory_mb as u64 * 1_000_000 > m.size(),
-                "{} needs at least its files",
-                m.id
+                "{id}: memory_mb is at least the size of its files"
             );
+            assert!(
+                m.profile.context_tokens >= 2048,
+                "{id}: a picture and its question need a context of 2048 tokens or more"
+            );
+            assert!(
+                m.profile.card_long_edge >= 256,
+                "{id}: nothing is readable on a picture that small"
+            );
+            assert!(
+                m.profile.chat_template != Some(""),
+                "{id}: chat_template names a template, or is None"
+            );
+        }
+    }
+
+    /// The models the app ships with are asked exactly as they were measured.
+    #[test]
+    fn shipped_profiles_are_unchanged() {
+        for (id, whole, prefix) in [
+            ("lfm2.5-vl-3b", false, ""),
+            ("lfm2.5-vl-450m", false, ""),
+            ("qwen3.5-4b", true, "<think>\n\n</think>\n\n"),
+            ("qwen3.5-9b", true, "<think>\n\n</think>\n\n"),
+        ] {
+            let p = find(id).unwrap().profile;
+            assert_eq!(
+                (p.whole_card, p.answer_prefix, p.chat_template),
+                (whole, prefix, None)
+            );
+            assert_eq!((p.context_tokens, p.card_long_edge), (4096, 768), "{id}");
         }
     }
 }

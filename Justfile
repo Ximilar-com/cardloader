@@ -79,6 +79,10 @@ test:
 update-version version *flags:
     node scripts/release.mjs {{version}} {{flags}}
 
+# A catalog entry for another local model, from its Hugging Face repo: `just model-entry owner/repo [model.gguf mmproj.gguf]`
+model-entry *args:
+    node scripts/model-entry.mjs {{args}}
+
 # Regenerate app icons from assets/app-icon.svg
 icons:
     npx tauri icon assets/app-icon.svg -o src-tauri/icons
