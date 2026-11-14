@@ -10,6 +10,10 @@
   on your computer and in Ximilar Cards Cloud.
 </p>
 
+<p align="center">
+  <img src="assets/cardloader-session.webp" width="800" alt="A Cardloader session identifying Pokémon, Magic, Yu-Gi-Oh!, One Piece and sports cards with match confidence, price and grade" />
+</p>
+
 ---
 
 Cardloader is an open-source desktop app for Windows, macOS and Linux, built with [Tauri 2](https://tauri.app)
