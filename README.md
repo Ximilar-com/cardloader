@@ -6,8 +6,8 @@
 
 <p align="center">
   Scan trading, sports and comic cards from a folder or a document scanner, identify and grade them with the
-  <a href="https://docs.ximilar.com/collectibles/recognition">Ximilar API</a>, and keep every run as a session —
-  on your computer and in Ximilar Cards Cloud.
+  <a href="https://docs.ximilar.com/collectibles/recognition">Ximilar API</a> or a local vision model that runs
+  offline on your computer, and keep every run as a session — on your computer and in Ximilar Cards Cloud.
 </p>
 
 <p align="center">
