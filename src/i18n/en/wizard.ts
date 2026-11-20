@@ -6,6 +6,22 @@ export default {
     title: "Choose your language",
     text: "Cardloader will speak it from now on.",
   },
+  task: {
+    title: "What should Cardloader do with your cards?",
+    text: "This is where new sessions start; you can choose again for every session.",
+    identify: "Identify them",
+    identifyHint: "Name, set, number and price of every card, and a grade if you like",
+    grade: "Only grade them",
+    gradeHint: "A full grade of every card (corners, edges, surface, centering), without identifying it",
+    condition: "Only tell their condition",
+    conditionHint: "A condition of every card, e.g. Near Mint, for listings, without identifying it",
+    crop: "Only crop them",
+    cropHint: "Every card cut out of its image and straightened, saved as pictures in a folder",
+  },
+  token: {
+    title: "Connect the Ximilar API",
+    text: "Cropping runs on the Ximilar API: it needs an API token and internet.",
+  },
   interests: {
     title: "What will you scan?",
     text: "Pick everything you collect.",
@@ -31,6 +47,8 @@ export default {
     conditionHint: "A quick condition, e.g. Near Mint, for listings",
     prices: "Prices",
     pricesHint: "Market prices of each card",
+    crops: "Cropped pictures",
+    cropsHint: "Each card cut out and straightened, saved in a folder",
   },
   sources: {
     title: "How will you bring in cards?",
@@ -46,6 +64,7 @@ export default {
   },
   engine: {
     title: "What should identify the cards?",
+    gradeTitle: "What should grade the cards?",
     ximilar: "Ximilar API",
     ximilarHint: "Precise identification, prices and grading. Needs an API token and internet.",
     local: "Local AI model",
@@ -56,6 +75,7 @@ export default {
     tokenPaste: "Paste your token",
     tokenHelp: "Find it in the <link>Ximilar App</link> under your profile. You can add it later in Settings.",
     pricesNeedApi: "Prices need the Ximilar API.",
+    cropsNeedApi: "Cropped pictures need the Ximilar API: add your token in Settings.",
     roughGrades: "The local model’s grades and conditions are rough estimates of a small model, not a grader’s.",
   },
 };

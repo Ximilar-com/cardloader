@@ -23,6 +23,9 @@ export type IdMode = "auto" | "tcg" | "sport" | "comics" | "slab";
 /** What identifies the cards: the Ximilar API or a vision language model on this computer. */
 export type Engine = "ximilar" | "local";
 export type GradingMode = "off" | "condition" | "grade" | "centering";
+/** What a session does with each card: identify it (and grade, price…), or only grade it, tell its condition or crop
+ * it. */
+export type Task = "identify" | "grade" | "condition" | "crop";
 export type Pairing = "single" | "front_back";
 export type SessionStatus = "draft" | "running" | "paused" | "stopped" | "completed" | "failed";
 export type ItemStatus = "queued" | "recognizing" | "grading" | "done" | "error";
@@ -43,6 +46,13 @@ export interface ScanSettings {
 }
 
 export interface SessionOptions {
+  task: Task;
+  /** Also save each card cropped (a crop-only session always does). */
+  saveCrops: boolean;
+  /** Where the cropped pictures go; empty = `crops` in the session's own folder. */
+  cropFolder: string;
+  /** Ximilar evens out the levels and sharpens the crop. */
+  cropLevel: boolean;
   priceStats: boolean;
   slab: boolean;
   grading: GradingMode;
@@ -220,14 +230,22 @@ export interface ItemDetail extends ItemSummary {
   ebayOfferId: string | null;
   /** The card's pictures uploaded to eBay. */
   ebayImages: string[];
+  /** Its crop job's result and the cropped pictures saved. */
+  crop: Json | null;
+  cropImages: string[];
 }
 
 export interface Settings {
   apiBaseUrl: string;
   workspace: string | null;
   defaultFolder: string | null;
+  /** The folder sessions last saved cropped pictures to. */
+  defaultCropFolder: string | null;
+  /** New sessions that identify or grade also save the cards cropped. */
+  defaultSaveCrops: boolean;
   defaultScanner: string | null;
   scan: ScanSettings;
+  defaultTask: Task;
   defaultIdMode: IdMode;
   defaultGrading: GradingMode;
   defaultPairing: Pairing;
@@ -605,6 +623,8 @@ export const api = {
   deleteSession: (id: string, deleteRemote = false) => invoke<void>("delete_session", { id, deleteRemote }),
   /** The session's image folder (the scans, for scanner sessions). */
   sessionFolder: (id: string) => invoke<string>("session_folder", { id }),
+  /** A crop session's folder of cropped pictures (made if missing). */
+  cropsFolder: (id: string) => invoke<string>("crops_folder", { id }),
   exportCsv: (id: string, path: string) => invoke<number>("export_csv", { id, path }),
   previewCsv: (path: string) => invoke<CsvPreview>("preview_csv", { path }),
   /** A new session from a CSV; with `reanalyze`, identified rows with an image are analysed again. */

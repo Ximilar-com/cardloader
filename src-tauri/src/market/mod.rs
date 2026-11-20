@@ -185,6 +185,8 @@ pub fn test_item(id_type: &str, game: &str) -> ItemDetail {
         ),
         grading: None,
         grading_images: vec![],
+        crop: None,
+        crop_images: vec![],
         calls: 1,
         analyzed_at: None,
         remote_id: None,

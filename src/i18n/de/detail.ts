@@ -99,5 +99,8 @@ const messages: Messages<typeof en> = {
     priceInvalid: "Der Preis muss eine positive Zahl sein.",
     notIdentified: "Die Kartenfelder lassen sich bearbeiten, sobald die Karte erkannt ist.",
   },
+  crop: {
+    title: "Zugeschnittene Karte",
+  },
 };
 export default messages;

@@ -3,6 +3,7 @@ import type { Settings } from "./api";
 import { answersFromSettings, answersToSettings, type SetupAnswers } from "./setup";
 
 const base = {
+  defaultTask: "identify",
   defaultIdMode: "auto",
   defaultSubcategory: "",
   defaultGrading: "off",
@@ -13,6 +14,7 @@ const base = {
 } as Settings;
 
 const answers = (a: Partial<SetupAnswers>): SetupAnswers => ({
+  task: "identify",
   interests: ["tcg"],
   games: [],
   goals: [],
@@ -52,6 +54,32 @@ describe("setup", () => {
     expect(answersToSettings(answers({ goals: ["grading", "condition"] }), base).defaultGrading).toBe("grade");
     expect(answersToSettings(answers({ goals: ["condition"] }), base).defaultGrading).toBe("condition");
     expect(answersToSettings(answers({}), base).defaultGrading).toBe("off");
+  });
+
+  it("keeps the identification defaults for cropping only", () => {
+    const s = answersToSettings(answers({ task: "crop", interests: ["sport"], goals: ["prices"] }), base);
+    expect(s.defaultTask).toBe("crop");
+    expect(s.defaultIdMode).toBe("auto");
+    expect(s.priceStats).toBe(true);
+    expect(answersFromSettings(s).task).toBe("crop");
+  });
+
+  it("keeps the identification defaults when only grading or reading the condition", () => {
+    for (const task of ["grade", "condition"] as const) {
+      const s = answersToSettings(answers({ task, interests: ["sport"], engine: "local" }), base);
+      expect(s.defaultTask).toBe(task);
+      expect(s.engine).toBe("local");
+      expect(s.defaultIdMode).toBe("auto");
+      expect(s.defaultGrading).toBe("off");
+    }
+  });
+
+  it("saves crops when asked, as part of identifying", () => {
+    const s = answersToSettings(answers({ goals: ["grading", "crops"] }), base);
+    expect(s.defaultSaveCrops).toBe(true);
+    expect(s.defaultGrading).toBe("grade");
+    expect(answersFromSettings(s).goals).toContain("crops");
+    expect(answersToSettings(answers({}), base).defaultSaveCrops).toBe(false);
   });
 
   it("asks for prices only when wanted", () => {

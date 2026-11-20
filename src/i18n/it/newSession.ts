@@ -64,6 +64,7 @@ const messages: Messages<typeof en> = {
       one: "circa {count} chiamata API (Magic AI può aggiungerne altre)",
       other: "circa {count} chiamate API (Magic AI può aggiungerne altre)",
     },
+    localGrade: "gradate su questo computer, nessuna chiamata API",
   },
   scanner: {
     label: "Scanner",
@@ -187,6 +188,18 @@ const messages: Messages<typeof en> = {
     hint: "Aggiunge le carte a una sessione iniziata prima, ad es. su un altro computer.",
     hintSkips:
       "Aggiunge le carte a una sessione iniziata prima, ad es. su un altro computer; le immagini che ha già (riconosciute dal nome del file) vengono saltate.",
+  },
+  task: "Attività",
+  gradeWith: "Gradazione con",
+  crop: {
+    folder: "Salva i ritagli in",
+    choose: "Scegli la cartella in cui salvare le carte ritagliate.",
+    hint: "File JPEG con il nome delle immagini della carta; un nome già usato riceve _2, _3…",
+    level: "Uniforma i colori e aumenta la nitidezza",
+    levelHint: "Disattivato: la carta come scansionata, solo ritagliata e raddrizzata.",
+    also: "Salva anche le carte ritagliate",
+    alsoHint:
+      "Ogni carta ritagliata dalla sua immagine e raddrizzata, come file JPEG in una cartella. Una chiamata API in più per carta.",
   },
 };
 export default messages;

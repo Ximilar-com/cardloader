@@ -34,6 +34,8 @@ const messages: Messages<typeof en> = {
     conditionHint: "Un état rapide, p. ex. Near Mint, pour les annonces",
     prices: "Prix",
     pricesHint: "Prix du marché de chaque carte",
+    crops: "Cartes détourées",
+    cropsHint: "Chaque carte détourée et redressée, enregistrée dans un dossier",
   },
   sources: {
     title: "Comment allez-vous importer les cartes ?",
@@ -62,6 +64,24 @@ const messages: Messages<typeof en> = {
     pricesNeedApi: "Les prix nécessitent l’API Ximilar.",
     roughGrades:
       "Les notes et états du modèle local sont des estimations grossières d’un petit modèle, pas celles d’un gradeur.",
+    cropsNeedApi: "Les cartes détourées nécessitent l’API Ximilar : ajoutez votre jeton dans les Réglages.",
+    gradeTitle: "Qu’est-ce qui doit grader les cartes ?",
+  },
+  task: {
+    title: "Que doit faire Cardloader de vos cartes ?",
+    text: "Les nouvelles sessions partent de ce choix ; vous pouvez le changer pour chaque session.",
+    identify: "Les identifier",
+    identifyHint: "Nom, extension, numéro et prix de chaque carte, et une note si vous voulez",
+    grade: "Seulement les grader",
+    gradeHint: "Une note complète de chaque carte (coins, bords, surface, centrage), sans l’identifier",
+    condition: "Seulement leur état",
+    conditionHint: "L’état de chaque carte, p. ex. Near Mint, pour les annonces, sans l’identifier",
+    crop: "Seulement les détourer",
+    cropHint: "Chaque carte détourée de son image et redressée, enregistrée comme image dans un dossier",
+  },
+  token: {
+    title: "Connecter l’API Ximilar",
+    text: "Le détourage passe par l’API Ximilar : il faut un jeton d’API et internet.",
   },
 };
 export default messages;

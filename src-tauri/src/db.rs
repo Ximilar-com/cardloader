@@ -19,6 +19,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/005_hosted_images.sql"),
     include_str!("../migrations/006_review.sql"),
     include_str!("../migrations/007_agent_review.sql"),
+    include_str!("../migrations/008_crop.sql"),
 ];
 
 #[derive(Clone)]
@@ -33,8 +34,26 @@ const ITEM_SUMMARY_COLUMNS: &str =
      agent_reviewed, review_note";
 
 /// An identified card nobody has accepted or corrected yet, whatever its confidence (the same rule as
-/// `needsReview` in `src/lib/cardview.ts`). Columns of `items` as `i`.
-const TO_REVIEW: &str = "(i.status IN ('done', 'grading') AND i.reviewed = 0)";
+/// `needsReview` in `src/lib/cardview.ts`). A crop session's cards have no type: there is nothing to review.
+/// Columns of `items` as `i`.
+const TO_REVIEW: &str =
+    "(i.status IN ('done', 'grading') AND i.reviewed = 0 AND i.id_type IS NOT NULL)";
+
+/// The async card-grader jobs a card can wait for at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobKind {
+    Grading,
+    Crop,
+}
+
+impl JobKind {
+    fn column(self) -> &'static str {
+        match self {
+            JobKind::Grading => "grading_job_id",
+            JobKind::Crop => "crop_job_id",
+        }
+    }
+}
 
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
@@ -255,14 +274,14 @@ impl Db {
     }
 
     /// After a restart nothing is running: running sessions become paused, half-done items queued. An item
-    /// waiting for grading without a job (the app quit before it was submitted) has nothing to poll, so it is
-    /// half-done too.
+    /// waiting for grading (or its crop) without a job (the app quit before it was submitted) has nothing to poll,
+    /// so it is half-done too.
     pub fn recover_interrupted(&self) -> Result<()> {
         self.with(|c| {
             c.execute_batch(
                 "UPDATE sessions SET status = 'paused' WHERE status = 'running';
                  UPDATE items SET status = 'queued' WHERE status = 'recognizing'
-                    OR (status = 'grading' AND grading_job_id IS NULL);",
+                    OR (status = 'grading' AND grading_job_id IS NULL AND crop_job_id IS NULL);",
             )
         })
     }
@@ -501,7 +520,7 @@ impl Db {
                 let mut n = 0;
                 for id in ids {
                     n += c.execute(
-                        "UPDATE items SET status = 'queued', error = NULL, grading_job_id = NULL
+                        "UPDATE items SET status = 'queued', error = NULL, grading_job_id = NULL, crop_job_id = NULL
                          WHERE id = ?1 AND session_id = ?2 AND status IN ('error', 'done')",
                         params![id, session_id],
                     )?;
@@ -509,7 +528,7 @@ impl Db {
                 Ok(n)
             }
             None => c.execute(
-                "UPDATE items SET status = 'queued', error = NULL, grading_job_id = NULL
+                "UPDATE items SET status = 'queued', error = NULL, grading_job_id = NULL, crop_job_id = NULL
                  WHERE session_id = ?1 AND status = 'error'",
                 params![session_id],
             ),
@@ -786,16 +805,22 @@ impl Db {
         Ok(())
     }
 
-    pub fn set_grading_job(&self, id: i64, job_id: &str) -> Result<()> {
+    /// A submitted async job of the card (one call): it waits in `grading` until every job it has is stored.
+    pub fn set_job(&self, id: i64, kind: JobKind, job_id: &str) -> Result<()> {
+        let column = kind.column();
         self.with(|c| {
             c.execute(
-                "UPDATE items SET grading_job_id = ?2, calls = calls + 1, status = 'grading', updated_at = ?3 WHERE id = ?1",
+                &format!(
+                    "UPDATE items SET {column} = ?2, calls = calls + 1, status = 'grading', updated_at = ?3
+                     WHERE id = ?1"
+                ),
                 params![id, job_id, now()],
             )
         })?;
         Ok(())
     }
 
+    /// A grading result. The card is done unless its crop is still to come.
     pub fn save_grading(
         &self,
         id: i64,
@@ -806,8 +831,9 @@ impl Db {
     ) -> Result<()> {
         self.with(|c| {
             c.execute(
-                "UPDATE items SET grade = ?2, condition = ?3, grading = ?4, grading_images = ?5, status = 'done',
-                    error = NULL, updated_at = ?6, rev = rev + 1
+                "UPDATE items SET grade = ?2, condition = ?3, grading = ?4, grading_images = ?5, grading_job_id = NULL,
+                    status = CASE WHEN crop_job_id IS NULL THEN 'done' ELSE 'grading' END,
+                    error = NULL, updated_at = ?6, rev = rev + 1, analyzed_at = COALESCE(analyzed_at, ?6)
                  WHERE id = ?1",
                 params![id, grade, condition, raw.to_string(), serde_json::to_string(images).unwrap_or_default(), now()],
             )
@@ -815,15 +841,51 @@ impl Db {
         Ok(())
     }
 
-    /// Items waiting for an async grading result: (item id, job id).
-    pub fn grading_jobs(&self, session_id: &str) -> Result<Vec<(i64, String)>> {
+    /// A crop job's result: the cropped pictures saved, and the error of a side that has none. The card is done
+    /// unless its grading is still to come. Nothing Cards Cloud has changes, so the revision stays.
+    pub fn save_crop(
+        &self,
+        id: i64,
+        raw: &Value,
+        images: &[String],
+        error: Option<&str>,
+    ) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET crop = ?2, crop_images = ?3, crop_job_id = NULL,
+                    status = CASE WHEN ?4 IS NOT NULL THEN 'error' WHEN grading_job_id IS NOT NULL THEN 'grading'
+                        ELSE 'done' END,
+                    error = ?4, analyzed_at = COALESCE(analyzed_at, ?5), updated_at = ?5
+                 WHERE id = ?1",
+                params![id, raw.to_string(), serde_json::to_string(images).unwrap_or_default(), error, now()],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// The async jobs a session's cards wait for: (item id, kind, job id).
+    pub fn jobs(&self, session_id: &str) -> Result<Vec<(i64, JobKind, String)>> {
         self.with(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, grading_job_id FROM items
-                 WHERE session_id = ?1 AND status = 'grading' AND grading_job_id IS NOT NULL ORDER BY seq",
+                "SELECT id, grading_job_id, crop_job_id FROM items
+                 WHERE session_id = ?1 AND status = 'grading'
+                    AND (grading_job_id IS NOT NULL OR crop_job_id IS NOT NULL)
+                 ORDER BY seq",
             )?;
-            let rows = stmt.query_map(params![session_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
-            rows.collect()
+            let rows = stmt.query_map(params![session_id], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                ))
+            })?;
+            let mut jobs = Vec::new();
+            for row in rows {
+                let (id, grading, crop) = row?;
+                jobs.extend(grading.map(|j| (id, JobKind::Grading, j)));
+                jobs.extend(crop.map(|j| (id, JobKind::Crop, j)));
+            }
+            Ok(jobs)
         })
     }
 
@@ -852,7 +914,7 @@ impl Db {
         self.with(|c| {
             c.query_row(
                 "SELECT event_id, preview_path, back_preview_path, recognition, grading, grading_images, calls, analyzed_at,
-                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images
+                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images, crop, crop_images
                  FROM items WHERE id = ?1",
                 params![id],
                 |r| {
@@ -875,6 +937,10 @@ impl Db {
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
                         hosted_images: json_col(r.get(12)?)
+                            .and_then(|v| serde_json::from_value(v).ok())
+                            .unwrap_or_default(),
+                        crop: json_col(r.get(13)?),
+                        crop_images: json_col(r.get(14)?)
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
                     })
@@ -1553,14 +1619,33 @@ mod tests {
             .unwrap();
             ids.push(id);
         }
-        db.set_grading_job(ids[1], "job-1").unwrap();
+        db.set_job(ids[1], JobKind::Grading, "job-1").unwrap();
+        db.set_job(ids[1], JobKind::Crop, "job-2").unwrap();
         db.recover_interrupted().unwrap();
         assert_eq!(db.item_summary(ids[0]).unwrap().status, ItemStatus::Queued);
         assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Grading);
         assert_eq!(
-            db.grading_jobs(&s.id).unwrap(),
-            vec![(ids[1], "job-1".to_string())]
+            db.jobs(&s.id).unwrap(),
+            vec![
+                (ids[1], JobKind::Grading, "job-1".to_string()),
+                (ids[1], JobKind::Crop, "job-2".to_string())
+            ]
         );
         assert_eq!(db.claim_next(&s.id).unwrap(), Some(ids[0]));
+
+        // The card is done once both its grading and its crop are in, whichever comes first.
+        db.save_grading(ids[1], Some(8.0), None, &Value::Null, &[])
+            .unwrap();
+        assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Grading);
+        assert_eq!(
+            db.jobs(&s.id).unwrap(),
+            vec![(ids[1], JobKind::Crop, "job-2".to_string())]
+        );
+        db.save_crop(ids[1], &Value::Null, &["/crops/a.jpg".into()], None)
+            .unwrap();
+        let item = db.item(ids[1]).unwrap();
+        assert_eq!(item.summary.status, ItemStatus::Done);
+        assert_eq!(item.crop_images, vec!["/crops/a.jpg".to_string()]);
+        assert!(db.jobs(&s.id).unwrap().is_empty());
     }
 }

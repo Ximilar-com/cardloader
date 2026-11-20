@@ -43,6 +43,12 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Grading.** [Card Grading](https://docs.ximilar.com/collectibles/card-grading) can grade each card in full
   (corners, edges, surface, centering, final grade) using both sides, check its condition, or measure centering
   only. The grading overlays are saved alongside the session.
+- **Cropped pictures.** Ximilar can cut each card out of its image, straighten it and even out its colours
+  (`crop_level` of Card Grading); Cardloader saves the crops, front and back, as JPEGs named after the card's files
+  in a folder you choose. Any session can **Also save cropped pictures**, next to identifying or grading the cards.
+- **Grade, condition or crop only.** A session's **Task** can skip identification: **Grade only** and **Condition
+  only** send each card straight to grading (with Ximilar or the local model), and **Crop only** just saves the
+  crops.
 - **Scanner.** Cardloader drives a RICOH/Fujitsu **fi-8170**, or any SANE/TWAIN document scanner, in duplex batches.
   Front and back are paired automatically, in the order you feed them (front or back first), and pages fed upside
   down can be turned as they are scanned. On Windows, **Settings → Scanner → Driver settings…** opens the scanner's
@@ -133,7 +139,7 @@ To build and install from source instead, see [Development](#development) and ru
 To bring in cards you already have in a spreadsheet, click **Import CSV** instead (see below).
 
 Every analysed card costs Ximilar API credits: one call per recognition (two in Auto mode), plus one per
-grading. Cards Cloud bills one call per session and one per stored image. See [Ximilar pricing](https://www.ximilar.com/pricing/).
+grading and one per crop. A grade-, condition- or crop-only session makes one call per card (two if it also crops). Cards Cloud bills one call per session and one per stored image. See [Ximilar pricing](https://www.ximilar.com/pricing/).
 
 ## Local model
 
@@ -412,8 +418,8 @@ errors). Start with small stacks of up to about 10 cards, and don't feed sleeved
 - **Settings → Scanner** applies to every scanner session, also when it is continued.
 - **Rotation: Upside down** turns each page as it is scanned, for cards fed bottom edge first.
 - **Side order: Back, then front** is for cards fed back side up.
-- A session that doesn't grade scans at **300 dpi**: identification gets a preview of at most 1600 px, which a
-  300 dpi card nearly fills. Grading uses the full 600 dpi scan.
+- A session that doesn't grade or crop scans at **300 dpi**: identification gets a preview of at most 1600 px,
+  which a 300 dpi card nearly fills. Grading and cropping use the full 600 dpi scan.
 
 | OS | What to install | How Cardloader talks to it |
 | --- | --- | --- |

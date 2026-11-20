@@ -39,6 +39,7 @@ export default function DetailPanel({
   position,
   ebay,
   extra,
+  cropping,
 }: {
   view: CardView;
   onClose: () => void;
@@ -62,6 +63,8 @@ export default function DetailPanel({
   position?: string;
   /** Shown under the image, e.g. a link to the card's session. */
   extra?: ReactNode;
+  /** The card is a crop session's. */
+  cropping?: boolean;
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
@@ -99,7 +102,7 @@ export default function DetailPanel({
         <div className="min-w-0 flex-1">
           <h2 className="selectable text-base leading-snug font-semibold">{view.title}</h2>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {view.status && <StatusChip status={view.status} />}
+            {view.status && <StatusChip status={view.status} cropping={cropping} />}
             {view.idType && <span className="text-[11px] font-medium text-slate-500 uppercase">{view.idType}</span>}
             <ConfidenceChip value={view.confidence} />
             {view.picked && !view.edited && <PickedChip />}
@@ -357,6 +360,8 @@ export default function DetailPanel({
 
         <Files images={view.images} />
 
+        <Crops images={view.cropImages} />
+
         <Grading view={view} />
 
         {view.priceStats.length > 0 && (
@@ -576,6 +581,36 @@ function Grading({ view }: { view: CardView }) {
           ))}
         </div>
       )}
+    </Section>
+  );
+}
+
+/** A crop job's pictures, large: they are what the session is for. */
+function Crops({ images }: { images: CardView["cropImages"] }) {
+  const t = useT();
+  if (!images.length) return null;
+  return (
+    <Section title={t("detail.crop.title")}>
+      <div className="grid grid-cols-2 gap-2">
+        {images.map((g) => (
+          <div key={g.path ?? g.src} className="space-y-1">
+            <button
+              onClick={() => g.path && openPath(g.path)}
+              className="block w-full overflow-hidden rounded border border-slate-200 dark:border-slate-800"
+              title={t("detail.grading.openImage", { label: g.label })}
+            >
+              <img src={g.src} alt={g.label} className="h-56 w-full bg-slate-100 object-contain dark:bg-slate-900" />
+            </button>
+            <button
+              className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              onClick={() => g.path && revealItemInDir(g.path)}
+              title={t("detail.files.showLabel", { label: g.label })}
+            >
+              <FolderOpen className="h-3 w-3" /> {g.label}
+            </button>
+          </div>
+        ))}
+      </div>
     </Section>
   );
 }

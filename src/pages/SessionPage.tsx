@@ -58,7 +58,18 @@ import {
   type Sort,
   type SortKey,
 } from "../lib/cardview";
-import { dateTime, duration, engineLabels, eta, idModeLabels, price, sourceLabels } from "../lib/format";
+import {
+  dateTime,
+  duration,
+  engineLabels,
+  eta,
+  cropsOf,
+  gradingOf,
+  idModeLabels,
+  price,
+  sourceLabels,
+  taskLabels,
+} from "../lib/format";
 import { rich, t, useT } from "../i18n";
 
 export default function SessionPage() {
@@ -279,6 +290,12 @@ function SessionView({ id }: { id: string }) {
   const { counts, status } = session;
   const running = status === "running";
   const active = running || status === "paused";
+  // Grade-only and crop-only sessions don't identify: no matches to review, sell or sync.
+  const identifies = session.options.task === "identify";
+  const cropOnly = session.options.task === "crop";
+  const savesCrops = cropsOf(session.options);
+  // A card waiting only for its crop shows "Cropping", not "Grading".
+  const cropping = savesCrops && gradingOf(session.options) === "off";
 
   return (
     <div className="flex h-full">
@@ -317,12 +334,27 @@ function SessionView({ id }: { id: string }) {
                 )}
                 <span>·</span>
                 <span>
-                  {session.options.engine === "local" ? engineLabels().local : idModeLabels()[session.idMode]}
+                  {!identifies
+                    ? taskLabels()[session.options.task]
+                    : session.options.engine === "local"
+                      ? engineLabels().local
+                      : idModeLabels()[session.idMode]}
                 </span>
-                {session.options.grading !== "off" && (
+                {savesCrops && (
+                  <button
+                    className="flex shrink-0 items-center gap-1 hover:underline"
+                    onClick={() => api.cropsFolder(id).then(openPath).catch(toastError)}
+                    title={session.options.cropFolder || undefined}
+                  >
+                    <FolderOpen className="h-3 w-3" /> {t("session.actions.showCrops")}
+                  </button>
+                )}
+                {(identifies || session.options.task === "grade") && gradingOf(session.options) !== "off" && (
                   <>
                     <span>·</span>
-                    <span>{t("session.grading", { mode: t(`status.gradingShort.${session.options.grading}`) })}</span>
+                    <span>
+                      {t("session.grading", { mode: t(`status.gradingShort.${gradingOf(session.options)}`) })}
+                    </span>
                   </>
                 )}
                 <span>·</span>
@@ -363,7 +395,7 @@ function SessionView({ id }: { id: string }) {
                   <RotateCcw className="h-4 w-4" /> {t("session.retryFailed", { count: counts.errors })}
                 </button>
               )}
-              {!active && counts.done > 0 && (counts.synced < counts.done || session.syncError) && (
+              {identifies && !active && counts.done > 0 && (counts.synced < counts.done || session.syncError) && (
                 <button className="btn" onClick={() => act(() => api.syncSession(id))} title={t("session.uploadTitle")}>
                   <CloudUpload className="h-4 w-4" /> {t("session.upload")}
                 </button>
@@ -378,10 +410,12 @@ function SessionView({ id }: { id: string }) {
                   <Send className="h-4 w-4" /> {t("session.publishOnEbay")}
                 </button>
               )}
-              <Menu items={actions.sellMenu(session)} label={t("session.sellMenu")}>
-                <Store className="h-4 w-4" /> {t("session.sellExport")}{" "}
-                <ChevronDown className="h-3.5 w-3.5 opacity-60" />
-              </Menu>
+              {identifies && (
+                <Menu items={actions.sellMenu(session)} label={t("session.sellMenu")}>
+                  <Store className="h-4 w-4" /> {t("session.sellExport")}{" "}
+                  <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+                </Menu>
+              )}
               <Menu items={actions.menu(session, { sell: false })} label={t("session.sessionActions")} />
             </div>
           </div>
@@ -398,7 +432,11 @@ function SessionView({ id }: { id: string }) {
                 <span className="text-accent">{t("session.progress.inProgress", { count: counts.inProgress })}</span>
               )}
               {counts.grading > 0 && (
-                <span className="text-violet-600">{t("session.progress.grading", { count: counts.grading })}</span>
+                <span className="text-violet-600">
+                  {cropping
+                    ? t("session.progress.cropping", { count: counts.grading })
+                    : t("session.progress.grading", { count: counts.grading })}
+                </span>
               )}
               {counts.errors > 0 && (
                 <span className="text-red-600">{t("session.progress.failed", { count: counts.errors })}</span>
@@ -476,7 +514,7 @@ function SessionView({ id }: { id: string }) {
               <span className="font-medium">{t("session.bulk.selected", { count: checkedRows.length })}</span>
               <span className="flex-1" />
               {/* Accept and Unaccept share the first place: a card shows the one it can do. */}
-              {checkedRows.some((r) => !r.reviewed || r.byAgent) && (
+              {identifies && checkedRows.some((r) => !r.reviewed || r.byAgent) && (
                 <button
                   className="btn px-2 py-1 text-xs"
                   onClick={() => accept(checkedIds)}
@@ -485,7 +523,7 @@ function SessionView({ id }: { id: string }) {
                   <Check className="h-3.5 w-3.5" /> {t("session.bulk.accept")}
                 </button>
               )}
-              {checkedRows.some((r) => r.accepted) && (
+              {identifies && checkedRows.some((r) => r.accepted) && (
                 <button
                   className="btn px-2 py-1 text-xs"
                   onClick={() =>
@@ -502,13 +540,15 @@ function SessionView({ id }: { id: string }) {
               <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedIds)}>
                 <MapPin className="h-3.5 w-3.5" /> {t("session.bulk.setLocation")}
               </button>
-              <button
-                className="btn px-2 py-1 text-xs"
-                onClick={() => turnUpright(checkedIds)}
-                title={t("session.bulk.turnUprightTitle")}
-              >
-                <RotateCw className="h-3.5 w-3.5" /> {t("session.bulk.turnUpright")}
-              </button>
+              {identifies && (
+                <button
+                  className="btn px-2 py-1 text-xs"
+                  onClick={() => turnUpright(checkedIds)}
+                  title={t("session.bulk.turnUprightTitle")}
+                >
+                  <RotateCw className="h-3.5 w-3.5" /> {t("session.bulk.turnUpright")}
+                </button>
+              )}
               <button
                 className="btn px-2 py-1 text-xs"
                 disabled={active}
@@ -545,15 +585,19 @@ function SessionView({ id }: { id: string }) {
               <Chip on={filter === "all"} onClick={() => setFilter("all")}>
                 {t("session.filter.all", { count: rows.length })}
               </Chip>
-              <Chip on={filter === "review"} onClick={() => setFilter("review")} disabled={!tally.review}>
-                <CircleQuestionMark className="h-3.5 w-3.5" /> {t("session.filter.review", { count: tally.review })}
-              </Chip>
+              {identifies && (
+                <Chip on={filter === "review"} onClick={() => setFilter("review")} disabled={!tally.review}>
+                  <CircleQuestionMark className="h-3.5 w-3.5" /> {t("session.filter.review", { count: tally.review })}
+                </Chip>
+              )}
               <Chip on={filter === "failed"} onClick={() => setFilter("failed")} disabled={!tally.failed}>
                 {t("session.filter.failed", { count: tally.failed })}
               </Chip>
-              <Chip on={filter === "corrected"} onClick={() => setFilter("corrected")} disabled={!tally.corrected}>
-                {t("session.filter.corrected", { count: tally.corrected })}
-              </Chip>
+              {identifies && (
+                <Chip on={filter === "corrected"} onClick={() => setFilter("corrected")} disabled={!tally.corrected}>
+                  {t("session.filter.corrected", { count: tally.corrected })}
+                </Chip>
+              )}
               {(tally.agent > 0 || filter === "agent") && (
                 <Chip on={filter === "agent"} onClick={() => setFilter("agent")} disabled={!tally.agent}>
                   <Bot className="h-3.5 w-3.5" /> {t("session.filter.agent", { count: tally.agent })}
@@ -609,6 +653,7 @@ function SessionView({ id }: { id: string }) {
               fresh={fresh}
               follow={follow && running && filter === "all" && !sort && !query}
               showSlab={showSlab}
+              cropping={cropping}
               checked={checked}
               onCheck={onCheck}
               onCheckAll={onCheckAll}
@@ -643,9 +688,10 @@ function SessionView({ id }: { id: string }) {
           position={at >= 0 ? t("session.position", { n: at + 1, total: shown.length }) : undefined}
           onPrev={step(-1)}
           onNext={step(1)}
-          onAccept={() => accept([detail.id])}
-          onUnaccept={() => api.reviewItems(id, [detail.id], false).catch(toastError)}
-          onEdit={(edit) => api.updateItem(detail.id, edit).then(setDetail)}
+          cropping={cropping}
+          onAccept={identifies ? () => accept([detail.id]) : undefined}
+          onUnaccept={identifies ? () => api.reviewItems(id, [detail.id], false).catch(toastError) : undefined}
+          onEdit={cropOnly ? undefined : (edit) => api.updateItem(detail.id, edit).then(setDetail)}
           onDelete={active ? undefined : () => setDeleting([detail.id])}
           onTurn={() =>
             api

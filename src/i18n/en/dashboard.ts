@@ -50,6 +50,9 @@ export default {
     open: "Open",
   },
   defaults: {
+    task: "Task",
+    gradeWith: "Grade with",
+    crops: "Cropped pictures",
     identifyAs: "Identify as",
     game: "Game",
     anyGame: "Any game",

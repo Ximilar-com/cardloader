@@ -1,5 +1,5 @@
-// The first-run setup: the app's language, then five questions whose answers become the defaults of new sessions
-// (lib/setup.ts).
+// The first-run setup: the app's language, what to do with the cards (identify, only grade or only crop), then the
+// questions that task needs; the answers become the defaults of new sessions (lib/setup.ts).
 
 import { openUrl } from "@tauri-apps/plugin-opener";
 import clsx from "clsx";
@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   Circle,
   Cpu,
+  Crop,
   DollarSign,
   Eye,
   FileSpreadsheet,
@@ -27,7 +28,7 @@ import { useState, type ReactNode } from "react";
 import { create } from "zustand";
 import { rich, useI18n, useT } from "../i18n";
 import { LANGUAGES } from "../i18n/languages";
-import { api, errorText, type SettingsView, type SourceKind } from "../lib/api";
+import { api, errorText, type SettingsView, type SourceKind, type Task } from "../lib/api";
 import { answersFromSettings, answersToSettings, type Goal, type Interest, type SetupAnswers } from "../lib/setup";
 import { ModelPicker, useModels } from "./LocalModels";
 import Logo from "./Logo";
@@ -47,7 +48,7 @@ export const useSetupWizard = create<{
   done: () => set((s) => ({ settings: null, finished: s.finished + 1 })),
 }));
 
-type Step = "language" | "interests" | "games" | "goals" | "sources" | "engine";
+type Step = "language" | "task" | "interests" | "games" | "goals" | "sources" | "engine" | "token";
 
 export default function SetupWizard({ settings }: { settings: SettingsView }) {
   const done = useSetupWizard((s) => s.done);
@@ -57,7 +58,7 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
   const [answers, setAnswers] = useState<SetupAnswers>(() =>
     settings.setupDone
       ? answersFromSettings(settings)
-      : { interests: [], games: [], goals: [], sources: [], engine: settings.engine },
+      : { task: "identify", interests: [], games: [], goals: [], sources: [], engine: settings.engine },
   );
   const [step, setStep] = useState<Step>("language");
   const [token, setToken] = useState("");
@@ -67,18 +68,22 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
   const models = useModels();
 
   const tcgOnly = answers.interests.length === 1 && answers.interests[0] === "tcg";
-  const steps: Step[] = [
-    "language",
-    "interests",
-    ...(tcgOnly ? (["games"] as const) : []),
-    "goals",
-    "sources",
-    "engine",
-  ];
+  const { task } = answers;
+  // Cropping needs only the cards' way in and the API; grading (or reading the condition) only, also what does it.
+  const steps: Step[] =
+    task === "crop"
+      ? ["language", "task", "sources", "token"]
+      : task === "grade" || task === "condition"
+        ? ["language", "task", "sources", "engine"]
+        : ["language", "task", "interests", ...(tcgOnly ? (["games"] as const) : []), "goals", "sources", "engine"];
   const index = steps.indexOf(step);
   const last = index === steps.length - 1;
   const missing =
     (step === "interests" && !answers.interests.length) || (step === "sources" && !answers.sources.length);
+
+  const wantsPrices = task === "identify" && answers.goals.includes("prices");
+  const wantsCrops = task === "identify" && answers.goals.includes("crops");
+  const wantsGrades = task !== "identify" || answers.goals.includes("grading") || answers.goals.includes("condition");
 
   const toggle = <K extends "interests" | "games" | "goals" | "sources">(key: K, value: SetupAnswers[K][number]) =>
     setAnswers((a) => {
@@ -100,6 +105,28 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
   };
   const finish = () => save(answersToSettings(answers, { ...settings, localModel, language }));
   const skip = () => save({ ...settings, language, setupDone: true });
+
+  const tokenField = (
+    <div>
+      <label className="label">{t("wizard.engine.token")}</label>
+      <input
+        className="input"
+        type="password"
+        value={token}
+        placeholder={settings.tokenSet ? t("wizard.engine.tokenSaved") : t("wizard.engine.tokenPaste")}
+        onChange={(e) => setToken(e.target.value)}
+      />
+      <p className="mt-1.5 text-xs text-slate-500">
+        {rich(t("wizard.engine.tokenHelp"), {
+          link: (text) => (
+            <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
+              {text}
+            </button>
+          ),
+        })}
+      </p>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col overflow-y-auto bg-slate-50 dark:bg-slate-950">
@@ -137,6 +164,30 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
                   compact
                   selected={language === code}
                   onClick={() => setLanguage(code)}
+                />
+              ))}
+            </div>
+          </Question>
+        )}
+
+        {step === "task" && (
+          <Question title={t("wizard.task.title")} text={t("wizard.task.text")}>
+            <div className="grid gap-3">
+              {(
+                [
+                  ["identify", t("wizard.task.identify"), t("wizard.task.identifyHint"), Search],
+                  ["grade", t("wizard.task.grade"), t("wizard.task.gradeHint"), BadgeCheck],
+                  ["condition", t("wizard.task.condition"), t("wizard.task.conditionHint"), Gauge],
+                  ["crop", t("wizard.task.crop"), t("wizard.task.cropHint"), Crop],
+                ] as [Task, string, string, LucideIcon][]
+              ).map(([value, label, hint, icon]) => (
+                <Tile
+                  key={value}
+                  icon={icon}
+                  label={label}
+                  hint={hint}
+                  selected={task === value}
+                  onClick={() => setAnswers((a) => ({ ...a, task: value }))}
                 />
               ))}
             </div>
@@ -197,6 +248,7 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
                   ["grading", t("wizard.goals.grading"), t("wizard.goals.gradingHint"), BadgeCheck],
                   ["condition", t("wizard.goals.condition"), t("wizard.goals.conditionHint"), Gauge],
                   ["prices", t("wizard.goals.prices"), t("wizard.goals.pricesHint"), DollarSign],
+                  ["crops", t("wizard.goals.crops"), t("wizard.goals.cropsHint"), Crop],
                 ] as [Goal, string, string, LucideIcon][]
               ).map(([value, label, hint, icon]) => (
                 <Tile
@@ -236,8 +288,14 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
           </Question>
         )}
 
+        {step === "token" && (
+          <Question title={t("wizard.token.title")} text={t("wizard.token.text")}>
+            {tokenField}
+          </Question>
+        )}
+
         {step === "engine" && (
-          <Question title={t("wizard.engine.title")}>
+          <Question title={task === "identify" ? t("wizard.engine.title") : t("wizard.engine.gradeTitle")}>
             <Tiles>
               <Tile
                 icon={Sparkles}
@@ -255,32 +313,15 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
               />
             </Tiles>
             {answers.engine === "ximilar" ? (
-              <div className="mt-6">
-                <label className="label">{t("wizard.engine.token")}</label>
-                <input
-                  className="input"
-                  type="password"
-                  value={token}
-                  placeholder={settings.tokenSet ? t("wizard.engine.tokenSaved") : t("wizard.engine.tokenPaste")}
-                  onChange={(e) => setToken(e.target.value)}
-                />
-                <p className="mt-1.5 text-xs text-slate-500">
-                  {rich(t("wizard.engine.tokenHelp"), {
-                    link: (text) => (
-                      <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
-                        {text}
-                      </button>
-                    ),
-                  })}
-                </p>
-              </div>
+              <div className="mt-6">{tokenField}</div>
             ) : (
               <div className="mt-6 space-y-3">
-                {answers.goals.length > 0 && (
+                {(wantsPrices || wantsCrops || wantsGrades) && (
                   <p className="text-sm text-amber-700 dark:text-amber-400">
                     {[
-                      answers.goals.includes("prices") && t("wizard.engine.pricesNeedApi"),
-                      answers.goals.some((g) => g !== "prices") && t("wizard.engine.roughGrades"),
+                      wantsPrices && t("wizard.engine.pricesNeedApi"),
+                      wantsCrops && t("wizard.engine.cropsNeedApi"),
+                      wantsGrades && t("wizard.engine.roughGrades"),
                     ]
                       .filter(Boolean)
                       .join(" ")}

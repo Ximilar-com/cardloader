@@ -29,6 +29,7 @@ const messages: Messages<typeof en> = {
     totalValue: "총 가치 {price}",
     apiCalls: { other: "API 호출 {count}회" },
     apiCallsTitle: "이 카드들에 사용된 Ximilar 유료 API 호출",
+    cropping: "{count}장 자르는 중",
   },
   cloud: {
     notSynced: "Cards Cloud: 동기화 안 됨",
@@ -159,6 +160,7 @@ const messages: Messages<typeof en> = {
     renameTitle: "세션 이름 변경",
     renameHint: "Cards Cloud 사본의 이름도 바뀝니다.",
     renameConfirm: "이름 변경",
+    showCrops: "잘라낸 카드 보기",
   },
   deleteSessions: {
     titleOne: "세션을 삭제하시겠습니까?",

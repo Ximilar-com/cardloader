@@ -29,6 +29,7 @@ const messages: Messages<typeof en> = {
     totalValue: "Valeur totale {price}",
     apiCalls: { one: "{count} appel API", other: "{count} appels API" },
     apiCallsTitle: "Appels payants à l’API Ximilar utilisés par ces cartes",
+    cropping: "{count} en recadrage",
   },
   cloud: {
     notSynced: "Cards Cloud : non synchronisée",
@@ -165,6 +166,7 @@ const messages: Messages<typeof en> = {
     renameTitle: "Renommer la session",
     renameHint: "La copie dans Cards Cloud est aussi renommée.",
     renameConfirm: "Renommer",
+    showCrops: "Afficher les cartes détourées",
   },
   deleteSessions: {
     titleOne: "Supprimer la session ?",

@@ -1,14 +1,16 @@
 // The first-run setup: what the user told us, and the defaults it becomes. Only the defaults are stored, so a
 // rerun of the setup reads its answers back from them.
 
-import type { Engine, GradingMode, IdMode, Settings, SourceKind } from "./api";
+import type { Engine, GradingMode, IdMode, Settings, SourceKind, Task } from "./api";
 
 export type Interest = "tcg" | "sport" | "comics";
 /** In the order the setup shows them. */
 export const INTERESTS: Interest[] = ["tcg", "sport", "comics"];
-export type Goal = "grading" | "condition" | "prices";
+export type Goal = "grading" | "condition" | "prices" | "crops";
 
 export interface SetupAnswers {
+  /** Identify the cards, or only grade, tell the condition of or crop them. */
+  task: Task;
   interests: Interest[];
   /** TCG games; one of them is a default, several (or none) leave the game open. */
   games: string[];
@@ -21,24 +23,32 @@ export interface SetupAnswers {
 export const SOURCE_ORDER: SourceKind[] = ["scanner", "folder", "watch_folder", "csv"];
 
 export function answersToSettings<T extends Settings>(answers: SetupAnswers, settings: T): T {
-  // One kind of collectible is every session's "Identify as"; several are told apart per card.
-  const kinds = INTERESTS.filter((i) => answers.interests.includes(i));
-  const idMode: IdMode = kinds.length === 1 ? kinds[0] : "auto";
+  const sources = SOURCE_ORDER.filter((s) => answers.sources.includes(s));
+  const common = {
+    defaultTask: answers.task,
+    defaultSources: sources.length ? sources : (["folder"] as SourceKind[]),
+    setupDone: true,
+  };
+  // The other tasks ask nothing about the cards: the identification defaults stay as they were.
+  if (answers.task === "crop") return { ...settings, ...common };
+  if (answers.task !== "identify") return { ...settings, ...common, engine: answers.engine };
   const grading: GradingMode = answers.goals.includes("grading")
     ? "grade"
     : answers.goals.includes("condition")
       ? "condition"
       : "off";
-  const sources = SOURCE_ORDER.filter((s) => answers.sources.includes(s));
+  // One kind of collectible is every session's "Identify as"; several are told apart per card.
+  const kinds = INTERESTS.filter((i) => answers.interests.includes(i));
+  const idMode: IdMode = kinds.length === 1 ? kinds[0] : "auto";
   return {
     ...settings,
+    ...common,
     defaultIdMode: idMode,
     defaultSubcategory: idMode === "tcg" && answers.games.length === 1 ? answers.games[0] : "",
     defaultGrading: grading,
     priceStats: answers.goals.includes("prices"),
-    defaultSources: sources.length ? sources : ["folder"],
+    defaultSaveCrops: answers.goals.includes("crops"),
     engine: answers.engine,
-    setupDone: true,
   };
 }
 
@@ -50,7 +60,9 @@ export function answersFromSettings(settings: Settings): SetupAnswers {
   if (settings.defaultGrading === "grade") goals.push("grading");
   if (settings.defaultGrading === "condition") goals.push("condition");
   if (settings.priceStats) goals.push("prices");
+  if (settings.defaultSaveCrops) goals.push("crops");
   return {
+    task: settings.defaultTask,
     interests,
     games: settings.defaultSubcategory ? [settings.defaultSubcategory] : [],
     goals,

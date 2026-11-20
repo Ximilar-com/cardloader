@@ -34,6 +34,8 @@ const messages: Messages<typeof en> = {
     conditionHint: "出品用の簡易コンディション（例：Near Mint）",
     prices: "価格",
     pricesHint: "各カードの相場",
+    crops: "切り抜いた画像",
+    cropsHint: "各カードを切り抜いてまっすぐにし、フォルダーに保存",
   },
   sources: {
     title: "カードをどう取り込みますか？",
@@ -61,6 +63,24 @@ const messages: Messages<typeof en> = {
     pricesNeedApi: "価格にはXimilar APIが必要です。",
     roughGrades:
       "ローカルモデルのグレードとコンディションは小さなモデルによる大まかな推定で、鑑定士の評価ではありません。",
+    cropsNeedApi: "切り抜いた画像にはXimilar APIが必要です。「設定」でトークンを追加してください。",
+    gradeTitle: "何でカードをグレーディングしますか？",
+  },
+  task: {
+    title: "カードをどうしますか？",
+    text: "新しいセッションはここから始まります。セッションごとに選び直せます。",
+    identify: "識別する",
+    identifyHint: "各カードの名前、セット、番号、価格。必要ならグレードも",
+    grade: "グレーディングだけ",
+    gradeHint: "識別せずに、各カードの本格的なグレード（コーナー、エッジ、表面、センタリング）",
+    condition: "コンディションだけ",
+    conditionHint: "識別せずに、出品用の各カードのコンディション（例：Near Mint）",
+    crop: "切り抜くだけ",
+    cropHint: "各カードを画像から切り抜いてまっすぐにし、画像としてフォルダーに保存",
+  },
+  token: {
+    title: "Ximilar APIに接続",
+    text: "切り抜きはXimilar APIで行います。APIトークンとインターネット接続が必要です。",
   },
 };
 export default messages;

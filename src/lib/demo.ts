@@ -56,6 +56,8 @@ const settings: SettingsView = {
   apiBaseUrl: "https://api.ximilar.com",
   workspace: null,
   defaultFolder: "/Users/demo/Cards",
+  defaultCropFolder: null,
+  defaultSaveCrops: false,
   defaultScanner: "fujitsu:fi-8170:1234",
   scan: {
     dpi: 600,
@@ -67,6 +69,7 @@ const settings: SettingsView = {
     rotation: "none",
     backFirst: false,
   },
+  defaultTask: "identify",
   defaultIdMode: "auto",
   defaultGrading: "grade",
   defaultPairing: "single",
@@ -344,8 +347,57 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
             },
           },
     gradingImages: [],
+    crop: null,
+    cropImages: [],
     calls: grade == null ? 2 : 3,
     analyzedAt: now(),
+  };
+}
+
+/** A crop session's card: no identification, its crops in the session's folder. */
+function makeCrop(sessionId: string, seq: number): ItemDetail {
+  const card = makeItem(sessionId, seq);
+  const file = `scan_${String(seq).padStart(4, "0")}`;
+  const back = cardSvg("Back", "#475569");
+  return {
+    ...card,
+    frontPath: `/Users/demo/Cards/to-crop/${file}.jpg`,
+    backPath: `/Users/demo/Cards/to-crop/${file}b.jpg`,
+    idType: null,
+    name: "",
+    fullName: "",
+    setName: "",
+    setCode: "",
+    cardNumber: "",
+    year: "",
+    subcategory: "",
+    confidence: null,
+    distance: null,
+    price: null,
+    grade: null,
+    condition: null,
+    slab: null,
+    synced: false,
+    reviewed: false,
+    agentReviewed: false,
+    reviewNote: "",
+    notes: "",
+    location: "",
+    recognition: null,
+    grading: null,
+    gradingImages: [],
+    crop: {
+      endpoint: "crop_level",
+      response: {
+        endpoint: "crop_level",
+        records: [
+          { _id: "front", _status: { code: 200, text: "OK" }, _img_url: "https://example.com/front.webp" },
+          { _id: "back", _status: { code: 200, text: "OK" }, _img_url: "https://example.com/back.webp" },
+        ],
+      },
+    },
+    cropImages: [card.previewPath!, back],
+    calls: 1,
   };
 }
 
@@ -469,6 +521,8 @@ const DETAIL_ONLY = [
   "ebaySku",
   "ebayOfferId",
   "ebayImages",
+  "crop",
+  "cropImages",
 ];
 
 function summary(i: ItemDetail): ItemSummary {
@@ -486,6 +540,10 @@ function seed() {
     counts: counts(""),
   };
   const options = {
+    task: "identify" as const,
+    saveCrops: false,
+    cropFolder: "",
+    cropLevel: true,
     priceStats: true,
     slab: false,
     grading: "grade" as const,
@@ -534,6 +592,19 @@ function seed() {
     },
     {
       ...base,
+      id: "demo-4",
+      name: "Listing photos — crops",
+      sourceKind: "folder",
+      sourceRef: "/Users/demo/Cards/to-crop",
+      idMode: "auto",
+      options: { ...options, task: "crop" as const, cropFolder: "/Users/demo/Cards/Cropped", syncRemote: false },
+      status: "completed",
+      createdAt: "2026-10-10T11:30:00Z",
+      startedAt: "2026-10-10T11:30:00Z",
+      remoteSessionId: null,
+    },
+    {
+      ...base,
       id: "demo-2",
       name: "fi-8170 batch — sports",
       sourceKind: "scanner",
@@ -562,6 +633,10 @@ function seed() {
   binder[3].ebay = listing("sold", 12);
   binder[4].ebay = listing(null, null, "Invalid category. (25005)");
   items.set("demo-2", []);
+  items.set(
+    "demo-4",
+    Array.from({ length: 6 }, (_, i) => makeCrop("demo-4", i + 1)),
+  );
   items.set(
     "demo-3",
     Array.from({ length: 7 }, (_, i) => makeItem("demo-3", i + 1)),
@@ -1175,6 +1250,8 @@ export function installDemo() {
           return null;
         case "session_folder":
           return "/Users/demo/Cards";
+        case "crops_folder":
+          return "/Users/demo/Cards/Cropped";
         case "export_csv":
           return (items.get(a.id) ?? []).length;
         case "rename_remote_session":

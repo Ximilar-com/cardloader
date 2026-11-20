@@ -179,6 +179,16 @@ struct CreateSession {
     source: Option<SourceKind>,
     /// Default: the folder's name and today's date.
     name: Option<String>,
+    /// identify: name, set, number, price (and grading if asked); grade: only grade each card (no identification);
+    /// condition: only its condition (e.g. Near Mint); crop: only cut each card out of its image, straightened, into
+    /// JPEGs in `crop_folder`. Default: the user's default.
+    task: Option<Task>,
+    /// Also save each card cropped (one more call per card) while identifying or grading it. Default: the user's
+    /// default. A crop task always does.
+    save_crops: Option<bool>,
+    /// For crops: an absolute folder for the pictures, not the one the cards are read from. Default: the session's
+    /// own folder (see cropsFolder in the result).
+    crop_folder: Option<String>,
     /// What the cards are: tcg (trading card games), sport, comics, slab (graded slabs), or auto (detected per
     /// card). Default: the user's default.
     card_type: Option<IdMode>,
@@ -198,7 +208,7 @@ struct CreateSession {
     upright: Option<bool>,
     /// The images are already cropped to the card.
     cropped: Option<bool>,
-    /// Grade the cards' condition after identifying them (billed extra).
+    /// Grade the cards' condition after identifying them (billed extra); with task grade, grade or centering.
     grading: Option<GradingMode>,
     /// Mirror the session to Ximilar Cards Cloud ("store it in Ximilar"). Default: the user's default.
     store_in_cards_cloud: Option<bool>,
@@ -377,6 +387,10 @@ struct ExportShopify {
 
 #[derive(Deserialize, JsonSchema)]
 struct UpdateDefaults {
+    /// What new sessions do: identify, or only grade, condition or crop.
+    task: Option<Task>,
+    /// New sessions that identify or grade also save the cards cropped.
+    save_crops: Option<bool>,
     card_type: Option<IdMode>,
     /// The game or sport new sessions start with; empty for any.
     game: Option<String>,
@@ -851,6 +865,7 @@ impl Handler {
             "running": self.state.runner.is_running(&s.id),
             "source": s.source_kind,
             "path": s.source_ref,
+            "task": s.options.task,
             "cardType": s.id_mode,
             "game": s.options.subcategory,
             "storeInCardsCloud": s.options.sync_remote,
@@ -1054,7 +1069,18 @@ impl Handler {
         // As the New session dialog does: a local session of sports cards reads both sides unless told not to.
         let local_sport = settings.engine == Engine::Local && id_mode == IdMode::Sport;
         let read_backs = a.read_backs.unwrap_or(local_sport);
+        let task = a.task.unwrap_or(settings.default_task);
+        let save_crops = task != Task::Crop && a.save_crops.unwrap_or(settings.default_save_crops);
+        let crop_folder = match a.crop_folder.as_deref().map(str::trim) {
+            Some(folder) if !folder.is_empty() && (task == Task::Crop || save_crops) => {
+                self.crop_folder(folder)?
+            }
+            _ => String::new(),
+        };
         let options = SessionOptions {
+            task,
+            save_crops,
+            crop_folder,
             price_stats: a.price_stats.unwrap_or(settings.price_stats),
             grading: a.grading.unwrap_or(settings.default_grading),
             condition_mode: settings.default_condition_mode.clone(),
@@ -1107,7 +1133,11 @@ impl Handler {
         if start {
             self.state.runner.start(&session.id)?;
         }
-        let mut v = self.session_json(&self.state.db.session(&session.id)?, true);
+        let session = self.state.db.session(&session.id)?;
+        let mut v = self.session_json(&session, true);
+        if session.options.crops() {
+            v["cropsFolder"] = json!(self.state.runner.crop_dir(&session));
+        }
         if start {
             v["next"] = json!("call wait_for_session until it finishes");
         }
@@ -1184,6 +1214,12 @@ impl Handler {
 
     fn update_defaults(&self, a: UpdateDefaults) -> Result<Vec<ContentBlock>> {
         let mut s = self.state.settings.get();
+        if let Some(v) = a.task {
+            s.default_task = v;
+        }
+        if let Some(v) = a.save_crops {
+            s.default_save_crops = v;
+        }
         if let Some(v) = a.card_type {
             s.default_id_mode = v;
         }
@@ -1264,6 +1300,40 @@ impl Handler {
         }
     }
 
+    /// A crop folder an agent names: absolute, and outside the app's folders (as `export_path`).
+    fn crop_folder(&self, folder: &str) -> Result<String> {
+        let path = expand(folder);
+        if !path.is_absolute() {
+            return Err(Error::msg("give the crop folder's absolute path"));
+        }
+        // Checked before anything is made: the deepest folder that exists, with links resolved, and the rest of the path.
+        let existing = path
+            .ancestors()
+            .find(|a| a.exists())
+            .ok_or_else(|| Error::msg("no such folder"))?;
+        let rest = path.strip_prefix(existing).unwrap_or(Path::new(""));
+        if rest
+            .components()
+            .any(|c| c == std::path::Component::ParentDir)
+        {
+            return Err(Error::msg("give the crop folder's path without .."));
+        }
+        let real = existing.canonicalize()?.join(rest);
+        let data = self.state.runner.data_dir.as_path();
+        let config = self.state.settings.path().parent();
+        if std::iter::once(data)
+            .chain(config)
+            .filter_map(|d| d.canonicalize().ok())
+            .any(|d| real.starts_with(d))
+        {
+            return Err(Error::msg(
+                "crops can't be written into Cardloader's own folders; choose another folder",
+            ));
+        }
+        std::fs::create_dir_all(&real)?;
+        Ok(real.to_string_lossy().into_owned())
+    }
+
     /// Where an export may write (see `writable`): never in the app's data folder (the database, sessions'
     /// files) or its config folder (settings).
     fn export_path(&self, path: &str, overwrite: Option<bool>) -> Result<PathBuf> {
@@ -1330,6 +1400,8 @@ fn card_row(i: &ItemSummary) -> Value {
 
 fn defaults(s: &Settings) -> Value {
     json!({
+        "task": s.default_task,
+        "saveCrops": s.default_save_crops,
         "cardType": s.default_id_mode,
         "game": s.default_subcategory,
         "grading": s.default_grading,

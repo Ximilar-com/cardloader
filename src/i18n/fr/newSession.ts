@@ -64,6 +64,7 @@ const messages: Messages<typeof en> = {
       one: "environ {count} appel API (Magic AI peut en ajouter)",
       other: "environ {count} appels API (Magic AI peut en ajouter)",
     },
+    localGrade: "gradées sur cet ordinateur, sans appel API",
   },
   scanner: {
     label: "Scanner",
@@ -189,6 +190,18 @@ const messages: Messages<typeof en> = {
     hint: "Ajoute les cartes à une session commencée plus tôt, p. ex. sur un autre ordinateur.",
     hintSkips:
       "Ajoute les cartes à une session commencée plus tôt, p. ex. sur un autre ordinateur ; les images qu’elle contient déjà (reconnues par nom de fichier) sont ignorées.",
+  },
+  task: "Tâche",
+  gradeWith: "Grader avec",
+  crop: {
+    folder: "Enregistrer les recadrages dans",
+    choose: "Choisissez le dossier où enregistrer les cartes détourées.",
+    hint: "Des fichiers JPEG nommés d’après les images de la carte ; un nom déjà pris reçoit _2, _3…",
+    level: "Équilibrer les couleurs et accentuer la netteté",
+    levelHint: "Désactivé : la carte telle que numérisée, seulement détourée et redressée.",
+    also: "Enregistrer aussi les cartes détourées",
+    alsoHint:
+      "Chaque carte détourée de son image et redressée, en fichiers JPEG dans un dossier. Un appel API de plus par carte.",
   },
 };
 export default messages;

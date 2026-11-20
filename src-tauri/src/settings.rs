@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind};
+use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind, Task};
 
 pub const DEFAULT_API_BASE: &str = "https://api.ximilar.com";
 /// Recognition requests in flight at once (Settings → Parallel requests).
@@ -53,8 +53,14 @@ pub struct Settings {
     /// Workspace id sent as `?workspace=` to Cards Cloud; none = the token's default workspace.
     pub workspace: Option<String>,
     pub default_folder: Option<String>,
+    /// The folder sessions last saved cropped pictures to: the next one starts there.
+    pub default_crop_folder: Option<String>,
+    /// New sessions that identify or grade also save the cards cropped.
+    pub default_save_crops: bool,
     pub default_scanner: Option<String>,
     pub scan: ScanSettings,
+    /// What new sessions do: identify the cards, or only crop them.
+    pub default_task: Task,
     pub default_id_mode: IdMode,
     pub default_grading: GradingMode,
     pub default_pairing: Pairing,
@@ -177,8 +183,11 @@ impl Default for Settings {
             api_base_url: DEFAULT_API_BASE.into(),
             workspace: None,
             default_folder: None,
+            default_crop_folder: None,
+            default_save_crops: false,
             default_scanner: None,
             scan: ScanSettings::default(),
+            default_task: Task::Identify,
             default_id_mode: IdMode::Auto,
             default_grading: GradingMode::Off,
             default_pairing: Pairing::Single,

@@ -56,6 +56,7 @@ const messages: Messages<typeof en> = {
     callsMagicAi: {
       other: "API 호출 약 {count}회(Magic AI 사용 시 늘어날 수 있음)",
     },
+    localGrade: "이 컴퓨터에서 그레이딩, API 호출 없음",
   },
   scanner: {
     label: "스캐너",
@@ -178,6 +179,18 @@ const messages: Messages<typeof en> = {
     hint: "이전에 시작한 세션(예: 다른 컴퓨터에서)에 카드를 추가합니다.",
     hintSkips:
       "이전에 시작한 세션(예: 다른 컴퓨터에서)에 카드를 추가하며, 이미 있는 이미지(파일 이름으로 비교)는 건너뜁니다.",
+  },
+  task: "작업",
+  gradeWith: "그레이딩 방법",
+  crop: {
+    folder: "자른 이미지 저장 위치",
+    choose: "잘라낸 카드를 저장할 폴더를 고르세요.",
+    hint: "카드 이미지 이름의 JPEG 파일. 같은 이름이 있으면 _2, _3…이 붙습니다",
+    level: "색을 고르게 하고 선명하게",
+    levelHint: "끄면: 스캔한 그대로 잘라내고 똑바로 맞추기만 합니다.",
+    also: "잘라낸 이미지도 저장",
+    alsoHint:
+      "카드마다 이미지에서 잘라내고 똑바로 맞춰 폴더에 JPEG 파일로 저장합니다. 카드당 API 호출이 1회 늘어납니다.",
   },
 };
 export default messages;

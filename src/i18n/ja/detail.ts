@@ -100,5 +100,8 @@ const messages: Messages<typeof en> = {
     priceInvalid: "価格は正の数で入力してください。",
     notIdentified: "カードの項目は識別後に編集できます。",
   },
+  crop: {
+    title: "切り抜いたカード",
+  },
 };
 export default messages;

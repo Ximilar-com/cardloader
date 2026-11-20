@@ -6,6 +6,7 @@ import {
   CircleQuestionMark,
   CheckCircle2,
   Clock,
+  Crop,
   Loader2,
   Pause,
   Square,
@@ -45,13 +46,23 @@ const ICONS: Record<string, typeof Clock> = {
   queued: Clock,
 };
 
-export default function StatusChip({ status }: { status: SessionStatus | ItemStatus | "live" | "closed" }) {
-  const Icon = ICONS[status];
+export default function StatusChip({
+  status,
+  cropping,
+}: {
+  status: SessionStatus | ItemStatus | "live" | "closed";
+  /** A crop session's card waits for its crop job, not a grade. */
+  cropping?: boolean;
+}) {
+  const crop = cropping && status === "grading";
+  const Icon = crop ? Crop : ICONS[status];
   const t = useT();
   const spin = status === "running" || status === "recognizing";
-  const label: Key = ITEM_STATUSES.has(status)
-    ? `status.item.${status as ItemStatus}`
-    : `status.session.${status as SessionStatus | "live" | "closed"}`;
+  const label: Key = crop
+    ? "status.item.cropping"
+    : ITEM_STATUSES.has(status)
+      ? `status.item.${status as ItemStatus}`
+      : `status.session.${status as SessionStatus | "live" | "closed"}`;
   return (
     <span
       className={clsx(

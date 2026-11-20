@@ -56,6 +56,7 @@ const messages: Messages<typeof en> = {
     callsMagicAi: {
       other: "API呼び出し約{count}回（Magic AIで増える場合があります）",
     },
+    localGrade: "このパソコン上でグレーディング、API呼び出しなし",
   },
   scanner: {
     label: "スキャナー",
@@ -180,6 +181,18 @@ const messages: Messages<typeof en> = {
     hint: "以前に（別のパソコンなどで）開始したセッションにカードを追加します。",
     hintSkips:
       "以前に（別のパソコンなどで）開始したセッションにカードを追加します。既にある画像（ファイル名で照合）はスキップされます。",
+  },
+  task: "タスク",
+  gradeWith: "グレーディング方法",
+  crop: {
+    folder: "切り抜きの保存先",
+    choose: "切り抜いたカードを保存するフォルダーを選んでください。",
+    hint: "カード画像の名前のJPEGファイル。同じ名前があれば _2、_3… が付きます",
+    level: "色を整えてシャープにする",
+    levelHint: "オフ：スキャンしたままのカードを切り抜いてまっすぐにするだけ。",
+    also: "切り抜いた画像も保存",
+    alsoHint:
+      "各カードを画像から切り抜いてまっすぐにし、JPEGファイルとしてフォルダーに保存します。カード1枚につきAPI呼び出しが1回増えます。",
   },
 };
 export default messages;

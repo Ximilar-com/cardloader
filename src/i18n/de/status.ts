@@ -18,6 +18,7 @@ const messages: Messages<typeof en> = {
     grading: "Grading",
     done: "Fertig",
     error: "Fehler",
+    cropping: "Wird zugeschnitten",
   },
   confidence: {
     high: "Hoch",
@@ -94,6 +95,20 @@ const messages: Messages<typeof en> = {
     full: "Volles Overlay",
     result: "Ergebnis",
     card: "Karte",
+    cropFront: "Zugeschnittene Vorderseite",
+    cropBack: "Zugeschnittene Rückseite",
+  },
+  task: {
+    identify: "Erkennen",
+    grade: "Nur Grading",
+    condition: "Nur Zustand",
+    crop: "Nur zuschneiden",
+  },
+  taskHint: {
+    identify: "Name, Set, Nummer und Preis",
+    grade: "Eine volle Note, ohne Erkennung",
+    condition: "Ein Zustand wie Near Mint, ohne Erkennung",
+    crop: "Jede Karte ausgeschnitten und gerade gerückt",
   },
 };
 export default messages;

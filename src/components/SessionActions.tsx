@@ -3,10 +3,11 @@
 
 import { save } from "@tauri-apps/plugin-dialog";
 import { openPath } from "@tauri-apps/plugin-opener";
-import { Copy, Cpu, FileDown, FileSpreadsheet, FolderOpen, Pencil, Settings2, Store, Trash2 } from "lucide-react";
+import { Copy, Cpu, Crop, FileDown, FileSpreadsheet, FolderOpen, Pencil, Settings2, Store, Trash2 } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { api, errorText, type ExportFormat, type RemoteSession, type Session } from "../lib/api";
+import { cropsOf } from "../lib/format";
 import type { MenuItem } from "./Menu";
 import Modal, { ErrorNote } from "./Modal";
 import { Check } from "./NewSessionDialog";
@@ -52,8 +53,16 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
     }
   };
 
-  /** Files and marketplaces the session's cards can go to. */
-  const sellMenu = (s: Session): MenuItem[] => [
+  const csvItem = (s: Session): MenuItem => ({
+    label: t("session.actions.exportCsv"),
+    icon: FileDown,
+    onClick: () => void exportCsv(s),
+    disabled: s.counts.total === 0,
+  });
+
+  /** Files and marketplaces the session's cards can go to: only the CSV for cards that weren't identified. */
+  const sellMenu = (s: Session): MenuItem[] => (s.options.task !== "identify" ? [csvItem(s)] : identifiedSellMenu(s));
+  const identifiedSellMenu = (s: Session): MenuItem[] => [
     {
       label: t("session.actions.listOnEbay"),
       icon: Store,
@@ -69,12 +78,7 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       onClick: () => setDialog({ kind: "market", session: s, format }),
       disabled: s.counts.done === 0,
     })),
-    {
-      label: t("session.actions.exportCsv"),
-      icon: FileDown,
-      onClick: () => void exportCsv(s),
-      disabled: s.counts.total === 0,
-    },
+    csvItem(s),
   ];
 
   /** `sell: false` leaves out what `sellMenu` has, for a page that shows it on its own. */
@@ -99,14 +103,21 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
         icon: FolderOpen,
         onClick: () => void showFiles(s),
       },
-      s.options.engine !== "local" && {
-        label: t("session.actions.compare"),
-        icon: Cpu,
-        onClick: () => setDialog({ kind: "compare", session: s }),
-        disabled: s.counts.done === 0,
-        title: t("session.actions.compareTitle"),
+      cropsOf(s.options) && {
+        label: t("session.actions.showCrops"),
+        icon: Crop,
+        onClick: () => void api.cropsFolder(s.id).then(openPath).catch(fail),
       },
-      ...(sell ? sellMenu(s) : []),
+      s.options.task === "identify" &&
+        s.options.engine !== "local" && {
+          label: t("session.actions.compare"),
+          icon: Cpu,
+          onClick: () => setDialog({ kind: "compare", session: s }),
+          disabled: s.counts.done === 0,
+          title: t("session.actions.compareTitle"),
+        },
+      // The session page shows the identified cards' menu on its own; other sessions have only the CSV.
+      ...(sell ? sellMenu(s) : s.options.task !== "identify" ? [csvItem(s)] : []),
       {
         label: t("session.actions.delete"),
         icon: Trash2,

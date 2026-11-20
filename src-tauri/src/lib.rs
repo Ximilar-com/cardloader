@@ -92,6 +92,7 @@ pub fn run() {
             commands::delete_session,
             commands::rename_session,
             commands::session_folder,
+            commands::crops_folder,
             commands::export_csv,
             commands::preview_csv,
             commands::import_csv,

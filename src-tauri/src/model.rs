@@ -45,6 +45,12 @@ str_enum!(
 );
 
 str_enum!(
+    /// What a session does with each card: identify it (and grade it, price it…), only grade it, only tell its
+    /// condition, or only cut it out of the image (`crop_level`) into a folder of card pictures.
+    Task { Identify = "identify", Grade = "grade", Condition = "condition", Crop = "crop" } default Identify
+);
+
+str_enum!(
     /// Which card-grader endpoint runs after recognition, if any.
     GradingMode { Off = "off", Condition = "condition", Grade = "grade", Centering = "centering" } default Off
 );
@@ -172,6 +178,15 @@ impl Default for ScanSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct SessionOptions {
+    /// Identify the cards, or only grade or crop them. Neither identifies, so nothing about identification or
+    /// Cards Cloud below applies; a crop session doesn't grade either.
+    pub task: Task,
+    /// Also save each card cropped (a crop-only session always does).
+    pub save_crops: bool,
+    /// Where the cropped pictures go; empty = `crops` in the session's own folder.
+    pub crop_folder: String,
+    /// Let Ximilar even out the levels and sharpen the crop (its `level`, on by default).
+    pub crop_level: bool,
     /// Ask the id endpoints for price statistics.
     pub price_stats: bool,
     /// Read slab labels (slab_id) when the card is in a graded slab.
@@ -210,6 +225,10 @@ pub struct SessionOptions {
 impl Default for SessionOptions {
     fn default() -> Self {
         SessionOptions {
+            task: Task::Identify,
+            save_crops: false,
+            crop_folder: String::new(),
+            crop_level: true,
             price_stats: true,
             slab: false,
             grading: GradingMode::Off,
@@ -229,6 +248,39 @@ impl Default for SessionOptions {
             engine: Engine::Ximilar,
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
         }
+    }
+}
+
+impl SessionOptions {
+    /// Only crops: nothing identified or graded.
+    pub fn crops_only(&self) -> bool {
+        self.task == Task::Crop
+    }
+
+    /// Saves cropped pictures of the cards, alone or with what else it does.
+    pub fn crops(&self) -> bool {
+        self.crops_only() || self.save_crops
+    }
+
+    pub fn identifies(&self) -> bool {
+        self.task == Task::Identify
+    }
+
+    /// The card-grader endpoint the cards go to: a grade-only session grades (a full grade unless it asks for
+    /// centering only), a condition-only session reads the condition, a crop session never grades.
+    pub fn grading_mode(&self) -> GradingMode {
+        match (self.task, self.grading) {
+            (Task::Identify, mode) => mode,
+            (Task::Grade, GradingMode::Centering) => GradingMode::Centering,
+            (Task::Grade, _) => GradingMode::Grade,
+            (Task::Condition, _) => GradingMode::Condition,
+            (Task::Crop, _) => GradingMode::Off,
+        }
+    }
+
+    /// Identified or graded on this computer (cropping always calls Ximilar): a crop-only session never is.
+    pub fn local(&self) -> bool {
+        self.engine == Engine::Local && !self.crops_only()
     }
 }
 
@@ -458,6 +510,9 @@ pub struct ItemDetail {
     pub ebay_images: Vec<String>,
     /// The card's pictures on the public image host (Whatnot export).
     pub hosted_images: Vec<String>,
+    /// Its crop job's result (`{"endpoint": "crop_level", "response": …}`) and the cropped pictures saved.
+    pub crop: Option<Value>,
+    pub crop_images: Vec<String>,
 }
 
 /// Cards analysed on one local day (`YYYY-MM-DD`).
@@ -481,4 +536,40 @@ pub struct ItemImages {
     pub preview: Option<String>,
     pub back_preview: Option<String>,
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_task_grades_its_own_way() {
+        let with = |task, grading| {
+            SessionOptions {
+                task,
+                grading,
+                ..SessionOptions::default()
+            }
+            .grading_mode()
+        };
+        assert_eq!(with(Task::Identify, GradingMode::Off), GradingMode::Off);
+        assert_eq!(
+            with(Task::Identify, GradingMode::Condition),
+            GradingMode::Condition
+        );
+        assert_eq!(with(Task::Grade, GradingMode::Off), GradingMode::Grade);
+        assert_eq!(
+            with(Task::Grade, GradingMode::Condition),
+            GradingMode::Grade
+        );
+        assert_eq!(
+            with(Task::Grade, GradingMode::Centering),
+            GradingMode::Centering
+        );
+        assert_eq!(
+            with(Task::Condition, GradingMode::Grade),
+            GradingMode::Condition
+        );
+        assert_eq!(with(Task::Crop, GradingMode::Grade), GradingMode::Off);
+    }
 }

@@ -43,6 +43,51 @@ pub fn build_request(
     body
 }
 
+/// The `crop_level` endpoint: each side cut out of its image, perspective-corrected, and (with `level`) evened
+/// out and sharpened.
+pub const CROP_ENDPOINT: &str = "crop_level";
+
+/// A crop job for one card: its front, and its back as a second record.
+pub fn build_crop_request(front_b64: &str, back_b64: Option<&str>, level: bool) -> Value {
+    let records: Vec<Value> = [Some(("front", front_b64)), back_b64.map(|b| ("back", b))]
+        .into_iter()
+        .flatten()
+        .map(|(id, b64)| json!({"_id": id, "_base64": b64, "level": level}))
+        .collect();
+    json!({"type": "card-grader", "endpoint": CROP_ENDPOINT, "records": records})
+}
+
+/// One side of a finished crop job: the cropped picture's (temporary) URL, or why there is none.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CropSide {
+    /// The record's `_id` (`front`, `back`), else its place.
+    pub side: String,
+    pub url: Result<String, String>,
+}
+
+pub fn crop_sides(response: &Value) -> Vec<CropSide> {
+    let records = response["records"].as_array().cloned().unwrap_or_default();
+    records
+        .iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let side = r["_id"]
+                .as_str()
+                .map(str::to_owned)
+                .unwrap_or_else(|| if i == 0 { "front" } else { "back" }.into());
+            let code = r["_status"]["code"].as_u64().unwrap_or(200);
+            let url = match r["_img_url"].as_str() {
+                Some(url) if code < 300 => Ok(url.to_string()),
+                _ => Err(r["_status"]["text"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| format!("no card found (HTTP {code})"))),
+            };
+            CropSide { side, url }
+        })
+        .collect()
+}
+
 pub async fn submit(
     client: &XimilarClient,
     body: &Value,
@@ -234,6 +279,29 @@ mod tests {
         let s = summarize(GradingMode::Centering, &centering);
         assert_eq!(s.grade, Some(9.0));
         assert_eq!(s.images.len(), 1);
+    }
+
+    #[test]
+    fn crop_request_and_result() {
+        let body = build_crop_request("F", Some("B"), false);
+        assert_eq!(body["type"], "card-grader");
+        assert_eq!(body["endpoint"], "crop_level");
+        assert_eq!(body["records"][1]["_id"], "back");
+        assert_eq!(body["records"][1]["level"], false);
+        assert_eq!(
+            build_crop_request("F", None, true)["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let response = json!({"records": [
+            {"_id": "front", "_status": {"code": 200, "text": "OK"}, "_img_url": "https://x/f.webp"},
+            {"_id": "back", "_status": {"code": 400, "text": "No card detected"}}]});
+        let sides = crop_sides(&response);
+        assert_eq!(sides[0].url, Ok("https://x/f.webp".into()));
+        assert_eq!(sides[1].side, "back");
+        assert_eq!(sides[1].url, Err("No card detected".into()));
     }
 
     #[test]

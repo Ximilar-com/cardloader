@@ -144,6 +144,23 @@ state from them.
 - Confidence tiers on the best-match distance: ≤ 0.30 high, ≤ 0.40 medium, else low (duplicated in `cardview.ts`).
 - Grading (`account/v2/request/`, type `card-grader`) is asynchronous: submit, poll status, fetch the result; result
   image URLs are temporary, so overlays are downloaded into the session folder.
+- **Tasks** (`options.task`, `model::Task`): `identify` (everything above), or `grade` / `condition` / `crop`, which
+  never identify: the runner sends the claimed card straight to the card-grader (`SessionOptions::grading_mode`,
+  mirrored by `gradingOf` in `format.ts`: grade-only is `grade` or `centering`, condition-only `condition`; locally
+  through `grade_locally`). Their items keep `id_type` NULL, which is what keeps them out of review (`TO_REVIEW`,
+  `needsReview`) and the Cards page; they never sync to Cards Cloud, and the session page drops review, sell and
+  turn actions for them. `settings.default_task` is where the setup wizard's first question lands.
+- **Crops** (`crop_level`, `grading::build_crop_request`: both sides as records with `level`; always the API, also in
+  a local session): a crop-only session, or any other with `options.save_crops` (`SessionOptions::crops`,
+  `cropsOf`). The crop is the card's second async job (`items.crop_job_id`, migration 008), submitted after its
+  identification/grading (`Runner::submit_crop`; a failure then fails only the crop, as grading's does); the card
+  stays `grading` until both jobs are stored (`Db::set_job`/`jobs`, `save_grading` and `save_crop` each clear their
+  job id). `Runner::store_crop` downloads each side's WebP and writes `<file stem>.jpg` into `options.crop_folder`
+  (empty = `<session>/crops`, deleted with the session, so the dialog asks for a folder;
+  `settings.default_crop_folder` remembers the last); a taken name gets `_2`, `_3`… but a card cropped again
+  overwrites its own (`crop_path`). Paths are `items.crop_images` (apart from grading overlays; deleting a card
+  leaves them). The crop folder may not be the folder read or watched (`valid_crop_folder`), and an agent's must be
+  outside the app's folders (`tools::crop_folder`).
 - Cards Cloud (`cards-cloud/v2`, formerly `cardstream/v2`) is shared with Ximilar's Cardstream live-stream app;
   a remote session's `client.name` / `platform` tells which app made it (Cardloader sends `client.name: "cardloader"`).
 - Cards Cloud rows are keyed by `event_id`. Re-uploading a known row never changes its card fields, so a user's

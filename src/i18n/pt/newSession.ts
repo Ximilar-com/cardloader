@@ -64,6 +64,7 @@ const messages: Messages<typeof en> = {
       one: "cerca de {count} chamada à API (o Magic AI pode somar mais)",
       other: "cerca de {count} chamadas à API (o Magic AI pode somar mais)",
     },
+    localGrade: "graduadas neste computador, sem chamadas à API",
   },
   scanner: {
     label: "Scanner",
@@ -188,6 +189,18 @@ const messages: Messages<typeof en> = {
     hint: "Adiciona as cartas a uma sessão iniciada antes, ex. em outro computador.",
     hintSkips:
       "Adiciona as cartas a uma sessão iniciada antes, ex. em outro computador; imagens que ela já tem (comparadas pelo nome do arquivo) são ignoradas.",
+  },
+  task: "Tarefa",
+  gradeWith: "Graduar com",
+  crop: {
+    folder: "Salvar os recortes em",
+    choose: "Escolha a pasta onde salvar as cartas recortadas.",
+    hint: "Arquivos JPEG com o nome das imagens da carta; um nome já usado recebe _2, _3…",
+    level: "Equilibrar as cores e aumentar a nitidez",
+    levelHint: "Desligado: a carta como foi digitalizada, só recortada e endireitada.",
+    also: "Salvar também as cartas recortadas",
+    alsoHint:
+      "Cada carta recortada da imagem e endireitada, como arquivos JPEG em uma pasta. Uma chamada à API a mais por carta.",
   },
 };
 export default messages;

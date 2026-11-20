@@ -39,6 +39,7 @@ import {
   gameOptions,
   multifeedOptions,
   pairingOptions,
+  taskOptions,
 } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
@@ -480,6 +481,13 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <Field
+                      label={t("settings.sessions.task")}
+                      value={draft.defaultTask}
+                      options={taskOptions()}
+                      onChange={(v) => set("defaultTask", v)}
+                    />
+                    <div />
+                    <Field
                       label={t("settings.sessions.identifyAs")}
                       value={draft.defaultIdMode}
                       options={optionsOf(idModeLabels())}
@@ -529,6 +537,11 @@ export default function SettingsPage() {
                       label={t("settings.sessions.priceStats")}
                       checked={draft.priceStats}
                       onChange={(v) => set("priceStats", v)}
+                    />
+                    <Check
+                      label={t("settings.sessions.saveCrops")}
+                      checked={draft.defaultSaveCrops}
+                      onChange={(v) => set("defaultSaveCrops", v)}
                     />
                     <Check
                       label={t("settings.sessions.syncByDefault")}

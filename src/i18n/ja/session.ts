@@ -29,6 +29,7 @@ const messages: Messages<typeof en> = {
     totalValue: "合計金額 {price}",
     apiCalls: { other: "API呼び出し{count}回" },
     apiCallsTitle: "これらのカードで使用した有料のXimilar API呼び出し",
+    cropping: "{count}件切り抜き中",
   },
   cloud: {
     notSynced: "Cards Cloud：未同期",
@@ -159,6 +160,7 @@ const messages: Messages<typeof en> = {
     renameTitle: "セッション名を変更",
     renameHint: "Cards Cloud上のコピーの名前も変更されます。",
     renameConfirm: "名前を変更",
+    showCrops: "切り抜いたカードを表示",
   },
   deleteSessions: {
     titleOne: "セッションを削除しますか？",

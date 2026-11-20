@@ -99,5 +99,8 @@ const messages: Messages<typeof en> = {
     priceInvalid: "가격은 양수여야 합니다.",
     notIdentified: "카드가 식별된 후에 카드 정보를 편집할 수 있습니다.",
   },
+  crop: {
+    title: "잘라낸 카드",
+  },
 };
 export default messages;

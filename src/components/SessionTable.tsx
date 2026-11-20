@@ -27,6 +27,7 @@ export default function SessionTable({
   follow,
   showStatus = true,
   showSlab = false,
+  cropping = false,
   checked,
   onCheck,
   onCheckAll,
@@ -43,6 +44,8 @@ export default function SessionTable({
   showStatus?: boolean;
   /** A column for the graded slab's company and grade. */
   showSlab?: boolean;
+  /** The rows are a crop session's cards. */
+  cropping?: boolean;
   /** Rows ticked for a bulk action; with `onCheck`, a checkbox column. Shift extends a range. */
   checked?: Set<string>;
   onCheck?: (key: string, range: boolean) => void;
@@ -224,7 +227,7 @@ export default function SessionTable({
                 </span>
                 {showSlab && <SlabCell slab={r.slab} />}
                 <span className="flex items-center gap-1.5">
-                  {r.status && <StatusChip status={r.status} />}
+                  {r.status && <StatusChip status={r.status} cropping={cropping} />}
                   {r.synced && <Cloud className="h-3.5 w-3.5 text-slate-400" aria-label={t("sessions.table.synced")} />}
                   <EbayBadge listing={r.ebay} />
                 </span>

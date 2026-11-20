@@ -34,6 +34,8 @@ const messages: Messages<typeof en> = {
     conditionHint: "Una condizione rapida, ad es. Near Mint, per le inserzioni",
     prices: "Prezzi",
     pricesHint: "Prezzi di mercato di ogni carta",
+    crops: "Carte ritagliate",
+    cropsHint: "Ogni carta ritagliata e raddrizzata, salvata in una cartella",
   },
   sources: {
     title: "Da dove arriveranno le carte?",
@@ -62,6 +64,24 @@ const messages: Messages<typeof en> = {
     pricesNeedApi: "I prezzi richiedono la Ximilar API.",
     roughGrades:
       "Voti e condizioni del modello locale sono stime approssimative di un piccolo modello, non di un esperto di gradazione.",
+    cropsNeedApi: "Le carte ritagliate richiedono l’API di Ximilar: aggiungi il tuo token nelle Impostazioni.",
+    gradeTitle: "Cosa deve gradare le carte?",
+  },
+  task: {
+    title: "Cosa deve fare Cardloader con le tue carte?",
+    text: "Le nuove sessioni partono da qui; puoi scegliere di nuovo per ogni sessione.",
+    identify: "Identificarle",
+    identifyHint: "Nome, set, numero e prezzo di ogni carta, e un voto se vuoi",
+    grade: "Solo gradarle",
+    gradeHint: "Un voto completo di ogni carta (angoli, bordi, superficie, centratura), senza identificarla",
+    condition: "Solo la condizione",
+    conditionHint: "La condizione di ogni carta, ad es. Near Mint, per gli annunci, senza identificarla",
+    crop: "Solo ritagliarle",
+    cropHint: "Ogni carta ritagliata dalla sua immagine e raddrizzata, salvata come immagine in una cartella",
+  },
+  token: {
+    title: "Collega l’API di Ximilar",
+    text: "Il ritaglio usa l’API di Ximilar: servono un token API e internet.",
   },
 };
 export default messages;

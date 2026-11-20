@@ -34,6 +34,8 @@ const messages: Messages<typeof en> = {
     conditionHint: "Uma condição rápida, ex. Near Mint, para anúncios",
     prices: "Preços",
     pricesHint: "Preços de mercado de cada carta",
+    crops: "Cartas recortadas",
+    cropsHint: "Cada carta recortada e endireitada, salva em uma pasta",
   },
   sources: {
     title: "Como você vai trazer as cartas?",
@@ -62,6 +64,24 @@ const messages: Messages<typeof en> = {
     pricesNeedApi: "Os preços precisam da API do Ximilar.",
     roughGrades:
       "As notas e condições do modelo local são estimativas aproximadas de um modelo pequeno, não de um avaliador.",
+    cropsNeedApi: "As cartas recortadas precisam da API da Ximilar: adicione seu token nas Configurações.",
+    gradeTitle: "O que deve graduar as cartas?",
+  },
+  task: {
+    title: "O que o Cardloader deve fazer com suas cartas?",
+    text: "As novas sessões começam assim; você pode escolher de novo em cada sessão.",
+    identify: "Identificá-las",
+    identifyHint: "Nome, coleção, número e preço de cada carta, e uma nota se quiser",
+    grade: "Só graduá-las",
+    gradeHint: "Uma nota completa de cada carta (cantos, bordas, superfície, centralização), sem identificá-la",
+    condition: "Só saber a condição",
+    conditionHint: "A condição de cada carta, ex. Near Mint, para anúncios, sem identificá-la",
+    crop: "Só recortá-las",
+    cropHint: "Cada carta recortada da imagem e endireitada, salva como imagem em uma pasta",
+  },
+  token: {
+    title: "Conecte a API da Ximilar",
+    text: "O recorte é feito pela API da Ximilar: precisa de um token de API e internet.",
   },
 };
 export default messages;

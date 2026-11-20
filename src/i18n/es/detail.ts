@@ -100,5 +100,8 @@ const messages: Messages<typeof en> = {
     priceInvalid: "El precio debe ser un número positivo.",
     notIdentified: "Los campos de la carta se pueden editar cuando esté identificada.",
   },
+  crop: {
+    title: "Carta recortada",
+  },
 };
 export default messages;

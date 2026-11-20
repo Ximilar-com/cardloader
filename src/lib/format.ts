@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { locale, t } from "../i18n";
-import type { Engine, GradingMode, IdMode, SourceKind } from "./api";
+import type { Engine, GradingMode, IdMode, SessionOptions, SourceKind, Task } from "./api";
 
 /** Ximilar's prices are in US dollars, written the way the app's language writes amounts. */
 export function price(value: number | null | undefined): string {
@@ -105,6 +105,34 @@ export function idModeLabels(): Record<IdMode, string> {
     comics: t("status.idMode.comics"),
     slab: t("status.idMode.slab"),
   };
+}
+
+export function taskLabels(): Record<Task, string> {
+  return {
+    identify: t("status.task.identify"),
+    grade: t("status.task.grade"),
+    condition: t("status.task.condition"),
+    crop: t("status.task.crop"),
+  };
+}
+
+/** The session saves cropped pictures of its cards (alone, or with what else it does). */
+export function cropsOf(o: Pick<SessionOptions, "task" | "saveCrops">): boolean {
+  return o.task === "crop" || o.saveCrops;
+}
+
+/** The card-grader endpoint a session's cards go to, as the runner reads it (`SessionOptions::grading_mode`). */
+export function gradingOf(o: Pick<SessionOptions, "task" | "grading">): GradingMode {
+  switch (o.task) {
+    case "identify":
+      return o.grading;
+    case "grade":
+      return o.grading === "centering" ? "centering" : "grade";
+    case "condition":
+      return "condition";
+    case "crop":
+      return "off";
+  }
 }
 
 export function gradingLabels(): Record<GradingMode, string> {

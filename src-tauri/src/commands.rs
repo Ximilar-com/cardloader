@@ -1,5 +1,6 @@
 //! Everything the UI can call. Errors reach the UI as strings.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use reqwest::Method;
@@ -169,6 +170,7 @@ impl AppState {
             }));
         }
         valid_options(&session.options)?;
+        valid_crop_folder(&session.options, session.source_kind, &session.source_ref)?;
         let remote = match remote_session.as_deref().map(str::trim) {
             None | Some("") => None,
             Some(text) => {
@@ -231,6 +233,28 @@ fn valid_options(options: &SessionOptions) -> Result<()> {
     Ok(())
 }
 
+/// A crop session's folder is a folder of its own: crops written into the folder being read (or watched) would
+/// come back as new cards.
+fn valid_crop_folder(options: &SessionOptions, source: SourceKind, source_ref: &str) -> Result<()> {
+    let folder = options.crop_folder.trim();
+    if !options.crops() || folder.is_empty() {
+        return Ok(());
+    }
+    let folder = Path::new(folder);
+    if !folder.is_absolute() {
+        return Err(Error::msg("give the crop folder's full path"));
+    }
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    if matches!(source, SourceKind::Folder | SourceKind::WatchFolder)
+        && real(folder) == real(Path::new(source_ref))
+    {
+        return Err(Error::msg(
+            "the crops can't go into the folder the cards are read from; choose another folder",
+        ));
+    }
+    Ok(())
+}
+
 fn valid_name(name: &str) -> Result<&str> {
     let name = name.trim();
     if name.is_empty() {
@@ -259,6 +283,7 @@ pub fn update_session(
     let before = state.db.session(&id)?;
     let name = valid_name(&name)?;
     valid_options(&options)?;
+    valid_crop_folder(&options, before.source_kind, &before.source_ref)?;
     state.db.update_session_meta(&id, name, id_mode, &options)?;
     if before.name != name {
         state.runner.push_remote_name(&id);
@@ -330,6 +355,15 @@ pub fn session_folder(state: S, id: String) -> Result<String> {
             .into_owned(),
         _ => session.source_ref,
     })
+}
+
+/// Where a crop session's pictures are (made if there are none yet, so it can be opened).
+#[tauri::command]
+pub fn crops_folder(state: S, id: String) -> Result<String> {
+    let session = state.db.session(&id)?;
+    let dir = state.runner.crop_dir(&session);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.to_string_lossy().into_owned())
 }
 
 /// What importing this CSV would bring in.

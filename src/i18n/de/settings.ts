@@ -76,6 +76,8 @@ const messages: Messages<typeof en> = {
     priceStats: "Preisstatistik",
     syncByDefault: "Neue Sitzungen mit Cards Cloud synchronisieren",
     runSetup: "Einrichtung wiederholen",
+    task: "Aufgabe",
+    saveCrops: "Zugeschnittene Karten auch speichern",
   },
   scanner: {
     title: "Scanner",

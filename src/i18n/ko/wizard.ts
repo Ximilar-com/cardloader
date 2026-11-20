@@ -34,6 +34,8 @@ const messages: Messages<typeof en> = {
     conditionHint: "리스팅용 빠른 상태 판정(예: Near Mint)",
     prices: "가격",
     pricesHint: "각 카드의 시세",
+    crops: "잘라낸 이미지",
+    cropsHint: "카드마다 잘라내고 똑바로 맞춰 폴더에 저장",
   },
   sources: {
     title: "카드를 가져올 방법",
@@ -59,7 +61,25 @@ const messages: Messages<typeof en> = {
     tokenPaste: "토큰을 붙여 넣으세요",
     tokenHelp: "<link>Ximilar App</link>의 프로필에서 찾을 수 있습니다. 나중에 설정에서 추가해도 됩니다.",
     pricesNeedApi: "가격을 보려면 Ximilar API가 필요합니다.",
+    cropsNeedApi: "잘라낸 이미지는 Ximilar API가 필요합니다. 설정에서 토큰을 추가하세요.",
     roughGrades: "로컬 모델의 등급과 상태는 작은 모델의 대략적인 추정치이며, 감정사의 평가가 아닙니다.",
+    gradeTitle: "무엇으로 카드를 그레이딩할까요?",
+  },
+  task: {
+    title: "카드로 무엇을 할까요?",
+    text: "새 세션은 이 설정으로 시작합니다. 세션마다 다시 고를 수 있습니다.",
+    identify: "식별하기",
+    identifyHint: "카드마다 이름, 세트, 번호, 가격, 원하면 등급까지",
+    grade: "그레이딩만",
+    gradeHint: "식별하지 않고 카드마다 정식 등급(모서리, 테두리, 표면, 센터링)",
+    condition: "상태만 알기",
+    conditionHint: "식별하지 않고 판매 등록용 카드 상태(예: Near Mint)",
+    crop: "자르기만",
+    cropHint: "카드마다 이미지에서 잘라내고 똑바로 맞춰 폴더에 이미지로 저장",
+  },
+  token: {
+    title: "Ximilar API 연결",
+    text: "자르기는 Ximilar API로 합니다. API 토큰과 인터넷이 필요합니다.",
   },
 };
 export default messages;

@@ -18,6 +18,7 @@ const messages: Messages<typeof en> = {
     grading: "그레이딩 중",
     done: "완료",
     error: "오류",
+    cropping: "자르는 중",
   },
   confidence: {
     high: "높음",
@@ -94,6 +95,20 @@ const messages: Messages<typeof en> = {
     full: "전체 오버레이",
     result: "결과",
     card: "카드",
+    cropFront: "잘라낸 앞면",
+    cropBack: "잘라낸 뒷면",
+  },
+  task: {
+    identify: "식별",
+    grade: "그레이딩만",
+    condition: "상태만",
+    crop: "자르기만",
+  },
+  taskHint: {
+    identify: "이름, 세트, 번호, 가격",
+    grade: "식별 없이 정식 등급",
+    condition: "식별 없이 Near Mint 같은 상태",
+    crop: "카드마다 잘라내고 똑바로 맞춤",
   },
 };
 export default messages;

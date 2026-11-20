@@ -64,6 +64,8 @@ export default {
     text: "Defaults for the New session dialog.",
     defaultFolder: "Default folder",
     browse: "Browse",
+    task: "Task",
+    saveCrops: "Also save cropped pictures",
     identifyAs: "Identify as",
     game: "Game",
     opens: "New session opens",

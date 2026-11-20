@@ -18,6 +18,7 @@ const messages: Messages<typeof en> = {
     grading: "Gradazione",
     done: "Fatto",
     error: "Errore",
+    cropping: "Ritaglio",
   },
   confidence: {
     high: "Alta",
@@ -94,6 +95,20 @@ const messages: Messages<typeof en> = {
     full: "Overlay completo",
     result: "Risultato",
     card: "Carta",
+    cropFront: "Fronte ritagliato",
+    cropBack: "Retro ritagliato",
+  },
+  task: {
+    identify: "Identifica",
+    grade: "Solo gradazione",
+    condition: "Solo condizione",
+    crop: "Solo ritaglio",
+  },
+  taskHint: {
+    identify: "Nome, set, numero e prezzo",
+    grade: "Un voto completo, senza identificare",
+    condition: "Una condizione come Near Mint, senza identificare",
+    crop: "Ogni carta ritagliata e raddrizzata",
   },
 };
 export default messages;

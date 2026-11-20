@@ -1,14 +1,18 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import clsx from "clsx";
 import {
+  BadgeCheck,
   ChevronRight,
   Cloud,
   Cpu,
+  Crop,
   Eye,
   FileSpreadsheet,
   FolderOpen,
+  Gauge,
   RefreshCw,
   ScanLine,
+  Search,
   Settings,
   Zap,
 } from "lucide-react";
@@ -27,9 +31,20 @@ import {
   type Session,
   type SessionOptions,
   type SourceKind,
+  type Task,
 } from "../lib/api";
 import { locale, rich, t, useT } from "../i18n";
-import { basename, defaultSessionName, engineLabels, gradingLabels, idModeLabels, sourceLabels } from "../lib/format";
+import {
+  basename,
+  defaultSessionName,
+  engineLabels,
+  gradingLabels,
+  cropsOf,
+  gradingOf,
+  idModeLabels,
+  sourceLabels,
+  taskLabels,
+} from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
 import Select, { optionsOf, type SelectOption } from "./Select";
@@ -108,6 +123,10 @@ export default function NewSessionDialog({
       setIdMode(s.defaultIdMode);
       setFolder(s.defaultFolder ?? "");
       const options: SessionOptions = {
+        task: s.defaultTask,
+        saveCrops: s.defaultSaveCrops,
+        cropFolder: s.defaultCropFolder ?? "",
+        cropLevel: true,
         priceStats: s.priceStats,
         slab: false,
         grading: s.defaultGrading,
@@ -210,8 +229,15 @@ export default function NewSessionDialog({
   // What the source still needs, highlighted until it is filled in.
   const needsFolder = !editing && (kind === "folder" || kind === "watch_folder") && !folder.trim();
   const needsCsv = !editing && kind === "csv" && !csvPath.trim();
-  const sourceMissing = needsFolder || needsCsv;
-  const local = options?.engine === "local";
+  const task: Task = options?.task ?? "identify";
+  const identifies = task === "identify";
+  const crops = task === "crop";
+  const savesCrops = !!options && cropsOf(options);
+  // Crops go to a folder of the user's: the session's own folder would be deleted with the session.
+  const needsCropFolder = savesCrops && !options?.cropFolder.trim();
+  const sourceMissing = needsFolder || needsCsv || needsCropFolder;
+  // Cropping always runs on the Ximilar API.
+  const local = options?.engine === "local" && !crops;
   // A local session holds one kind of cards (Auto and slabs are the API's).
   const sessionIdMode = local ? localKind(idMode) : idMode;
   // What "Images per card" goes back to when a local session stops reading backs.
@@ -225,25 +251,40 @@ export default function NewSessionDialog({
           ? withKindDefaults({ ...o, engine }, idMode, basePairing)
           : { ...o, engine }),
     );
+  const chooseTask = (next: Task) => setOptions((o) => o && { ...o, task: next });
+  const pickCropFolder = async () => {
+    const picked = await open({ directory: true, defaultPath: options?.cropFolder || folder || undefined });
+    if (typeof picked === "string") set("cropFolder", picked);
+  };
   const chooseIdMode = (mode: IdMode) => {
     setIdMode(mode);
     if (local) setOptions((o) => o && withKindDefaults(o, mode, basePairing));
   };
-  // Only grading uses more than a 300 dpi scan (the runner's `scan_settings`).
-  const grades = !local && options?.grading !== "off";
+  // Only grading and cropping use more than a 300 dpi scan (the runner's `scan_settings`).
+  const grades = savesCrops || (!local && !!options && gradingOf(options) !== "off");
   // Only a downloaded model can be picked: the chosen one, else the first downloaded.
   const ready = models?.filter((m) => m.state === "ready") ?? [];
   const model = ready.find((m) => m.id === options?.localModel) ?? ready[0];
-  const chosen = options && local && model ? { ...options, localModel: model.id } : options;
-  // A local session needs Ximilar only to sync.
-  const needsToken = !local || !!options?.syncRemote;
+  const picked = options && local && model ? { ...options, localModel: model.id } : options;
+  // Only identified cards go to Cards Cloud.
+  const chosen = picked && !identifies ? { ...picked, syncRemote: false } : picked;
+  // A local session needs Ximilar only to crop or sync.
+  const needsToken = !local || savesCrops || (identifies && !!options?.syncRemote);
   const canRun = (!needsToken || tokenSet) && (!local || !!model);
 
-  // The scanner row edits Settings → Scanner, which every scanner run uses.
+  // The scanner row edits Settings → Scanner, which every scanner run uses; the next crop session starts in this
+  // one's folder.
   const saveScan = async () => {
-    if (kind !== "scanner" || !chosen) return;
+    if (!chosen) return;
+    const scan = kind === "scanner";
+    const cropFolder = savesCrops && chosen.cropFolder.trim();
+    if (!scan && !cropFolder) return;
     const settings = await api.getSettings();
-    await api.saveSettings({ ...settings, scan: chosen.scan });
+    await api.saveSettings({
+      ...settings,
+      ...(scan ? { scan: chosen.scan } : {}),
+      ...(cropFolder ? { defaultCropFolder: cropFolder } : {}),
+    });
   };
 
   const save = async () => {
@@ -277,7 +318,7 @@ export default function NewSessionDialog({
       const created =
         kind === "csv"
           ? await api.importCsv(session, reanalyze)
-          : await api.createSession(session, remoteSession.trim());
+          : await api.createSession(session, identifies ? remoteSession.trim() : "");
       if (run) await api.runSession(created.id);
       onClose();
       navigate(`/sessions/${created.id}`);
@@ -286,6 +327,33 @@ export default function NewSessionDialog({
       setBusy(false);
     }
   };
+
+  /** Where the crops go and how they look: for a crop-only session, or one that also saves crops. */
+  const cropFields = (options: SessionOptions) => (
+    <>
+      <div className="col-span-2">
+        <label className="label">{t("newSession.crop.folder")}</label>
+        <div className="flex gap-2">
+          <input
+            className={clsx("input", needsCropFolder && MISSING)}
+            value={options.cropFolder}
+            onChange={(e) => set("cropFolder", e.target.value)}
+            placeholder="/path/to/cropped"
+          />
+          <button className={clsx("btn", needsCropFolder && "btn-primary")} onClick={pickCropFolder}>
+            <FolderOpen className="h-4 w-4" /> {t("newSession.browse")}
+          </button>
+        </div>
+        <p className={clsx("mt-1 text-xs", needsCropFolder ? "text-amber-700 dark:text-amber-400" : "text-slate-500")}>
+          {needsCropFolder ? t("newSession.crop.choose") : t("newSession.crop.hint")}
+        </p>
+      </div>
+      <div className="col-span-2">
+        <Check label={t("newSession.crop.level")} checked={options.cropLevel} onChange={(v) => set("cropLevel", v)} />
+        <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.crop.levelHint")}</p>
+      </div>
+    </>
+  );
 
   return (
     <Modal
@@ -303,7 +371,7 @@ export default function NewSessionDialog({
             <button className="btn" onClick={onClose}>
               {t("common.cancel")}
             </button>
-            <button className="btn btn-primary" onClick={save} disabled={busy || !options}>
+            <button className="btn btn-primary" onClick={save} disabled={busy || !options || needsCropFolder}>
               {t("common.save")}
             </button>
           </>
@@ -354,6 +422,13 @@ export default function NewSessionDialog({
           <label className="label">{t("newSession.name")}</label>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
         </div>
+
+        {options && (
+          <div>
+            <label className="label">{t("newSession.task")}</label>
+            <Select value={task} onChange={chooseTask} options={taskOptions()} />
+          </div>
+        )}
 
         <div>
           <label className="label">{t("newSession.source")}</label>
@@ -521,10 +596,29 @@ export default function NewSessionDialog({
           </div>
         )}
 
-        {options && (
+        {options && crops && (
+          <div className="grid grid-cols-2 gap-4">
+            {cropFields(options)}
+            {kind !== "csv" && (
+              <div>
+                <label className="label">{t("newSession.imagesPerCard")}</label>
+                <Select
+                  value={options.pairing}
+                  onChange={(pairing) => {
+                    setChosenPairing(pairing);
+                    setOptions({ ...options, pairing });
+                  }}
+                  options={pairingOptions()}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {options && !crops && (
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">{t("newSession.identifyWith")}</label>
+              <label className="label">{identifies ? t("newSession.identifyWith") : t("newSession.gradeWith")}</label>
               <Select value={options.engine} onChange={chooseEngine} options={engineOptions()} />
             </div>
             {local ? (
@@ -544,23 +638,32 @@ export default function NewSessionDialog({
             ) : (
               <div />
             )}
-            {local && <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>}
-            <div>
-              <label className="label">{t("newSession.identifyAs")}</label>
-              <Select
-                value={sessionIdMode}
-                onChange={chooseIdMode}
-                options={local ? localKindOptions() : optionsOf(idModeLabels())}
-              />
-            </div>
-            <div>
-              <label className="label">{t("newSession.grading")}</label>
-              <Select
-                value={options.grading}
-                onChange={(v) => set("grading", v)}
-                options={optionsOf(gradingLabels())}
-              />
-            </div>
+            {local && identifies && (
+              <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>
+            )}
+            {identifies && (
+              <div>
+                <label className="label">{t("newSession.identifyAs")}</label>
+                <Select
+                  value={sessionIdMode}
+                  onChange={chooseIdMode}
+                  options={local ? localKindOptions() : optionsOf(idModeLabels())}
+                />
+              </div>
+            )}
+            {task !== "condition" && (
+              <div>
+                <label className="label">{t("newSession.grading")}</label>
+                <Select
+                  value={gradingOf(options)}
+                  onChange={(v) => set("grading", v)}
+                  // Grading only is a full grade or centering; the condition is a task of its own.
+                  options={optionsOf(gradingLabels()).filter(
+                    (o) => identifies || o.value === "grade" || o.value === "centering",
+                  )}
+                />
+              </div>
+            )}
             {kind !== "csv" && (
               <div>
                 <label className="label">{t("newSession.imagesPerCard")}</label>
@@ -574,7 +677,7 @@ export default function NewSessionDialog({
                 />
               </div>
             )}
-            {options.grading === "condition" || (local && options.grading === "grade") ? (
+            {gradingOf(options) === "condition" || (local && gradingOf(options) === "grade") ? (
               <div>
                 <label className="label">{t("newSession.conditionScale")}</label>
                 <Select
@@ -587,7 +690,7 @@ export default function NewSessionDialog({
               kind !== "csv" && <div />
             )}
             {/* A comic is read off its cover: its back says nothing about it. */}
-            {local && sessionIdMode !== "comics" && (
+            {local && identifies && sessionIdMode !== "comics" && (
               <div className="col-span-2">
                 <Check
                   label={t("newSession.localBack.label")}
@@ -603,7 +706,7 @@ export default function NewSessionDialog({
                 <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.localBack.hint")}</p>
               </div>
             )}
-            {!local && (
+            {!local && identifies && (
               <>
                 <Check
                   label={t("newSession.priceStats")}
@@ -626,13 +729,24 @@ export default function NewSessionDialog({
                 </MoreOptions>
               </>
             )}
-            <Check
-              label={t("newSession.syncRemote")}
-              checked={options.syncRemote || !!remoteSession.trim()}
-              disabled={!!remoteSession.trim()}
-              onChange={(v) => set("syncRemote", v)}
-            />
-            {!editing && kind !== "csv" && (
+            {identifies && (
+              <Check
+                label={t("newSession.syncRemote")}
+                checked={options.syncRemote || !!remoteSession.trim()}
+                disabled={!!remoteSession.trim()}
+                onChange={(v) => set("syncRemote", v)}
+              />
+            )}
+            <div className="col-span-2">
+              <Check
+                label={t("newSession.crop.also")}
+                checked={options.saveCrops}
+                onChange={(v) => set("saveCrops", v)}
+              />
+              <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.crop.alsoHint")}</p>
+            </div>
+            {options.saveCrops && cropFields(options)}
+            {identifies && !editing && kind !== "csv" && (
               <ContinueRemote
                 value={remoteSession}
                 onChange={setRemoteSession}
@@ -899,15 +1013,22 @@ function usesMoreOptions(o: SessionOptions): boolean {
   );
 }
 
-/** Roughly what analysing the folder costs: a call per card, one more to grade it; Cards Cloud bills one per
- * stored image and one for the session. */
+/** Roughly what analysing the folder costs: a call per card, one more to grade it and one more to crop it; Cards Cloud
+ * bills one per stored image and one for the session. */
 function costOf(o: SessionOptions, images: number): string {
   const cards = o.pairing === "front_back" ? Math.ceil(images / 2) : images;
+  const crops = cropsOf(o) ? cards : 0;
+  if (o.task === "crop") return t("newSession.cost.calls", { count: crops });
   const local = o.engine === "local";
+  // Grade-only and condition-only sessions: one job per card, nothing to Cards Cloud.
+  if (o.task !== "identify") {
+    if (local && !crops) return t("newSession.cost.localGrade");
+    return t("newSession.cost.calls", { count: (local ? 0 : cards) + crops });
+  }
   const sync = o.syncRemote ? cards + 1 : 0;
-  const calls = (local ? 0 : cards * (1 + (o.grading !== "off" ? 1 : 0))) + sync;
+  const calls = (local ? 0 : cards * (1 + (o.grading !== "off" ? 1 : 0))) + crops + sync;
   if (!calls) return t("newSession.cost.local");
-  if (local) return t("newSession.cost.callsCloud", { count: calls });
+  if (local) return t(crops ? "newSession.cost.calls" : "newSession.cost.callsCloud", { count: calls });
   return t(o.magicAi ? "newSession.cost.callsMagicAi" : "newSession.cost.calls", { count: calls });
 }
 
@@ -987,6 +1108,17 @@ function BothSides({
 const MISSING = "border-amber-400 ring-2 ring-amber-400/25 dark:border-amber-500";
 
 // Functions, not constants: the labels follow the app's language.
+
+export function taskOptions(): SelectOption<Task>[] {
+  const labels = taskLabels();
+  const icons = { identify: Search, grade: BadgeCheck, condition: Gauge, crop: Crop };
+  return (["identify", "grade", "condition", "crop"] as const).map((value) => ({
+    value,
+    label: labels[value],
+    hint: t(`status.taskHint.${value}`),
+    icon: icons[value],
+  }));
+}
 
 export function engineOptions(): SelectOption<Engine>[] {
   const labels = engineLabels();

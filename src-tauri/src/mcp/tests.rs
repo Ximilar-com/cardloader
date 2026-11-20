@@ -287,6 +287,29 @@ async fn agent_runs_and_reviews_a_folder() {
         .await;
     assert!(notification.is_empty(), "{notification:?}");
 
+    // A crop-only session: its pictures may go to a folder of the user's, never into the app's own.
+    let (refusal, failed) = agent
+        .tool(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "task": "crop",
+                   "crop_folder": dir.path().join("data").join("crops").to_string_lossy(), "start": false}),
+        )
+        .await;
+    assert!(failed, "{refusal}");
+    let crops = dir.path().join("cropped");
+    let cropping = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "task": "crop",
+                   "crop_folder": crops.to_string_lossy(), "start": false}),
+        )
+        .await;
+    assert_eq!(cropping["task"], "crop");
+    assert_eq!(
+        cropping["cropsFolder"],
+        crops.canonicalize().unwrap().to_string_lossy().as_ref()
+    );
+
     // Prompts.
     let prompts = agent.rpc("prompts/list", json!({})).await;
     assert_eq!(prompts["prompts"][0]["name"], "review_session");

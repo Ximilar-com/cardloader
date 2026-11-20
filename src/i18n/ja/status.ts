@@ -18,6 +18,7 @@ const messages: Messages<typeof en> = {
     grading: "グレーディング中",
     done: "完了",
     error: "エラー",
+    cropping: "切り抜き中",
   },
   confidence: {
     high: "高",
@@ -94,6 +95,20 @@ const messages: Messages<typeof en> = {
     full: "全体表示",
     result: "結果",
     card: "カード",
+    cropFront: "切り抜いた表面",
+    cropBack: "切り抜いた裏面",
+  },
+  task: {
+    identify: "識別",
+    grade: "グレーディングのみ",
+    condition: "コンディションのみ",
+    crop: "切り抜きのみ",
+  },
+  taskHint: {
+    identify: "名前、セット、番号、価格",
+    grade: "識別せずに本格的なグレード",
+    condition: "識別せずにNear Mintなどのコンディション",
+    crop: "各カードを切り抜いてまっすぐに",
   },
 };
 export default messages;

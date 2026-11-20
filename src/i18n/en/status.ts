@@ -17,6 +17,19 @@ export default {
     grading: "Grading",
     done: "Done",
     error: "Error",
+    cropping: "Cropping",
+  },
+  task: {
+    identify: "Identify",
+    grade: "Grade only",
+    condition: "Condition only",
+    crop: "Crop only",
+  },
+  taskHint: {
+    identify: "Name, set, number and price",
+    grade: "A full grade, without identifying",
+    condition: "A condition such as Near Mint, without identifying",
+    crop: "Each card cut out and straightened",
   },
   confidence: {
     high: "High",
@@ -94,5 +107,7 @@ export default {
     full: "Full overlay",
     result: "Result",
     card: "Card",
+    cropFront: "Cropped front",
+    cropBack: "Cropped back",
   },
 };

@@ -115,11 +115,14 @@ describe("review", () => {
   });
 
   it("asks to review every identified card until it is accepted", () => {
-    expect(needsReview({ status: "done", reviewed: false })).toBe(true);
-    expect(needsReview({ status: "grading", reviewed: false })).toBe(true);
-    expect(needsReview({ status: "done", reviewed: true })).toBe(false);
-    expect(needsReview({ status: "error", reviewed: false })).toBe(false);
-    expect(needsReview({ status: "queued", reviewed: false })).toBe(false);
+    const idType = "tcg";
+    expect(needsReview({ status: "done", reviewed: false, idType })).toBe(true);
+    expect(needsReview({ status: "grading", reviewed: false, idType })).toBe(true);
+    expect(needsReview({ status: "done", reviewed: true, idType })).toBe(false);
+    expect(needsReview({ status: "error", reviewed: false, idType })).toBe(false);
+    expect(needsReview({ status: "queued", reviewed: false, idType })).toBe(false);
+    // Graded or cropped without identifying: no match to review.
+    expect(needsReview({ status: "done", reviewed: false, idType: null })).toBe(false);
   });
 
   it("sorts with missing values last and filters by chip and text", () => {

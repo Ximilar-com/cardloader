@@ -64,6 +64,7 @@ const messages: Messages<typeof en> = {
       one: "etwa {count} API-Aufruf (Magic AI kann mehr verursachen)",
       other: "etwa {count} API-Aufrufe (Magic AI kann mehr verursachen)",
     },
+    localGrade: "auf diesem Computer gegradet, keine API-Aufrufe",
   },
   scanner: {
     label: "Scanner",
@@ -189,6 +190,18 @@ const messages: Messages<typeof en> = {
     hint: "Fügt die Karten einer früher begonnenen Sitzung hinzu, z. B. auf einem anderen Computer.",
     hintSkips:
       "Fügt die Karten einer früher begonnenen Sitzung hinzu, z. B. auf einem anderen Computer; Bilder, die sie schon hat (nach Dateiname), werden übersprungen.",
+  },
+  task: "Aufgabe",
+  gradeWith: "Graden mit",
+  crop: {
+    folder: "Zuschnitte speichern in",
+    choose: "Wähle den Ordner, in den die zugeschnittenen Karten kommen.",
+    hint: "JPEG-Dateien mit den Namen der Kartenbilder; ein vergebener Name bekommt _2, _3…",
+    level: "Farben ausgleichen und schärfen",
+    levelHint: "Aus: die Karte wie gescannt, nur ausgeschnitten und gerade gerückt.",
+    also: "Zugeschnittene Karten auch speichern",
+    alsoHint:
+      "Jede Karte aus ihrem Bild ausgeschnitten und gerade gerückt, als JPEG-Dateien in einem Ordner. Ein API-Aufruf mehr pro Karte.",
   },
 };
 export default messages;

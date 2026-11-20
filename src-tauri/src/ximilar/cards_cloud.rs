@@ -493,6 +493,8 @@ mod tests {
                 json!({"endpoint": "grade", "response": {"records": [{"grades": {"final": 7.5}}]}}),
             ),
             grading_images: vec![],
+            crop: None,
+            crop_images: vec![],
             calls: 3,
             analyzed_at: Some("2026-01-01T00:00:01Z".into()),
             remote_id: None,

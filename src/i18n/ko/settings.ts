@@ -76,6 +76,8 @@ const messages: Messages<typeof en> = {
     priceStats: "가격 통계",
     syncByDefault: "새 세션을 Cards Cloud에 동기화",
     runSetup: "설정 마법사 다시 실행",
+    task: "작업",
+    saveCrops: "잘라낸 이미지도 저장",
   },
   scanner: {
     title: "스캐너",

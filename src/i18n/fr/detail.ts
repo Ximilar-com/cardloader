@@ -99,5 +99,8 @@ const messages: Messages<typeof en> = {
     priceInvalid: "Le prix doit être un nombre positif.",
     notIdentified: "Les champs de la carte peuvent être modifiés une fois qu’elle est identifiée.",
   },
+  crop: {
+    title: "Carte détourée",
+  },
 };
 export default messages;

@@ -51,6 +51,7 @@ export default {
   },
   cost: {
     local: "identified on this computer, no API calls",
+    localGrade: "graded on this computer, no API calls",
     calls: { one: "about {count} API call", other: "about {count} API calls" },
     callsCloud: { one: "about {count} API call for Cards Cloud", other: "about {count} API calls for Cards Cloud" },
     callsMagicAi: {
@@ -69,6 +70,17 @@ export default {
     frontOnly: "Front only",
     multifeed: "Multifeed detection",
     shared: "These are your Scanner settings: changing them here changes them for every scanner session.",
+  },
+  task: "Task",
+  gradeWith: "Grade with",
+  crop: {
+    also: "Also save cropped pictures",
+    alsoHint: "Each card cut out of its image and straightened, as JPEG files in a folder. One more API call per card.",
+    folder: "Save the crops to",
+    choose: "Choose the folder the cropped cards are saved to.",
+    hint: "JPEG files named after the card's images; a name that is taken gets _2, _3…",
+    level: "Even out the colours and sharpen",
+    levelHint: "Off: the card as scanned, only cut out and straightened.",
   },
   identifyWith: "Identify with",
   model: "Model",

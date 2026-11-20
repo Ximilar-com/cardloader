@@ -67,6 +67,9 @@ export default {
     showInFolder: "Show in folder",
     showLabel: "Show the file in its folder: {label}",
   },
+  crop: {
+    title: "Cropped card",
+  },
   grading: {
     title: "Grading · {endpoint}",
     fromCsv: "from CSV",

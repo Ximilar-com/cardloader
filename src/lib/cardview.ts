@@ -12,7 +12,7 @@ import type {
   SlabLabel,
 } from "./api";
 import { t } from "../i18n";
-import { fileUrl } from "./format";
+import { basename, fileUrl } from "./format";
 
 export interface Row {
   key: string;
@@ -87,6 +87,8 @@ export interface CardView {
   gradingRecords: Json[];
   images: CardImage[];
   gradingImages: CardImage[];
+  /** The card cropped and straightened (front, then back). */
+  cropImages: CardImage[];
   raw: Json;
   /** Read by an on-device model: which one, and how long it took. */
   local?: { model: string; seconds: number | null };
@@ -163,8 +165,9 @@ export function candidates(alternatives: Json[] | null | undefined, distances?: 
 }
 
 /** Same rule as the Rust side (`db::TO_REVIEW`): identified, and not accepted or corrected yet. */
-export function needsReview(i: Pick<ItemSummary, "status" | "reviewed">): boolean {
-  return (i.status === "done" || i.status === "grading") && !i.reviewed;
+/** Grade-only and crop-only sessions' cards have no type: there is no match to review. */
+export function needsReview(i: Pick<ItemSummary, "status" | "reviewed" | "idType">): boolean {
+  return (i.status === "done" || i.status === "grading") && !i.reviewed && i.idType != null;
 }
 
 /** Accepted as Ximilar matched it: reviewed, without a pick or an edit. */
@@ -198,8 +201,9 @@ export function rowFromItem(i: ItemSummary): Row {
     key: String(i.id),
     seq: i.seq,
     thumb: fileUrl(i.thumbPath),
-    name: i.name || i.fullName,
-    fullName: i.fullName || i.name,
+    // A card graded or cropped without identifying it goes by its file.
+    name: i.name || i.fullName || (i.idType == null && i.status !== "queued" ? basename(i.frontPath) : ""),
+    fullName: i.fullName || i.name || i.frontPath,
     setName: i.setName,
     cardNumber: i.cardNumber,
     idType: i.idType,
@@ -383,7 +387,7 @@ export function viewFromItem(i: ItemDetail): CardView {
   const images: CardImage[] = [{ label: t("common.front"), src: fileUrl(i.previewPath), path: i.frontPath }];
   if (i.backPath) images.push({ label: t("common.back_side"), src: fileUrl(i.backPreviewPath), path: i.backPath });
   return {
-    title: i.fullName || i.name || (i.status === "done" ? t("status.noMatch") : "—"),
+    title: i.fullName || i.name || (i.idType == null ? basename(i.frontPath) : t("status.noMatch")),
     picked: i.picked,
     edited: i.edited,
     toReview: needsReview(i),
@@ -408,7 +412,8 @@ export function viewFromItem(i: ItemDetail): CardView {
     gradingRecords: i.grading?.response?.records ?? [],
     images,
     gradingImages: i.gradingImages.map((p) => ({ label: labelOf(p), src: fileUrl(p), path: p })),
-    raw: { recognition: i.recognition, grading: i.grading },
+    cropImages: i.cropImages.map((p, n) => ({ label: cropLabelOf(i.crop, n), src: fileUrl(p), path: p })),
+    raw: { recognition: i.recognition, grading: i.grading, ...(i.crop ? { crop: i.crop } : {}) },
     via: viaOf(i.recognition),
     rotation: rotationOf(i.recognition?.response),
     local: String(i.recognition?.endpoint ?? "").startsWith("local/")
@@ -429,6 +434,12 @@ function viaOf(recognition: Json): string | undefined {
     recognition.id_type && !STANDARD_ENDPOINT.test(endpoint) && endpoint,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : undefined;
+}
+
+/** The nth saved crop is of the nth side that was cropped (a side Ximilar found no card on has none). */
+function cropLabelOf(crop: Json, n: number): string {
+  const sides = ((crop?.response?.records ?? []) as Json[]).filter((r) => r?._img_url);
+  return sides[n]?._id === "back" ? t("status.image.cropBack") : t("status.image.cropFront");
 }
 
 function labelOf(path: string): string {
@@ -463,6 +474,7 @@ export function viewFromRemote(r: RemoteItem): CardView {
     gradingRecords: r.grading?.records ?? [],
     images: r.image ? [{ label: t("status.image.card"), src: r.image }] : [],
     gradingImages: [],
+    cropImages: [],
     raw: r,
   };
 }

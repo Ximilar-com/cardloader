@@ -28,7 +28,7 @@ import {
   type SourceKind,
 } from "../lib/api";
 import { locale, useT } from "../i18n";
-import { dateTime, engineLabels, gradingLabels, idModeLabels, price, sourceLabels } from "../lib/format";
+import { dateTime, engineLabels, gradingLabels, idModeLabels, price, sourceLabels, taskLabels } from "../lib/format";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
 /** 53 weeks: the heatmap's columns. */
@@ -433,20 +433,35 @@ function Defaults({ settings }: { settings: SettingsView }) {
   const t = useT();
   const game =
     GAME_LABELS[settings.defaultSubcategory] ?? (settings.defaultSubcategory || t("dashboard.defaults.anyGame"));
-  const rows: [string, string][] = [
-    [t("dashboard.defaults.identifyAs"), idModeLabels()[settings.defaultIdMode]],
-    ...(settings.defaultIdMode === "tcg" ? ([[t("dashboard.defaults.game"), game]] as [string, string][]) : []),
-    [t("dashboard.defaults.grading"), gradingLabels()[settings.defaultGrading]],
-    [t("dashboard.defaults.prices"), settings.priceStats ? t("common.on") : t("common.off")],
-    [
-      t("dashboard.defaults.cardsFrom"),
-      settings.defaultSources.map((s) => sourceLabels()[s]).join(", ") || sourceLabels().folder,
-    ],
-    [
-      t("dashboard.defaults.identifyWith"),
-      settings.engine === "local" ? t("dashboard.defaults.localModel") : engineLabels().ximilar,
-    ],
+  const task = settings.defaultTask;
+  const cardsFrom: [string, string] = [
+    t("dashboard.defaults.cardsFrom"),
+    settings.defaultSources.map((s) => sourceLabels()[s]).join(", ") || sourceLabels().folder,
   ];
+  const engine = settings.engine === "local" ? t("dashboard.defaults.localModel") : engineLabels().ximilar;
+  const crops: [string, string] = [
+    t("dashboard.defaults.crops"),
+    settings.defaultSaveCrops ? t("common.on") : t("common.off"),
+  ];
+  const rows: [string, string][] =
+    task === "crop"
+      ? [[t("dashboard.defaults.task"), taskLabels().crop], cardsFrom]
+      : task !== "identify"
+        ? [
+            [t("dashboard.defaults.task"), taskLabels()[task]],
+            cardsFrom,
+            [t("dashboard.defaults.gradeWith"), engine],
+            crops,
+          ]
+        : [
+            [t("dashboard.defaults.identifyAs"), idModeLabels()[settings.defaultIdMode]],
+            ...(settings.defaultIdMode === "tcg" ? ([[t("dashboard.defaults.game"), game]] as [string, string][]) : []),
+            [t("dashboard.defaults.grading"), gradingLabels()[settings.defaultGrading]],
+            [t("dashboard.defaults.prices"), settings.priceStats ? t("common.on") : t("common.off")],
+            cardsFrom,
+            [t("dashboard.defaults.identifyWith"), engine],
+            crops,
+          ];
   return (
     <div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">

@@ -18,6 +18,7 @@ const messages: Messages<typeof en> = {
     grading: "Gradation",
     done: "Terminé",
     error: "Erreur",
+    cropping: "Recadrage",
   },
   confidence: {
     high: "Élevée",
@@ -94,6 +95,20 @@ const messages: Messages<typeof en> = {
     full: "Calque complet",
     result: "Résultat",
     card: "Carte",
+    cropFront: "Recto détouré",
+    cropBack: "Verso détouré",
+  },
+  task: {
+    identify: "Identifier",
+    grade: "Gradation seule",
+    condition: "État seul",
+    crop: "Recadrage seul",
+  },
+  taskHint: {
+    identify: "Nom, extension, numéro et prix",
+    grade: "Une note complète, sans identifier",
+    condition: "Un état comme Near Mint, sans identifier",
+    crop: "Chaque carte détourée et redressée",
   },
 };
 export default messages;
