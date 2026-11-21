@@ -1582,7 +1582,8 @@ impl Runner {
         Ok(())
     }
 
-    /// Saves a crop job's pictures as JPEGs named after the card's files (Ximilar's are temporary WebPs).
+    /// Saves a crop job's pictures in the session's file type, named after the card's files (Ximilar's are
+    /// temporary WebPs).
     async fn store_crop(
         &self,
         session: &Session,
@@ -1614,11 +1615,11 @@ impl Runner {
                 .map(|s| s.to_string_lossy().into_owned())
                 .unwrap_or_else(|| format!("card_{}_{}", item.summary.seq, side.side));
             let bytes = client.download(&url).await?;
-            let path = crop_path(&dir, &stem, &item.crop_images, &images);
+            let format = session.options.crop_format;
+            let path = crop_path(&dir, &stem, format, &item.crop_images, &images);
             let target = path.clone();
             tokio::task::spawn_blocking(move || -> Result<()> {
-                let img = image::load_from_memory(&bytes).map_err(|e| Error::msg(e.to_string()))?;
-                std::fs::write(&target, imaging::jpeg_bytes(&img, CROP_QUALITY)?)?;
+                std::fs::write(&target, crop_file(bytes.to_vec(), format)?)?;
                 Ok(())
             })
             .await
@@ -1641,14 +1642,38 @@ impl Runner {
 /// The crops are what gets listed and shared: kept close to Ximilar's own quality.
 const CROP_QUALITY: u8 = 95;
 
-/// `<stem>.jpg` in the crop folder, unless another file has that name (scans are `scan_0001` in every session):
-/// then `<stem>_2.jpg`, … The card's own earlier crop is written over.
-fn crop_path(dir: &Path, stem: &str, earlier: &[String], taken: &[String]) -> PathBuf {
+/// A crop as the file to save: Ximilar's WebP as it is, else decoded and encoded again.
+fn crop_file(webp: Vec<u8>, format: CropFormat) -> Result<Vec<u8>> {
+    if format == CropFormat::Webp {
+        return Ok(webp);
+    }
+    let img = image::load_from_memory(&webp).map_err(|e| Error::msg(e.to_string()))?;
+    match format {
+        CropFormat::Png => {
+            let mut out = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+                .map_err(|e| Error::msg(e.to_string()))?;
+            Ok(out)
+        }
+        _ => imaging::jpeg_bytes(&img, CROP_QUALITY),
+    }
+}
+
+/// `<stem>.<ext>` in the crop folder, unless another file has that name (scans are `scan_0001` in every session):
+/// then `<stem>_2.<ext>`, … The card's own earlier crop is written over.
+fn crop_path(
+    dir: &Path,
+    stem: &str,
+    format: CropFormat,
+    earlier: &[String],
+    taken: &[String],
+) -> PathBuf {
+    let ext = format.extension();
     let mut n = 1;
     loop {
         let name = match n {
-            1 => format!("{stem}.jpg"),
-            n => format!("{stem}_{n}.jpg"),
+            1 => format!("{stem}.{ext}"),
+            n => format!("{stem}_{n}.{ext}"),
         };
         let path = dir.join(name);
         let text = path.to_string_lossy();
@@ -3841,6 +3866,7 @@ pub(crate) mod tests {
                     grading: GradingMode::Grade,
                     save_crops: true,
                     crop_level: false,
+                    crop_format: CropFormat::Png,
                     ..SessionOptions::default()
                 },
             })
@@ -3867,14 +3893,48 @@ pub(crate) mod tests {
         let crop = runner
             .session_dir(&session.id)
             .join("crops")
-            .join("charizard.jpg");
+            .join("charizard.png");
         // The mock always answers with two sides; only the front was sent.
         assert_eq!(detail.crop_images[0], crop.to_string_lossy());
-        assert!(crop.is_file());
+        assert_eq!(
+            image::ImageFormat::from_path(&crop).ok(),
+            Some(image::ImageFormat::Png)
+        );
+        assert_eq!(
+            image::guess_format(&std::fs::read(&crop).unwrap()).unwrap(),
+            image::ImageFormat::Png,
+            "the session's file type"
+        );
         assert_eq!(
             detail.grading_images.len(),
             1,
             "the grading overlay stays apart"
+        );
+    }
+
+    /// WebP crops are Ximilar's file as it is; the other types are encoded from it.
+    #[test]
+    fn crops_in_each_file_type() {
+        let mut webp = Vec::new();
+        image::DynamicImage::ImageRgb8(RgbImage::from_pixel(8, 11, Rgb([10, 120, 200])))
+            .write_to(
+                &mut std::io::Cursor::new(&mut webp),
+                image::ImageFormat::WebP,
+            )
+            .unwrap();
+        assert_eq!(crop_file(webp.clone(), CropFormat::Webp).unwrap(), webp);
+        for (format, kind) in [
+            (CropFormat::Jpeg, image::ImageFormat::Jpeg),
+            (CropFormat::Png, image::ImageFormat::Png),
+        ] {
+            let file = crop_file(webp.clone(), format).unwrap();
+            assert_eq!(image::guess_format(&file).unwrap(), kind);
+            assert_eq!(image::load_from_memory(&file).unwrap().width(), 8);
+        }
+        let dir = tempfile::tempdir().unwrap();
+        assert!(
+            crop_path(dir.path(), "scan_0001", CropFormat::Webp, &[], &[])
+                .ends_with("scan_0001.webp")
         );
     }
 

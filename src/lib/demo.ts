@@ -58,6 +58,7 @@ const settings: SettingsView = {
   defaultFolder: "/Users/demo/Cards",
   defaultCropFolder: null,
   defaultSaveCrops: false,
+  defaultCropFormat: "jpg",
   defaultScanner: "fujitsu:fi-8170:1234",
   scan: {
     dpi: 600,
@@ -544,6 +545,7 @@ function seed() {
     saveCrops: false,
     cropFolder: "",
     cropLevel: true,
+    cropFormat: "jpg" as const,
     priceStats: true,
     slab: false,
     grading: "grade" as const,
@@ -769,6 +771,7 @@ const qwen = {
   licenseUrl: "https://www.apache.org/licenses/LICENSE-2.0",
   commercialLimit: false,
 };
+const gemma = { ...qwen, maker: "Google" };
 // The default first, as `local::catalog::MODELS`.
 const models: ModelStatus[] = [
   {
@@ -821,6 +824,19 @@ const models: ModelStatus[] = [
   },
   {
     ...lfm,
+    ...gemma,
+    id: "gemma-4-e4b",
+    name: "Gemma 4 E4B",
+    tier: "Accurate",
+    params: "E4B",
+    memoryMb: 7100,
+    size: 5_967_544_256,
+    description:
+      "Google's Gemma 4 E4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Reads the whole card at once (and the back with it when the session reads both sides), names exactly; it leaves out a number too small to read rather than guess one. About 7 s per card on an Apple M4: best on a GPU.",
+    homepage: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF",
+  },
+  {
+    ...lfm,
     ...qwen,
     id: "qwen3.5-9b",
     name: "Qwen3.5 9B",
@@ -829,8 +845,21 @@ const models: ModelStatus[] = [
     memoryMb: 7200,
     size: 6_598_688_544,
     description:
-      "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Like 4B, and reads more sports card numbers off the back. The slowest: about 14 s per card on an Apple M4, 22 s with the back. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
+      "Alibaba's Qwen3.5 9B (Q4_K_M), under the Apache 2.0 license. Like 4B, and reads more sports card numbers off the back. The slowest: about 14 s per card on an Apple M4, 22 s with the back. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
     homepage: "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF",
+  },
+  {
+    ...lfm,
+    ...gemma,
+    id: "gemma-4-12b",
+    name: "Gemma 4 12B",
+    tier: "Large",
+    params: "12B",
+    memoryMb: 8600,
+    size: 7_296_977_280,
+    description:
+      "Google's Gemma 4 12B (Q4_K_M), the largest model here, under the Apache 2.0 license. Reads the whole card at once, and the back with it when the session reads both sides. Wants a GPU with 10 GB of memory or more, or a Mac with 16 GB. Not measured on test cards yet: compare it with your own cards first.",
+    homepage: "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF",
   },
 ];
 models[0] = { ...models[0], state: "ready", downloaded: models[0].size };

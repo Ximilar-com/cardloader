@@ -44,8 +44,8 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   (corners, edges, surface, centering, final grade) using both sides, check its condition, or measure centering
   only. The grading overlays are saved alongside the session.
 - **Cropped pictures.** Ximilar can cut each card out of its image, straighten it and even out its colours
-  (`crop_level` of Card Grading); Cardloader saves the crops, front and back, as JPEGs named after the card's files
-  in a folder you choose. Any session can **Also save cropped pictures**, next to identifying or grading the cards.
+  (`crop_level` of Card Grading); Cardloader saves the crops, front and back, named after the card's files in a
+  folder you choose, as JPEG, PNG (lossless) or WebP (the file Ximilar sends, unchanged). Any session can **Also save cropped pictures**, next to identifying or grading the cards.
 - **Grade, condition or crop only.** A session's **Task** can skip identification: **Grade only** and **Condition
   only** send each card straight to grading (with Ximilar or the local model), and **Crop only** just saves the
   crops.
@@ -154,6 +154,8 @@ the engine and model it was created with, and **New session** can pick another d
 | [LFM2.5-VL 1.6B](https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B-GGUF) | 1.3 GB | ~1.5 GB | 1.9 s |
 | [Qwen3.5 4B](https://huggingface.co/unsloth/Qwen3.5-4B-GGUF) | 3.4 GB | ~4 GB | 7 s, with the back 16 s |
 | [Qwen3.5 9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 6.6 GB | ~7 GB | 14 s, with the back 22 s |
+| [Gemma 4 E4B](https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF) | 6.0 GB | ~7 GB | 6.6 s |
+| [Gemma 4 12B](https://huggingface.co/unsloth/gemma-4-12b-it-GGUF) | 7.3 GB | ~9 GB (estimate) | not measured yet |
 
 Times are for a MacBook Air M4 (Metal; it slows down during long runs); a CPU is slower, and the Qwen3.5 models want
 a GPU. How often the name and the number came out right on labelled test cards (Magic and Pokémon: clean scans;
@@ -179,7 +181,11 @@ baseball cards in holders: 47 against 4B's 32 and 450M's 10); elsewhere it reads
   **Automatic** (the GPU with the most free memory, a dedicated one before an integrated one), **CPU only**, or one
   GPU. A model larger than the GPU's free memory runs partly on the CPU; if the GPU can't load it at all, it runs
   on the CPU and Settings says why.
-- The Qwen3.5 models read the whole card in one look (and its back, if the session reads both sides). The LFM models
+- The Qwen3.5 and Gemma 4 models read the whole card in one look (and its back, if the session reads both sides).
+  The Gemma 4 models are new and not yet scored on the test cards above. On 5 photos of Magic cards, E4B read all 5
+  names and 3 numbers, and left the other two empty (printed too small to read; Qwen3.5 4B and 9B read all 5, at
+  9.6 s and 17.6 s per card); 12B hasn't been measured. Try them with **Compare with local model** on your own
+  cards. The LFM models
   take two quick looks: the whole card for the name, year and game, then for the card number the back of a sports
   card (when the session reads both sides) or the enlarged bottom edge of the front, which works when the card fills
   the picture (a scan), not on a photo of a card on a table. The answer's game is one of the session's kind of
@@ -204,10 +210,10 @@ baseball cards in holders: 47 against 4B's 32 and 450M's 10); elsewhere it reads
 - **Licenses.** The LFM2.5-VL models are made by Liquid AI under the
   [LFM Open License v1.0](https://www.liquid.ai/lfm-license), which limits commercial use above a revenue threshold.
   The Qwen3.5 models are made by Alibaba's Qwen team under the
-  [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), which allows commercial use (GGUF files by
-  Unsloth). Each is downloaded from Hugging Face after you accept its license, never bundled.
+  [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), which allows commercial use, as are Google's
+  Gemma 4 models (GGUF files by Unsloth). Each is downloaded from Hugging Face after you accept its license, never bundled.
 - Models are stored in the app's data folder under `models/`; **Delete** in Settings removes them.
-- **Another model.** The five above are the ones Cardloader ships with. A fork can add any other vision model from
+- **Another model.** The seven above are the ones Cardloader ships with. A fork can add any other vision model from
   Hugging Face, however large: see [Adding another model](#adding-another-model).
 
 ### Adding another model
@@ -258,6 +264,7 @@ with `Profile { context_tokens: 16_384, ..Profile::GENERAL }`:
 | `whole_card` | `true` | The model is small (under about 2B) and misreads the collector number: `false` asks twice, the second time about the enlarged bottom of the card (as the LFM models are asked). |
 | `answer_prefix` | `""` | The model thinks before answering and its answers are slow or worse than they should be: the text that ends its thinking, e.g. `"<think>\n\n</think>\n\n"` for Qwen3.5. |
 | `chat_template` | `None` (the one in the GGUF) | Loading fails with "llama.cpp doesn't know this model's chat template": the name of one of [llama.cpp's templates](https://github.com/ggml-org/llama.cpp/wiki/Templates-supported-by-llama_chat_apply_template), e.g. `Some("chatml")`. |
+| `turn` | `None` | None of llama.cpp's templates fits: the user's turn written out, with `{prompt}` where the question goes and the opening of the answer at the end, e.g. Gemma 4's `Some("<\|turn>user\n{prompt}<turn\|>\n<\|turn>model\n")` (`Profile::GEMMA4`). |
 | `context_tokens` | `8192` | A card fails with "more than the model's context": raise it (or lower `card_long_edge`). Pictures take most of it. |
 | `card_long_edge` | `1024` | Small print is misread: a larger picture shows more and takes longer. |
 

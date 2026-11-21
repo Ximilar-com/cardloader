@@ -33,6 +33,7 @@ import {
   type SessionOptions,
   type SourceKind,
   type Task,
+  type CropFormat,
 } from "../lib/api";
 import { locale, rich, t, useT } from "../i18n";
 import {
@@ -133,6 +134,7 @@ export default function NewSessionDialog({
         saveCrops: s.defaultSaveCrops,
         cropFolder: s.defaultCropFolder ?? "",
         cropLevel: true,
+        cropFormat: s.defaultCropFormat,
         priceStats: s.priceStats,
         slab: false,
         grading: s.defaultGrading,
@@ -284,8 +286,8 @@ export default function NewSessionDialog({
   const needsToken = !options || usesApi(options);
   const canRun = (!needsToken || tokenSet) && (!local || !!model) && (!agent || agentsReady);
 
-  // The scanner row edits Settings → Scanner, which every scanner run uses; the next crop session starts in this
-  // one's folder.
+  // The scanner row edits Settings → Scanner, which every scanner run uses; the next session that crops starts in
+  // this one's folder, with its file type.
   const saveScan = async () => {
     if (!chosen) return;
     const scan = kind === "scanner";
@@ -295,7 +297,7 @@ export default function NewSessionDialog({
     await api.saveSettings({
       ...settings,
       ...(scan ? { scan: chosen.scan } : {}),
-      ...(cropFolder ? { defaultCropFolder: cropFolder } : {}),
+      ...(cropFolder ? { defaultCropFolder: cropFolder, defaultCropFormat: chosen.cropFormat } : {}),
     });
   };
 
@@ -359,6 +361,10 @@ export default function NewSessionDialog({
         <p className={clsx("mt-1 text-xs", needsCropFolder ? "text-amber-700 dark:text-amber-400" : "text-slate-500")}>
           {needsCropFolder ? t("newSession.crop.choose") : t("newSession.crop.hint")}
         </p>
+      </div>
+      <div>
+        <label className="label">{t("newSession.crop.format")}</label>
+        <Select value={options.cropFormat} onChange={(v) => set("cropFormat", v)} options={cropFormatOptions()} />
       </div>
       <div className="col-span-2">
         <Check label={t("newSession.crop.level")} checked={options.cropLevel} onChange={(v) => set("cropLevel", v)} />
@@ -1143,6 +1149,14 @@ export function taskOptions(): SelectOption<Task>[] {
     hint: t(`status.taskHint.${value}`),
     icon: icons[value],
   }));
+}
+
+export function cropFormatOptions(): SelectOption<CropFormat>[] {
+  return [
+    { value: "jpg", label: "JPEG", hint: t("newSession.crop.formats.jpg") },
+    { value: "png", label: "PNG", hint: t("newSession.crop.formats.png") },
+    { value: "webp", label: "WebP", hint: t("newSession.crop.formats.webp") },
+  ];
 }
 
 /** `identifies`: an AI agent only identifies, so it is offered for that task alone. */

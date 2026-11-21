@@ -155,9 +155,10 @@ state from them.
   `cropsOf`). The crop is the card's second async job (`items.crop_job_id`, migration 008), submitted after its
   identification/grading (`Runner::submit_crop`; a failure then fails only the crop, as grading's does); the card
   stays `grading` until both jobs are stored (`Db::set_job`/`jobs`, `save_grading` and `save_crop` each clear their
-  job id). `Runner::store_crop` downloads each side's WebP and writes `<file stem>.jpg` into `options.crop_folder`
-  (empty = `<session>/crops`, deleted with the session, so the dialog asks for a folder;
-  `settings.default_crop_folder` remembers the last); a taken name gets `_2`, `_3`… but a card cropped again
+  job id). `Runner::store_crop` downloads each side's WebP and writes `<file stem>.<ext>` into `options.crop_folder`
+  in `options.crop_format` (`crop_file`: WebP as it came, JPEG q95 or PNG encoded from it; empty folder =
+  `<session>/crops`, deleted with the session, so the dialog asks for a folder; `settings.default_crop_folder` and
+  `default_crop_format` remember the last); a taken name gets `_2`, `_3`… but a card cropped again
   overwrites its own (`crop_path`). Paths are `items.crop_images` (apart from grading overlays; deleting a card
   leaves them). The crop folder may not be the folder read or watched (`valid_crop_folder`), and an agent's must be
   outside the app's folders (`tools::crop_folder`).
@@ -263,6 +264,9 @@ state from them.
   `whole_card` (one question or two looks), `answer_prefix` (Qwen3.5's template turns thinking off with an empty
   `<think></think>` that llama.cpp's built-in ChatML lacks), `chat_template` (`None` = the GGUF's; llama-cpp-2 runs
   no Jinja, so a template llama.cpp doesn't recognise fails at load and one of its built-in names goes here),
+  `turn` (the user turn written out, `{prompt}` inside, for a template no built-in fits: Gemma 4's `<|turn>` turns
+  are formatted only by llama.cpp's Jinja layer; `Profile::GEMMA4`, and `GEMMA4_12B` whose answer opens with an
+  empty `<|channel>thought\n<channel|>`),
   `context_tokens` and `card_long_edge`. `Profile::LFM` and `QWEN35` are what the shipped models were measured
   with (`shipped_profiles_are_unchanged`); `GENERAL` is the start for others. `catalog_is_consistent` says what is
   wrong with an entry. `maker` and `commercial_limit` drive the license note. Measure it with the opt-in test

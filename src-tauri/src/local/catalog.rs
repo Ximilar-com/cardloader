@@ -26,6 +26,10 @@ pub struct Profile {
     /// the models it knows, and for a file whose template it doesn't, this names one of its built-in ones
     /// ("chatml", "gemma", "llama3", "mistral-v7", …).
     pub chat_template: Option<&'static str>,
+    /// The user's turn written out, with `{prompt}` where the question goes (after its picture markers): for a
+    /// model whose chat template llama.cpp's formatter doesn't know at all, such as Gemma 4's `<|turn>` turns.
+    /// It ends with the opening of the model's answer. When set, `chat_template` isn't used.
+    pub turn: Option<&'static str>,
     /// The context window to run with. A question is short, but each picture takes hundreds to a few thousand
     /// tokens, depending on the model's vision encoder and the picture's size.
     pub context_tokens: u32,
@@ -40,6 +44,7 @@ impl Profile {
         whole_card: false,
         answer_prefix: "",
         chat_template: None,
+        turn: None,
         context_tokens: 4096,
         card_long_edge: 768,
     };
@@ -50,6 +55,7 @@ impl Profile {
         whole_card: true,
         answer_prefix: "<think>\n\n</think>\n\n",
         chat_template: None,
+        turn: None,
         context_tokens: 4096,
         card_long_edge: 768,
     };
@@ -62,9 +68,30 @@ impl Profile {
         whole_card: true,
         answer_prefix: "",
         chat_template: None,
+        turn: None,
         context_tokens: 8192,
         card_long_edge: 1024,
     };
+
+    /// Google's Gemma 4: turns of its own (`<|turn>user` … `<turn|>`) that the pinned llama.cpp formats only in its
+    /// Jinja layer, which the bindings don't run; pictures go before the text, as Google advises. Thinking stays
+    /// off without `<|think|>` in a system turn.
+    pub const GEMMA4: Profile = Profile {
+        turn: Some("<|turn>user\n{prompt}<turn|>\n<|turn>model\n"),
+        // At 1600 px it read no more numbers on photos of Magic cards, and took 60% longer.
+        ..Profile::GENERAL
+    };
+
+    /// Gemma 4 12B opens even an answer without thinking with an empty thought, as its template does.
+    pub const GEMMA4_12B: Profile = Profile {
+        answer_prefix: "<|channel>thought\n<channel|>",
+        ..Profile::GEMMA4
+    };
+
+    /// The user's turn with `message` in it, when the profile writes its turns out.
+    pub fn user_turn(&self, message: &str) -> Option<String> {
+        self.turn.map(|turn| turn.replace("{prompt}", message))
+    }
 }
 
 pub struct ModelSpec {
@@ -241,11 +268,43 @@ pub const MODELS: &[ModelSpec] = &[
         },
     },
     ModelSpec {
+        id: "gemma-4-e4b",
+        name: "Gemma 4 E4B",
+        tier: "Accurate",
+        // 4.5B effective parameters, 8B with the embeddings (which is why the file is as large as an 8B model's).
+        params: "E4B",
+        description: "Google's Gemma 4 E4B (Q4_K_M), under the Apache 2.0 license, which allows commercial use. Reads \
+                      the whole card at once (and the back with it when the session reads both sides), names exactly; \
+                      it leaves out a number too small to read rather than guess one. About 7 s per card on an Apple \
+                      M4: best on a GPU.",
+        // Its files plus room to work, as for Qwen3.5 9B: on Metal the peak RSS (4.6 GB) leaves out weights the GPU
+        // holds.
+        memory_mb: 7_100,
+        maker: "Google",
+        license_name: APACHE_LICENSE,
+        license_url: APACHE_LICENSE_URL,
+        commercial_limit: false,
+        homepage: "https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF",
+        profile: Profile::GEMMA4,
+        model: ModelFile {
+            name: "gemma-4-E4B-it-Q4_K_M.gguf",
+            url: hf!("unsloth/gemma-4-E4B-it-GGUF" @ "bfc15c382204943c3a8fff0c750b94ae2364d7a3" / "gemma-4-E4B-it-Q4_K_M.gguf"),
+            size: 4_977_171_584,
+            sha256: "85a896a047553e842f25297ee5b031d64ff30147d9c4af17b1e4b394cd1fab87",
+        },
+        mmproj: ModelFile {
+            name: "mmproj-F16.gguf",
+            url: hf!("unsloth/gemma-4-E4B-it-GGUF" @ "bfc15c382204943c3a8fff0c750b94ae2364d7a3" / "mmproj-F16.gguf"),
+            size: 990_372_672,
+            sha256: "ddf46c21d7078e95338cfc22306b19b276a29a5ad089023449dd54d4b6170a51",
+        },
+    },
+    ModelSpec {
         id: "qwen3.5-9b",
         name: "Qwen3.5 9B",
         tier: "Large",
         params: "9B",
-        description: "Alibaba's Qwen3.5 9B (Q4_K_M), the largest model here, under the Apache 2.0 license. Like 4B, \
+        description: "Alibaba's Qwen3.5 9B (Q4_K_M), under the Apache 2.0 license. Like 4B, \
                       and reads more sports card numbers off the back. The slowest: about 14 s per card on an Apple \
                       M4, 22 s with the back. Wants a GPU with 8 GB of memory or more, or a Mac with 16 GB.",
         // Its files plus room to work: what a GPU with its own memory needs. (On Metal the peak RSS, 5.3 GB, leaves
@@ -268,6 +327,37 @@ pub const MODELS: &[ModelSpec] = &[
             url: hf!("unsloth/Qwen3.5-9B-GGUF" @ "3885219b6810b007914f3a7950a8d1b469d598a5" / "mmproj-F16.gguf"),
             size: 918_166_080,
             sha256: "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
+        },
+    },
+    ModelSpec {
+        id: "gemma-4-12b",
+        name: "Gemma 4 12B",
+        tier: "Large",
+        params: "12B",
+        description: "Google's Gemma 4 12B (Q4_K_M), the largest model here, under the Apache 2.0 license. Reads the \
+                      whole card at once, and the back with it when the session reads both sides. Wants a GPU with \
+                      10 GB of memory or more, or a Mac with 16 GB. Not measured on test cards yet: compare it with \
+                      your own cards first.",
+        // An estimate from its files: not measured yet.
+        memory_mb: 8_600,
+        maker: "Google",
+        license_name: APACHE_LICENSE,
+        license_url: APACHE_LICENSE_URL,
+        commercial_limit: false,
+        homepage: "https://huggingface.co/unsloth/gemma-4-12b-it-GGUF",
+        profile: Profile::GEMMA4_12B,
+        model: ModelFile {
+            name: "gemma-4-12b-it-Q4_K_M.gguf",
+            url: hf!("unsloth/gemma-4-12b-it-GGUF" @ "fc034cfff751157913579611efad8462ac1be606" / "gemma-4-12b-it-Q4_K_M.gguf"),
+            size: 7_121_861_440,
+            sha256: "0a270ec9fe6b34f4a0d33992b6135117b484ebc4766ab76b51d4ae8c457e4c42",
+        },
+        // The projector unquantized, as for Qwen3.5.
+        mmproj: ModelFile {
+            name: "mmproj-F16.gguf",
+            url: hf!("unsloth/gemma-4-12b-it-GGUF" @ "fc034cfff751157913579611efad8462ac1be606" / "mmproj-F16.gguf"),
+            size: 175_115_840,
+            sha256: "91f086971e56d7a7d8d39e271873fccdb49541bd259d6e02c401a4f1cb7a219e",
         },
     },
 ];
@@ -355,6 +445,10 @@ mod tests {
                 "{id}: nothing is readable on a picture that small"
             );
             assert!(
+                m.profile.turn.is_none_or(|t| t.contains("{prompt}")),
+                "{id}: a written-out turn has {{prompt}} where the question goes"
+            );
+            assert!(
                 m.profile.chat_template != Some(""),
                 "{id}: chat_template names a template, or is None"
             );
@@ -372,10 +466,24 @@ mod tests {
         ] {
             let p = find(id).unwrap().profile;
             assert_eq!(
-                (p.whole_card, p.answer_prefix, p.chat_template),
-                (whole, prefix, None)
+                (p.whole_card, p.answer_prefix, p.chat_template, p.turn),
+                (whole, prefix, None, None)
             );
             assert_eq!((p.context_tokens, p.card_long_edge), (4096, 768), "{id}");
         }
+    }
+
+    #[test]
+    fn gemma_4_writes_its_turns_out() {
+        let e4b = find("gemma-4-e4b").unwrap().profile;
+        assert_eq!(
+            e4b.user_turn("<__media__>\nWhat card?").as_deref(),
+            Some("<|turn>user\n<__media__>\nWhat card?<turn|>\n<|turn>model\n")
+        );
+        assert_eq!(e4b.answer_prefix, "");
+        let large = find("gemma-4-12b").unwrap().profile;
+        assert_eq!(large.turn, e4b.turn);
+        assert_eq!(large.answer_prefix, "<|channel>thought\n<channel|>");
+        assert_eq!(Profile::QWEN35.user_turn("x"), None);
     }
 }

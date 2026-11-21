@@ -37,6 +37,12 @@ converted by Unsloth:
 - Qwen3.5-4B — <https://huggingface.co/unsloth/Qwen3.5-4B-GGUF>
 - Qwen3.5-9B — <https://huggingface.co/unsloth/Qwen3.5-9B-GGUF>
 
+By Google, under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0) (Gemma 4's license, linked from
+its model cards), as GGUF files converted by Unsloth:
+
+- Gemma 4 E4B — <https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF>
+- Gemma 4 12B — <https://huggingface.co/unsloth/gemma-4-12b-it-GGUF>
+
 ## Rust and npm dependencies
 
 Rust crates and npm packages are used under their own licenses (MIT, Apache-2.0 and similar). List them with

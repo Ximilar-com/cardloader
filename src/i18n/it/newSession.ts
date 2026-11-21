@@ -195,12 +195,18 @@ const messages: Messages<typeof en> = {
   crop: {
     folder: "Salva i ritagli in",
     choose: "Scegli la cartella in cui salvare le carte ritagliate.",
-    hint: "File JPEG con il nome delle immagini della carta; un nome già usato riceve _2, _3…",
+    hint: "File con il nome delle immagini della carta; un nome già usato riceve _2, _3…",
     level: "Uniforma i colori e aumenta la nitidezza",
     levelHint: "Disattivato: la carta come scansionata, solo ritagliata e raddrizzata.",
     also: "Salva anche le carte ritagliate",
     alsoHint:
-      "Ogni carta ritagliata dalla sua immagine e raddrizzata, come file JPEG in una cartella. Una chiamata API in più per carta.",
+      "Ogni carta ritagliata dalla sua immagine e raddrizzata, come immagini in una cartella. Una chiamata API in più per carta.",
+    format: "Tipo di file",
+    formats: {
+      jpg: "Leggero, si apre ovunque",
+      png: "Senza perdita, file più grandi",
+      webp: "Come lo invia Ximilar: il più leggero",
+    },
   },
   needsAgents:
     "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa identificare le carte.",

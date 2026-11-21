@@ -197,12 +197,18 @@ const messages: Messages<typeof en> = {
   crop: {
     folder: "Enregistrer les recadrages dans",
     choose: "Choisissez le dossier où enregistrer les cartes détourées.",
-    hint: "Des fichiers JPEG nommés d’après les images de la carte ; un nom déjà pris reçoit _2, _3…",
+    hint: "Des fichiers nommés d’après les images de la carte ; un nom déjà pris reçoit _2, _3…",
     level: "Équilibrer les couleurs et accentuer la netteté",
     levelHint: "Désactivé : la carte telle que numérisée, seulement détourée et redressée.",
     also: "Enregistrer aussi les cartes détourées",
     alsoHint:
-      "Chaque carte détourée de son image et redressée, en fichiers JPEG dans un dossier. Un appel API de plus par carte.",
+      "Chaque carte détourée de son image et redressée, en images dans un dossier. Un appel API de plus par carte.",
+    format: "Type de fichier",
+    formats: {
+      jpg: "Léger, s’ouvre partout",
+      png: "Sans perte, fichiers plus lourds",
+      webp: "Tel que Ximilar l’envoie : le plus léger",
+    },
   },
   needsAgents:
     "Activez les agents IA, avec « Lancer et vérifier », dans les Réglages pour que votre agent puisse identifier les cartes.",

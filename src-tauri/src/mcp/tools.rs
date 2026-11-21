@@ -187,7 +187,7 @@ struct CreateSession {
     engine: Option<Engine>,
     /// identify: name, set, number, price (and grading if asked); grade: only grade each card (no identification);
     /// condition: only its condition (e.g. Near Mint); crop: only cut each card out of its image, straightened, into
-    /// JPEGs in `crop_folder`. Default: the user's default.
+    /// pictures in `crop_folder`. Default: the user's default.
     task: Option<Task>,
     /// Also save each card cropped (one more call per card) while identifying or grading it. Default: the user's
     /// default. A crop task always does.
@@ -195,6 +195,8 @@ struct CreateSession {
     /// For crops: an absolute folder for the pictures, not the one the cards are read from. Default: the session's
     /// own folder (see cropsFolder in the result).
     crop_folder: Option<String>,
+    /// For crops: the file type, jpg (default: the user's last), png (lossless, large) or webp (as Ximilar sends it).
+    crop_format: Option<CropFormat>,
     /// What the cards are: tcg (trading card games), sport, comics, slab (graded slabs), or auto (detected per
     /// card). Default: the user's default.
     card_type: Option<IdMode>,
@@ -1280,6 +1282,7 @@ impl Handler {
             task,
             save_crops,
             crop_folder,
+            crop_format: a.crop_format.unwrap_or(settings.default_crop_format),
             price_stats: a.price_stats.unwrap_or(settings.price_stats),
             grading: a.grading.unwrap_or(settings.default_grading),
             condition_mode: settings.default_condition_mode.clone(),

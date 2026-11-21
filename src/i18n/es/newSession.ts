@@ -196,12 +196,18 @@ const messages: Messages<typeof en> = {
   crop: {
     folder: "Guardar los recortes en",
     choose: "Elige la carpeta donde se guardan las cartas recortadas.",
-    hint: "Archivos JPEG con el nombre de las imágenes de la carta; si el nombre ya existe, se añade _2, _3…",
+    hint: "Archivos con el nombre de las imágenes de la carta; si el nombre ya existe, se añade _2, _3…",
     level: "Igualar los colores y enfocar",
     levelHint: "Desactivado: la carta tal como se escaneó, solo recortada y enderezada.",
     also: "Guardar también las cartas recortadas",
     alsoHint:
-      "Cada carta recortada de su imagen y enderezada, como archivos JPEG en una carpeta. Una llamada a la API más por carta.",
+      "Cada carta recortada de su imagen y enderezada, como imágenes en una carpeta. Una llamada a la API más por carta.",
+    format: "Tipo de archivo",
+    formats: {
+      jpg: "Pequeño, se abre en todas partes",
+      png: "Sin pérdida, archivos más grandes",
+      webp: "Tal como lo envía Ximilar: el más pequeño",
+    },
   },
   needsAgents:
     "Activa los agentes de IA, con «Ejecutar y revisar», en Ajustes para que tu agente pueda identificar las cartas.",

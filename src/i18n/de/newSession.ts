@@ -197,12 +197,18 @@ const messages: Messages<typeof en> = {
   crop: {
     folder: "Zuschnitte speichern in",
     choose: "Wähle den Ordner, in den die zugeschnittenen Karten kommen.",
-    hint: "JPEG-Dateien mit den Namen der Kartenbilder; ein vergebener Name bekommt _2, _3…",
+    hint: "Dateien mit den Namen der Kartenbilder; ein vergebener Name bekommt _2, _3…",
     level: "Farben ausgleichen und schärfen",
     levelHint: "Aus: die Karte wie gescannt, nur ausgeschnitten und gerade gerückt.",
     also: "Zugeschnittene Karten auch speichern",
     alsoHint:
-      "Jede Karte aus ihrem Bild ausgeschnitten und gerade gerückt, als JPEG-Dateien in einem Ordner. Ein API-Aufruf mehr pro Karte.",
+      "Jede Karte aus ihrem Bild ausgeschnitten und gerade gerückt, als Bilder in einem Ordner. Ein API-Aufruf mehr pro Karte.",
+    format: "Dateityp",
+    formats: {
+      jpg: "Klein, öffnet sich überall",
+      png: "Verlustfrei, größere Dateien",
+      webp: "Wie Ximilar es schickt: am kleinsten",
+    },
   },
   needsAgents:
     "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten erkennen kann.",

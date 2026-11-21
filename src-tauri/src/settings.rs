@@ -9,7 +9,9 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
-use crate::model::{Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind, Task};
+use crate::model::{
+    CropFormat, Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind, Task,
+};
 
 pub const DEFAULT_API_BASE: &str = "https://api.ximilar.com";
 /// Recognition requests in flight at once (Settings → Parallel requests).
@@ -57,6 +59,8 @@ pub struct Settings {
     pub default_crop_folder: Option<String>,
     /// New sessions that identify or grade also save the cards cropped.
     pub default_save_crops: bool,
+    /// The file type sessions last saved cropped pictures as.
+    pub default_crop_format: CropFormat,
     pub default_scanner: Option<String>,
     pub scan: ScanSettings,
     /// What new sessions do: identify the cards, or only crop them.
@@ -185,6 +189,7 @@ impl Default for Settings {
             default_folder: None,
             default_crop_folder: None,
             default_save_crops: false,
+            default_crop_format: CropFormat::Jpeg,
             default_scanner: None,
             scan: ScanSettings::default(),
             default_task: Task::Identify,

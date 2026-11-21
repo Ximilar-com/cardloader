@@ -27,6 +27,8 @@ export type GradingMode = "off" | "condition" | "grade" | "centering";
 /** What a session does with each card: identify it (and grade, price…), or only grade it, tell its condition or crop
  * it. */
 export type Task = "identify" | "grade" | "condition" | "crop";
+/** The file type cropped pictures are saved as (WebP: Ximilar's file as it is). */
+export type CropFormat = "jpg" | "png" | "webp";
 export type Pairing = "single" | "front_back";
 export type SessionStatus = "draft" | "running" | "paused" | "stopped" | "completed" | "failed";
 export type ItemStatus = "queued" | "recognizing" | "grading" | "done" | "error";
@@ -54,6 +56,7 @@ export interface SessionOptions {
   cropFolder: string;
   /** Ximilar evens out the levels and sharpens the crop. */
   cropLevel: boolean;
+  cropFormat: CropFormat;
   priceStats: boolean;
   slab: boolean;
   grading: GradingMode;
@@ -244,6 +247,8 @@ export interface Settings {
   defaultCropFolder: string | null;
   /** New sessions that identify or grade also save the cards cropped. */
   defaultSaveCrops: boolean;
+  /** The file type sessions last saved cropped pictures as. */
+  defaultCropFormat: CropFormat;
   defaultScanner: string | null;
   scan: ScanSettings;
   defaultTask: Task;

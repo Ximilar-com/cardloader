@@ -52,6 +52,18 @@ str_enum!(
 );
 
 str_enum!(
+    /// The file type cropped pictures are saved as: JPEG (re-encoded), PNG (lossless, large) or WebP (Ximilar's own
+    /// file, as it comes).
+    CropFormat { Jpeg = "jpg", Png = "png", Webp = "webp" } default Jpeg
+);
+
+impl CropFormat {
+    pub fn extension(self) -> &'static str {
+        self.as_str()
+    }
+}
+
+str_enum!(
     /// Which card-grader endpoint runs after recognition, if any.
     GradingMode { Off = "off", Condition = "condition", Grade = "grade", Centering = "centering" } default Off
 );
@@ -188,6 +200,8 @@ pub struct SessionOptions {
     pub crop_folder: String,
     /// Let Ximilar even out the levels and sharpen the crop (its `level`, on by default).
     pub crop_level: bool,
+    /// The file type the crops are saved as.
+    pub crop_format: CropFormat,
     /// Ask the id endpoints for price statistics.
     pub price_stats: bool,
     /// Read slab labels (slab_id) when the card is in a graded slab.
@@ -230,6 +244,7 @@ impl Default for SessionOptions {
             save_crops: false,
             crop_folder: String::new(),
             crop_level: true,
+            crop_format: CropFormat::Jpeg,
             price_stats: true,
             slab: false,
             grading: GradingMode::Off,
