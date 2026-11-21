@@ -156,6 +156,10 @@ pub struct McpSettings {
     pub allow_market: bool,
     /// Change the defaults of new sessions.
     pub allow_settings: bool,
+    /// Search the web while identifying or pricing cards (slower, costs the agent more, more precise); off, an
+    /// agent reads a card from its pictures alone. Cardloader can't stop an agent's own tools: it tells the agent
+    /// with every card it hands over (`next_cards_to_identify`, `next_cards_to_price`).
+    pub allow_web: bool,
 }
 
 pub const DEFAULT_MCP_PORT: u16 = 47821;
@@ -169,6 +173,7 @@ impl Default for McpSettings {
             allow_delete: false,
             allow_market: false,
             allow_settings: false,
+            allow_web: false,
         }
     }
 }

@@ -61,7 +61,8 @@ const messages: Messages<typeof en> = {
   raw: "Rohantwort",
   deleteCard: "Diese Karte löschen",
   images: {
-    openOriginal: "Doppelklick öffnet das Original",
+    enlarge: "Klicken zum Vergrößern (Leertaste)",
+    original: "Original öffnen",
     none: "Kein Bild",
   },
   files: {

@@ -1275,6 +1275,8 @@ impl Runner {
             item_id,
         };
         self.emit_item(item_id);
+        // The session's counts too: its page says how many cards wait for the agent.
+        self.emit_session(&session.id);
         let answer = tokio::select! {
             answer = rx => answer.ok(),
             _ = cancel.cancelled() => None,
@@ -1892,6 +1894,14 @@ pub(crate) mod tests {
     pub(crate) struct Recorder {
         sessions: Mutex<Vec<Session>>,
         items: Mutex<Vec<ItemSummary>>,
+    }
+
+    impl Recorder {
+        /// The last update of session `id` the UI got.
+        pub(crate) fn last_session(&self, id: &str) -> Option<Session> {
+            let sessions = self.sessions.lock().unwrap();
+            sessions.iter().rev().find(|s| s.id == id).cloned()
+        }
     }
 
     impl EventSink for Recorder {

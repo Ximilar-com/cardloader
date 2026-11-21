@@ -61,7 +61,8 @@ const messages: Messages<typeof en> = {
   raw: "원본 응답",
   deleteCard: "이 카드 삭제",
   images: {
-    openOriginal: "더블 클릭하면 원본이 열립니다",
+    enlarge: "클릭하면 확대됩니다 (스페이스)",
+    original: "원본 열기",
     none: "이미지 없음",
   },
   files: {

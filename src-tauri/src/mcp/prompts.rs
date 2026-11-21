@@ -143,7 +143,8 @@ waitingForAgent. If none runs, ask the user for a folder and create_session with
 {start}
 2. Call next_cards_to_identify{session_arg}. It returns a few cards with the front (and back) picture of each, and \
 waits while the next cards are scanned.
-3. Read each card: the name (the player, character or comic title), the set or product (e.g. \"2023 Panini Prizm\"), \
+3. Read each card (from its pictures alone, unless next_cards_to_identify says webSearch is true): the name (the \
+player, character or comic title), the set or product (e.g. \"2023 Panini Prizm\"), \
 the card number as printed (with its letters), the year, the variant or parallel (e.g. \"Silver Prizm\", \
 \"Holo\"), and the game or sport. Sports cards often print the number, year and set only on the back.
 4. Send them with identify_cards: several cards per call, with certainty high, medium or low and a short note of \
@@ -192,7 +193,8 @@ If none runs, ask the user for a folder and create_session with prices \"agent\"
 2. Call next_cards_to_price{session_arg}. It returns a few identified cards: name, set, number, year, variant, \
 game, the slab's grade if the card is graded, an eBay range if one was found, and its pictures.
 3. Work out what each card sells for now, as it is (raw, or in its slab's grade). If you may use them, \
-find_ebay_listings and keep_ebay_listings give its active eBay listings; other sources you have are fine too.
+find_ebay_listings and keep_ebay_listings give its active eBay listings. Search the web only when \
+next_cards_to_price says webSearch is true.
 4. Send the prices with price_cards, in US dollars: several cards per call, each with a short note of how you got \
 it (e.g. \"median of 6 listings, no lots\"). If you can't find a price, send the card with unpriced and say why: \
 never guess.

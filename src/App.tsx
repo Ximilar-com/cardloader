@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import SetupWizard, { useSetupWizard } from "./components/SetupWizard";
+import { AppShortcuts } from "./components/Shortcuts";
 import Sidebar from "./components/Sidebar";
 import Toaster from "./components/Toast";
 import { useI18n } from "./i18n";
@@ -43,6 +44,7 @@ export default function App() {
         </Routes>
       </main>
       {settings && <SetupWizard settings={settings} />}
+      <AppShortcuts />
       <Toaster />
     </div>
   );

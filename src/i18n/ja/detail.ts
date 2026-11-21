@@ -62,7 +62,8 @@ const messages: Messages<typeof en> = {
   raw: "レスポンス（生データ）",
   deleteCard: "このカードを削除",
   images: {
-    openOriginal: "ダブルクリックで元の画像を開く",
+    enlarge: "クリックで拡大（スペース）",
+    original: "元の画像を開く",
     none: "画像なし",
   },
   files: {

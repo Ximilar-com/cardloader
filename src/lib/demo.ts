@@ -106,6 +106,7 @@ const settings: SettingsView = {
     allowDelete: false,
     allowMarket: false,
     allowSettings: false,
+    allowWeb: false,
   },
   tokenSet: true,
   tokenStorage: "keychain",
@@ -116,6 +117,13 @@ const settings: SettingsView = {
 };
 
 let mcpToken = "cl_demo0a1b2c3d4e5f60718293a4b5c6d7e8f9";
+
+/** Claude Desktop is installed and not set up yet, until "Add to Claude Desktop". */
+const claudeDesktop = {
+  installed: true,
+  configured: false,
+  path: "/Users/demo/Library/Application Support/Claude/claude_desktop_config.json",
+};
 
 /** What `mcp_status` says: the server runs while agents are turned on. */
 function mcpStatus() {
@@ -1265,6 +1273,11 @@ export function installDemo() {
           return activity(a.days);
         case "mcp_status":
           return mcpStatus();
+        case "claude_desktop_status":
+          return claudeDesktop;
+        case "add_to_claude_desktop":
+          claudeDesktop.configured = true;
+          return { ...claudeDesktop };
         case "regenerate_mcp_token":
           mcpToken = `cl_demo${crypto.randomUUID().replaceAll("-", "")}`;
           return mcpStatus();

@@ -24,6 +24,7 @@ const messages: Messages<typeof en> = {
     ebay: "Vendas",
     scanner: "Scanner",
     agents: "Agentes de IA",
+    shortcuts: "Atalhos de teclado",
     about: "Sobre",
   },
   ximilar: {
@@ -131,6 +132,9 @@ const messages: Messages<typeof en> = {
         "rascunhos do eBay, publicar e remover anúncios; exportações para Whatnot e Shopify (elas enviam fotos)",
       settings: "Configurações",
       settingsHint: "os padrões das novas sessões (nunca seus tokens ou chaves)",
+      web: "Pesquisar na internet",
+      webHint:
+        "para confirmar a coleção, o número ou a variante de uma carta e o seu preço: mais lento, mais preciso, e o agente usa mais do seu plano. Desligado: os agentes leem cada carta só pelas imagens.",
     },
     port: "Porta",
     portHint: "Só em 127.0.0.1; se estiver ocupada, a próxima livre é usada.",
@@ -142,7 +146,15 @@ const messages: Messages<typeof en> = {
       title: "Conectar um app",
       text: "Os apps iniciam o próprio programa do Cardloader com o argumento mcp; ele encontra sozinho o app aberto e o token.",
       otherApp: "Outro (HTTP)",
-      claudeDesktopHint: "Settings → Developer → Edit Config: adicione isto, depois feche e abra o Claude de novo.",
+      addClaudeDesktop: "Adicionar ao Claude Desktop",
+      claudeDesktopAddHint:
+        "O Claude Desktop ainda não usa o Cardloader. Isto o adiciona às configurações do Claude; nada mais muda.",
+      claudeDesktopAdded: "Adicionado. Feche o Claude Desktop e abra de novo: ele então mostra o Cardloader.",
+      claudeDesktopReady:
+        "O Claude Desktop inicia o Cardloader. Se o Claude ainda não o mostra, feche-o e abra de novo.",
+      claudeDesktopMissing: "O Claude Desktop não está instalado neste computador.",
+      claudeDesktopHint:
+        "Adicione isto a {path} (crie o arquivo se ele não existir), depois feche e abra o Claude de novo.",
       claudeCodeHint: "Rode isto em um terminal; depois /mcp lista o Cardloader.",
       codex: "Codex CLI e extensão para IDE",
       codexHint: "Rode isto em um terminal; os dois leem a mesma configuração.",
@@ -167,6 +179,24 @@ const messages: Messages<typeof en> = {
   },
   language: {
     text: "O idioma das telas do Cardloader. Exportações, nomes de cartas e mensagens do Ximilar ficam como estão.",
+  },
+  shortcuts: {
+    text: "Pressione ? em qualquer lugar para vê-los. No macOS eles usam a tecla Command (⌘); no Windows e no Linux, Ctrl.",
+    anywhere: "Em qualquer lugar",
+    newSession: "Nova sessão",
+    home: "Ir para Início",
+    sessions: "Ir para Sessões",
+    cards: "Ir para Cartas",
+    settings: "Abrir Configurações",
+    search: "Pesquisar nesta página",
+    help: "Mostrar os atalhos de teclado",
+    inSession: "Em uma sessão",
+    space: "Espaço",
+    enlarge: "Ampliar a imagem da carta",
+    picture: "Imagem ampliada",
+    sides: "Frente / verso",
+    original: "Abrir o original",
+    closePicture: "Fechar a imagem",
   },
   about: {
     title: "Sobre o Cardloader",

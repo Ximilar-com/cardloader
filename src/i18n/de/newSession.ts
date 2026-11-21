@@ -246,5 +246,9 @@ const messages: Messages<typeof en> = {
   gradeWhat: "Was graden",
   sameModel: "Dasselbe Modell erkennt die Karten.",
   cropNote: "Zuschnitte laufen immer über die Ximilar-API.",
+  missing: {
+    csv: "Wähle die CSV-Datei zum Importieren.",
+    csvUnreadable: "Die CSV-Datei kann nicht gelesen werden.",
+  },
 };
 export default messages;

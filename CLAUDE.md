@@ -60,7 +60,9 @@ src-tauri/src/
                   hosting, `Hosting`); shares eBay's card typing and titles
   mcp/            MCP server for AI agents: mod.rs (axum on 127.0.0.1, bearer token, start/stop from Settings,
                   <config>/mcp.json), tools.rs (tools by permission group, compact JSON, card pictures), prompts.rs,
-                  bridge.rs (`cardloader mcp`: stdio ↔ the running app's HTTP server)
+                  bridge.rs (`cardloader mcp`: stdio ↔ the running app's HTTP server), claude_desktop.rs (adds
+                  that command to Claude Desktop's claude_desktop_config.json, keeping the rest; never rewrites a
+                  file it can't parse)
   local/          on-device identification: catalog.rs (pinned model files + SHA-256, each model's `Profile`), download.rs
                   (resumable), llama.rs (llama.cpp engine, feature-gated: devices, GPU choice, fitting),
                   identify.rs (prompts, GBNF grammars, parsing), compare.rs (agreement with Ximilar), mod.rs
@@ -206,7 +208,9 @@ state from them.
   `known_paths` includes, so running the folder again doesn't bring them back.
 - **AI agents (MCP)**: the server runs inside the app, never in a second process: a second `Db::open` would pause
   running sessions (`recover_interrupted`). `McpServer::apply` starts/stops it on `save_settings` (`settings.mcp`);
-  what agents may do (`allow_run`, `allow_delete`, `allow_market`, `allow_settings`; reading always) is read on each
+  what agents may do (`allow_run`, `allow_delete`, `allow_market`, `allow_settings`; reading always; `allow_web`,
+  off by default, is no tool group but what `next_cards_to_identify` / `next_cards_to_price` tell the agent with every
+  batch, `webSearch` and its `next`: pictures and Cardloader's tools only, or the web too; nothing can enforce it) is read on each
   call, and tools of a disabled group are left out of `tools/list` and refused. Requests need `Authorization: Bearer`
   with `Secret::McpToken`; hosts are loopback, browser origins only localhost. It answers stateless JSON (no MCP
   sessions). `cardloader mcp` (checked in `main.rs` before Tauri starts) reads `<config>/mcp.json` (port, pid) and

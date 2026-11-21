@@ -24,6 +24,7 @@ const messages: Messages<typeof en> = {
     ebay: "판매",
     scanner: "스캐너",
     agents: "AI 에이전트",
+    shortcuts: "키보드 단축키",
     about: "정보",
   },
   ximilar: {
@@ -129,6 +130,9 @@ const messages: Messages<typeof en> = {
       marketHint: "eBay 초안, 리스팅 게시 및 제거; Whatnot 및 Shopify 내보내기(사진 업로드)",
       settings: "설정",
       settingsHint: "새 세션 기본값(토큰과 키는 제외)",
+      web: "인터넷 검색",
+      webHint:
+        "카드의 세트, 번호, 패럴렐과 가격을 확인하기 위해: 더 느리고 더 정확하며 에이전트가 요금제를 더 많이 사용합니다. 끄면: 에이전트는 각 카드를 이미지만으로 읽습니다.",
     },
     port: "포트",
     portHint: "127.0.0.1에서만 열립니다. 사용 중이면 다음 빈 포트를 사용합니다.",
@@ -140,7 +144,14 @@ const messages: Messages<typeof en> = {
       title: "앱 연결",
       text: "앱은 Cardloader 자체 프로그램을 인수 mcp로 실행합니다. 프로그램이 열려 있는 앱과 토큰을 스스로 찾습니다.",
       otherApp: "기타(HTTP)",
-      claudeDesktopHint: "Settings → Developer → Edit Config: 이 내용을 추가한 다음 Claude를 종료했다가 다시 여세요.",
+      addClaudeDesktop: "Claude Desktop에 추가",
+      claudeDesktopAddHint:
+        "Claude Desktop이 아직 Cardloader를 사용하도록 설정되지 않았습니다. Claude 설정에 추가하며 다른 설정은 바뀌지 않습니다.",
+      claudeDesktopAdded: "추가했습니다. Claude Desktop을 종료했다가 다시 열면 Cardloader가 표시됩니다.",
+      claudeDesktopReady:
+        "Claude Desktop이 Cardloader를 실행합니다. 아직 표시되지 않으면 Claude를 종료했다가 다시 여세요.",
+      claudeDesktopMissing: "이 컴퓨터에 Claude Desktop이 설치되어 있지 않습니다.",
+      claudeDesktopHint: "{path}에 이 내용을 추가하고(파일이 없으면 만드세요) Claude를 종료했다가 다시 여세요.",
       claudeCodeHint: "터미널에서 실행하세요. 그러면 /mcp에 Cardloader가 표시됩니다.",
       codex: "Codex CLI 및 IDE 확장",
       codexHint: "터미널에서 실행하세요. 둘 다 같은 구성을 읽습니다.",
@@ -165,6 +176,24 @@ const messages: Messages<typeof en> = {
   },
   language: {
     text: "Cardloader 화면의 언어입니다. 내보내기, 카드 이름, Ximilar의 메시지는 그대로 유지됩니다.",
+  },
+  shortcuts: {
+    text: "어디서나 ?를 누르면 볼 수 있습니다. macOS에서는 Command 키(⌘), Windows와 Linux에서는 Ctrl을 사용합니다.",
+    anywhere: "어디서나",
+    newSession: "새 세션",
+    home: "홈으로 이동",
+    sessions: "세션으로 이동",
+    cards: "카드로 이동",
+    settings: "설정 열기",
+    search: "이 페이지에서 검색",
+    help: "키보드 단축키 보기",
+    inSession: "세션에서",
+    space: "스페이스",
+    enlarge: "카드 이미지 확대",
+    picture: "확대한 이미지",
+    sides: "앞면 / 뒷면",
+    original: "원본 열기",
+    closePicture: "이미지 닫기",
   },
   about: {
     title: "Cardloader 정보",

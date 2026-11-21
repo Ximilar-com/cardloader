@@ -1,6 +1,26 @@
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type MouseEvent, type ReactNode } from "react";
 import { useT } from "../i18n";
+
+/** When the window last got the focus back, e.g. from a native folder picker. */
+let refocusedAt = 0;
+if (typeof window !== "undefined") window.addEventListener("focus", () => (refocusedAt = Date.now()));
+
+/** Closing on a click beside a dialog: only a whole click there (pressed and released on the backdrop), and not
+ * one in the moment the window gets the focus back. On macOS the click that closes a native picker (Browse →
+ * Open) can reach the page beneath it, which closed the dialog it was picking for. */
+export function useBackdropClose(onClose: () => void) {
+  const pressed = useRef(false);
+  return {
+    onMouseDown: (e: MouseEvent) => {
+      pressed.current = e.target === e.currentTarget && Date.now() - refocusedAt > 500;
+    },
+    onClick: (e: MouseEvent) => {
+      if (pressed.current && e.target === e.currentTarget) onClose();
+      pressed.current = false;
+    },
+  };
+}
 
 export default function Modal({
   title,
@@ -16,6 +36,7 @@ export default function Modal({
   width?: string;
 }) {
   const t = useT();
+  const backdrop = useBackdropClose(onClose);
   useEffect(() => {
     // Not an Escape that a control inside already took, such as an open Select closing its list.
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && onClose();
@@ -24,10 +45,9 @@ export default function Modal({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6" {...backdrop}>
       <div
         className={`card flex max-h-full w-full ${width} flex-col shadow-2xl`}
-        onMouseDown={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}

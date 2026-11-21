@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Info,
   KeyRound,
+  Keyboard,
   Languages,
   LogIn,
   LogOut,
@@ -42,6 +43,8 @@ import {
   taskOptions,
 } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
+import { ShortcutsList } from "../components/Shortcuts";
+import { IS_MAC } from "../lib/shortcuts";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
 import { languageOf, rich, t, useI18n, useT, type Language } from "../i18n";
 import { LANGUAGES } from "../i18n/languages";
@@ -49,6 +52,7 @@ import {
   api,
   errorText,
   type AppInfo,
+  type ClaudeDesktop,
   type ConnectionCheck,
   type DeviceInfo,
   type EbaySettings,
@@ -698,6 +702,11 @@ export default function SettingsPage() {
                 />
               </Section>
             )}
+            {tab === "shortcuts" && (
+              <Section title={t("settings.tabs.shortcuts")} text={t("settings.shortcuts.text")}>
+                <ShortcutsList />
+              </Section>
+            )}
             {tab === "about" && <About />}
           </div>
         </div>
@@ -725,6 +734,7 @@ function permissions(): { key: keyof McpSettings; label: string; hint: string }[
       label: t("settings.agents.permissions.settings"),
       hint: t("settings.agents.permissions.settingsHint"),
     },
+    { key: "allowWeb", label: t("settings.agents.permissions.web"), hint: t("settings.agents.permissions.webHint") },
   ];
 }
 
@@ -828,9 +838,10 @@ function AgentsTab({
           <div role="tabpanel" className="space-y-5 pb-1">
             {app === "claude" && (
               <>
+                <AddToClaudeDesktop />
                 <Snippet
                   label="Claude Desktop"
-                  hint={t("settings.agents.connect.claudeDesktopHint")}
+                  hint={t("settings.agents.connect.claudeDesktopHint", { path: CLAUDE_DESKTOP_CONFIG })}
                   text={mcpServers}
                 />
                 <Snippet
@@ -901,6 +912,57 @@ function agentApps(): [AgentApp, string][] {
 }
 
 /** Text to copy into another app. */
+/** Adds Cardloader to Claude Desktop's configuration in one click, so nobody edits its JSON by hand. */
+function AddToClaudeDesktop() {
+  const t = useT();
+  const [state, setState] = useState<ClaudeDesktop | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api
+      .claudeDesktopStatus()
+      .then(setState)
+      .catch(() => setState(null));
+  }, []);
+  if (!state) return null;
+  if (!state.installed)
+    return <p className="text-sm text-slate-500">{t("settings.agents.connect.claudeDesktopMissing")}</p>;
+  const add = () => {
+    setBusy(true);
+    setError(null);
+    api
+      .addToClaudeDesktop()
+      .then((s) => {
+        setState(s);
+        toast(t("settings.agents.connect.claudeDesktopAdded"));
+      })
+      .catch((e) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3 rounded-md bg-slate-50 px-3 py-2.5 dark:bg-slate-900" title={state.path}>
+        {state.configured ? (
+          <>
+            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+            <span className="flex-1 text-sm">{t("settings.agents.connect.claudeDesktopReady")}</span>
+          </>
+        ) : (
+          <>
+            <span className="flex-1 text-sm text-slate-600 dark:text-slate-300">
+              {t("settings.agents.connect.claudeDesktopAddHint")}
+            </span>
+            <button className="btn btn-primary shrink-0" onClick={add} disabled={busy}>
+              {t("settings.agents.connect.addClaudeDesktop")}
+            </button>
+          </>
+        )}
+      </div>
+      <ErrorNote>{error}</ErrorNote>
+    </div>
+  );
+}
+
 function Snippet({ label, hint, text }: { label: string; hint?: string; text: string }) {
   const t = useT();
   const copy = () =>
@@ -1075,7 +1137,14 @@ function UpdateNotice() {
   );
 }
 
-type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "agents" | "language" | "about";
+/** Claude Desktop's MCP configuration, where its own settings no longer show an editor for it. */
+const CLAUDE_DESKTOP_CONFIG = IS_MAC
+  ? "~/Library/Application Support/Claude/claude_desktop_config.json"
+  : /Win/.test(navigator.platform || navigator.userAgent)
+    ? "%APPDATA%\\Claude\\claude_desktop_config.json"
+    : "~/.config/Claude/claude_desktop_config.json";
+
+type Tab = "ximilar" | "models" | "sessions" | "ebay" | "scanner" | "agents" | "language" | "shortcuts" | "about";
 
 function tabs(): { key: Tab; label: string; icon: LucideIcon }[] {
   return [
@@ -1086,6 +1155,7 @@ function tabs(): { key: Tab; label: string; icon: LucideIcon }[] {
     { key: "scanner", label: t("settings.tabs.scanner"), icon: ScanLine },
     { key: "agents", label: t("settings.tabs.agents"), icon: Bot },
     { key: "language", label: t("common.language"), icon: Languages },
+    { key: "shortcuts", label: t("settings.tabs.shortcuts"), icon: Keyboard },
     { key: "about", label: t("settings.tabs.about"), icon: Info },
   ];
 }

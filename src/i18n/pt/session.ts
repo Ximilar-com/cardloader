@@ -204,15 +204,20 @@ const messages: Messages<typeof en> = {
         "“{name}” e suas {count} cartas com as imagens são excluídas do Cards Cloud para todos no workspace. Uma sessão local da qual ela foi enviada mantém suas cartas; enviá-la de novo cria uma nova sessão lá.",
     },
   },
+  agentPrompt: {
+    identify: "Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.",
+    price: "Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.",
+    copy: "Copiar o prompt",
+  },
   agentPricing: {
-    one: "<b>{count} carta</b> aguarda o preço do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} do Cardloader.”",
+    one: "<b>{count} carta</b> aguarda o preço do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
     other:
-      "<b>{count} cartas</b> aguardam os preços do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} do Cardloader.”",
+      "<b>{count} cartas</b> aguardam os preços do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
   },
   agentWaiting: {
-    one: "<b>{count} carta</b> aguarda seu agente de IA. Peça a ele, ex. no Claude: “Identifique as cartas da sessão {name} do Cardloader.”",
+    one: "<b>{count} carta</b> aguarda seu agente de IA. Peça a ele, ex. no Claude: “Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
     other:
-      "<b>{count} cartas</b> aguardam seu agente de IA. Peça a ele, ex. no Claude: “Identifique as cartas da sessão {name} do Cardloader.”",
+      "<b>{count} cartas</b> aguardam seu agente de IA. Peça a ele, ex. no Claude: “Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
   },
 };
 export default messages;

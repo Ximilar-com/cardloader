@@ -22,7 +22,7 @@ import { t, useT, type Key } from "../i18n";
 import { errorText, type EbayMarket, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, dateTime, decimal, grade, parseAmount, price } from "../lib/format";
-import { ErrorNote } from "./Modal";
+import { ErrorNote, useBackdropClose } from "./Modal";
 import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
 export default function DetailPanel({
@@ -75,12 +75,16 @@ export default function DetailPanel({
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
+  /** The picture shown (front, back), and whether it is enlarged over the app. */
+  const [side, setSide] = useState(0);
+  const [zoomed, setZoomed] = useState(false);
   const [turning, setTurning] = useState(false);
   const [turnBusy, setTurnBusy] = useState(false);
   // Only upside down is certain to be fixed by turning the picture half way.
   const canTurn = !!onTurn && view.rotation?.tag === "rotated_upside_down";
 
-  // Reviewing from the keyboard: A accepts, E edits, 1–9 pick a candidate, Delete deletes, Escape closes.
+  // Reviewing from the keyboard: A accepts, E edits, 1–9 pick a candidate, Space enlarges the picture, Delete
+  // deletes, Escape closes.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       // A key something else took (Escape closing an open menu) isn't for the panel.
@@ -94,6 +98,7 @@ export default function DetailPanel({
       else if (e.key === "a" && view.accepted && onUnaccept) onUnaccept();
       else if (e.key === "a" && !view.accepted && onAccept) onAccept();
       else if (e.key === "e" && onEdit && view.edit) setEditing(true);
+      else if (e.key === " " && view.images.some((im) => im.src)) setZoomed(true);
       else if ((e.key === "Delete" || e.key === "Backspace") && onDelete) onDelete();
       else if (candidate && onPick) void onPick(candidate.index);
       else return;
@@ -302,7 +307,8 @@ export default function DetailPanel({
           </div>
         )}
 
-        <Images images={view.images} />
+        <Images images={view.images} active={side} onActive={setSide} onZoom={() => setZoomed(true)} />
+        {zoomed && <Lightbox images={view.images} active={side} onActive={setSide} onClose={() => setZoomed(false)} />}
 
         {(view.price != null || view.grade != null || view.condition) && (
           <div className="grid grid-cols-2 gap-2">
@@ -448,42 +454,145 @@ export default function DetailPanel({
   );
 }
 
-function Images({ images }: { images: CardView["images"] }) {
+function Images({
+  images,
+  active,
+  onActive,
+  onZoom,
+}: {
+  images: CardView["images"];
+  active: number;
+  onActive: (i: number) => void;
+  onZoom: () => void;
+}) {
   const t = useT();
-  const [active, setActive] = useState(0);
-  const img = images[Math.min(active, images.length - 1)];
+  const index = Math.min(active, images.length - 1);
+  const img = images[index];
   if (!img) return null;
   return (
     <div>
       <div className="flex h-72 items-center justify-center rounded-lg bg-slate-100 p-2 dark:bg-slate-900">
         {img.src ? (
-          <img
-            src={img.src}
-            alt={img.label}
-            className={clsx("max-h-full max-w-full rounded object-contain shadow", img.path && "cursor-zoom-in")}
-            onDoubleClick={() => img.path && openPath(img.path)}
-            title={img.path ? t("detail.images.openOriginal") : undefined}
-          />
+          <button
+            className="flex h-full max-w-full cursor-zoom-in items-center justify-center"
+            onClick={onZoom}
+            title={t("detail.images.enlarge")}
+          >
+            <img src={img.src} alt={img.label} className="max-h-full max-w-full rounded object-contain shadow" />
+          </button>
         ) : (
           <span className="text-sm text-slate-400">{t("detail.images.none")}</span>
         )}
       </div>
-      {images.length > 1 && (
-        <div className="mt-2 flex justify-center gap-1">
-          {images.map((im, i) => (
-            <button
-              key={im.label + i}
-              onClick={() => setActive(i)}
-              className={clsx(
-                "rounded px-2 py-0.5 text-xs",
-                i === active ? "bg-accent text-white" : "btn-ghost text-slate-500",
-              )}
-            >
-              {im.label}
-            </button>
-          ))}
-        </div>
-      )}
+      <Sides images={images} active={index} onActive={onActive} className="mt-2" />
+    </div>
+  );
+}
+
+/** Front / back switches, when the card has both. */
+function Sides({
+  images,
+  active,
+  onActive,
+  className,
+  dark,
+}: {
+  images: CardView["images"];
+  active: number;
+  onActive: (i: number) => void;
+  className?: string;
+  dark?: boolean;
+}) {
+  if (images.length < 2) return null;
+  return (
+    <div className={clsx("flex justify-center gap-1", className)}>
+      {images.map((im, i) => (
+        <button
+          key={im.label + i}
+          onClick={() => onActive(i)}
+          className={clsx(
+            "rounded px-2 py-0.5 text-xs",
+            i === active
+              ? "bg-accent text-white"
+              : dark
+                ? "text-slate-300 hover:bg-white/10"
+                : "btn-ghost text-slate-500",
+          )}
+        >
+          {im.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** The card's picture over the whole window: ← / → switch sides, O opens the original, Escape (or a click
+ * beside it) closes. */
+function Lightbox({
+  images,
+  active,
+  onActive,
+  onClose,
+}: {
+  images: CardView["images"];
+  active: number;
+  onActive: (i: number) => void;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const index = Math.min(active, images.length - 1);
+  const img = images[index];
+  const backdrop = useBackdropClose(onClose);
+  // Beside the picture is the backdrop too.
+  const beside = useBackdropClose(onClose);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "Escape" || e.key === " ") onClose();
+      else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && images.length > 1)
+        onActive((index + (e.key === "ArrowRight" ? 1 : images.length - 1)) % images.length);
+      else if (e.key === "o" && img?.path) void openPath(img.path);
+      else return;
+      // The panel and the table behind it don't get the key.
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [images.length, index, img?.path, onActive, onClose]);
+  if (!img) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-slate-950/90"
+      role="dialog"
+      aria-modal="true"
+      aria-label={img.label}
+      {...backdrop}
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Sides images={images} active={index} onActive={onActive} dark />
+        <span className="flex-1" />
+        {img.path && (
+          <button
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-200 hover:bg-white/10"
+            onClick={() => void openPath(img.path!)}
+          >
+            <ExternalLink className="h-4 w-4" /> {t("detail.images.original")}
+          </button>
+        )}
+        <button
+          className="rounded p-1.5 text-slate-200 hover:bg-white/10"
+          onClick={onClose}
+          aria-label={t("common.close")}
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-6 pt-0" {...beside}>
+        {img.src && (
+          <img src={img.src} alt={img.label} className="max-h-full max-w-full rounded object-contain shadow-2xl" />
+        )}
+      </div>
     </div>
   );
 }

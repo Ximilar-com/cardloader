@@ -83,6 +83,8 @@ pub fn run() {
             commands::set_token,
             commands::test_connection,
             commands::mcp_status,
+            commands::claude_desktop_status,
+            commands::add_to_claude_desktop,
             commands::regenerate_mcp_token,
             commands::list_sessions,
             commands::dashboard_activity,

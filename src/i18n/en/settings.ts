@@ -23,6 +23,7 @@ export default {
     ebay: "Selling",
     scanner: "Scanner",
     agents: "AI agents",
+    shortcuts: "Keyboard shortcuts",
     about: "About",
   },
   ximilar: {
@@ -129,6 +130,9 @@ export default {
       marketHint: "eBay drafts, publishing and removing listings; Whatnot and Shopify exports (they upload pictures)",
       settings: "Settings",
       settingsHint: "the defaults of new sessions (never your tokens or keys)",
+      web: "Search the internet",
+      webHint:
+        "to confirm a card’s set, number or parallel, and its price: slower, more precise, and the agent uses more of your plan. Off: agents read each card from its pictures alone.",
     },
     port: "Port",
     portHint: "On 127.0.0.1 only; the next free one is used when it is taken.",
@@ -140,7 +144,14 @@ export default {
       title: "Connect an app",
       text: "Apps start Cardloader’s own program with the argument mcp; it finds the open app and its token by itself.",
       otherApp: "Other (HTTP)",
-      claudeDesktopHint: "Settings → Developer → Edit Config: add this, then quit and reopen Claude.",
+      addClaudeDesktop: "Add to Claude Desktop",
+      claudeDesktopAddHint:
+        "Claude Desktop isn’t set up to use Cardloader yet. This adds it to Claude’s settings; nothing else there changes.",
+      claudeDesktopAdded: "Added. Quit Claude Desktop and open it again: it then lists Cardloader.",
+      claudeDesktopReady:
+        "Claude Desktop starts Cardloader. If Claude doesn’t list it yet, quit Claude and open it again.",
+      claudeDesktopMissing: "Claude Desktop isn’t installed on this computer.",
+      claudeDesktopHint: "Add this to {path} (make the file if there is none), then quit and reopen Claude.",
       claudeCodeHint: "Run this in a terminal; /mcp then lists Cardloader.",
       codex: "Codex CLI and IDE extension",
       codexHint: "Run this in a terminal; both read the same configuration.",
@@ -165,6 +176,24 @@ export default {
   },
   language: {
     text: "The language of Cardloader's screens. Exports, card names and messages from Ximilar stay as they are.",
+  },
+  shortcuts: {
+    text: "Press ? anywhere to see them. On macOS they use the Command key (⌘), on Windows and Linux Ctrl.",
+    anywhere: "Anywhere",
+    newSession: "New session",
+    home: "Go to Home",
+    sessions: "Go to Sessions",
+    cards: "Go to Cards",
+    settings: "Open Settings",
+    search: "Search on this page",
+    help: "Show the keyboard shortcuts",
+    inSession: "In a session",
+    space: "Space",
+    enlarge: "Enlarge the card’s picture",
+    picture: "Enlarged picture",
+    sides: "Front / back",
+    original: "Open the original",
+    closePicture: "Close the picture",
   },
   about: {
     title: "About Cardloader",

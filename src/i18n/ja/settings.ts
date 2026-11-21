@@ -24,6 +24,7 @@ const messages: Messages<typeof en> = {
     ebay: "販売",
     scanner: "スキャナー",
     agents: "AIエージェント",
+    shortcuts: "キーボードショートカット",
     about: "情報",
   },
   ximilar: {
@@ -131,6 +132,9 @@ const messages: Messages<typeof en> = {
       marketHint: "eBayの下書き、出品の公開と取り下げ、WhatnotとShopifyのエクスポート（画像をアップロードします）",
       settings: "設定",
       settingsHint: "新しいセッションの既定値（トークンやキーは対象外）",
+      web: "インターネットを検索",
+      webHint:
+        "カードのセット・番号・パラレルや価格を確認するため。遅くなり、より正確になり、エージェントがプランをより多く使います。オフ：エージェントは各カードを画像だけから読み取ります。",
     },
     port: "ポート",
     portHint: "127.0.0.1のみ。使用中の場合は次の空きポートを使います。",
@@ -142,7 +146,14 @@ const messages: Messages<typeof en> = {
       title: "アプリを接続",
       text: "アプリは引数mcpを付けてCardloader本体のプログラムを起動します。プログラムは開いているアプリとそのトークンを自動で見つけます。",
       otherApp: "その他（HTTP）",
-      claudeDesktopHint: "Settings → Developer → Edit Configを開いてこれを追加し、Claudeを終了して再度開いてください。",
+      addClaudeDesktop: "Claude Desktopに追加",
+      claudeDesktopAddHint:
+        "Claude DesktopはまだCardloaderを使うよう設定されていません。Claudeの設定に追加します（他の設定は変わりません）。",
+      claudeDesktopAdded: "追加しました。Claude Desktopを終了して再度開くと、Cardloaderが表示されます。",
+      claudeDesktopReady:
+        "Claude DesktopはCardloaderを起動します。まだ表示されない場合は、Claudeを終了して再度開いてください。",
+      claudeDesktopMissing: "このコンピュータにはClaude Desktopがインストールされていません。",
+      claudeDesktopHint: "{path} にこれを追加し（ファイルがなければ作成）、Claudeを終了して再度開いてください。",
       claudeCodeHint: "これをターミナルで実行してください。/mcpでCardloaderが表示されます。",
       codex: "Codex CLIとIDE拡張機能",
       codexHint: "これをターミナルで実行してください。どちらも同じ設定を読み込みます。",
@@ -167,6 +178,24 @@ const messages: Messages<typeof en> = {
   },
   language: {
     text: "Cardloaderの画面の言語です。エクスポート、カード名、Ximilarからのメッセージはそのままです。",
+  },
+  shortcuts: {
+    text: "どこでも ? を押すと表示されます。macOSではCommandキー（⌘）、WindowsとLinuxではCtrlを使います。",
+    anywhere: "どこでも",
+    newSession: "新しいセッション",
+    home: "ホームへ移動",
+    sessions: "セッションへ移動",
+    cards: "カードへ移動",
+    settings: "設定を開く",
+    search: "このページで検索",
+    help: "キーボードショートカットを表示",
+    inSession: "セッション内",
+    space: "スペース",
+    enlarge: "カードの画像を拡大",
+    picture: "拡大した画像",
+    sides: "表面 / 裏面",
+    original: "元の画像を開く",
+    closePicture: "画像を閉じる",
   },
   about: {
     title: "Cardloaderについて",

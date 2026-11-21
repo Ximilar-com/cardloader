@@ -5,6 +5,7 @@ import {
   Bot,
   CircleQuestionMark,
   Check,
+  Copy,
   ChevronDown,
   Cloud,
   CloudUpload,
@@ -31,7 +32,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import DetailPanel from "../components/DetailPanel";
 import { EbaySection } from "../components/Ebay";
 import Menu from "../components/Menu";
-import Modal, { ErrorNote } from "../components/Modal";
+import { ErrorNote } from "../components/Modal";
 import { ConfirmDialog, RenameDialog, useSessionActions } from "../components/SessionActions";
 import ProgressBar from "../components/ProgressBar";
 import SessionTable from "../components/SessionTable";
@@ -74,6 +75,7 @@ import {
   taskLabels,
 } from "../lib/format";
 import { rich, t, useT } from "../i18n";
+import { SEARCH_FIELD, useShortcuts } from "../lib/shortcuts";
 
 export default function SessionPage() {
   const { id = "" } = useParams();
@@ -116,7 +118,7 @@ function SessionView({ id }: { id: string }) {
   /** Cards to delete, or to give a location, awaiting the dialog. */
   const [deleting, setDeleting] = useState<number[] | null>(null);
   const [locating, setLocating] = useState<number[] | null>(null);
-  const [keysHelp, setKeysHelp] = useState(false);
+  const showHelp = useShortcuts((s) => s.showHelp);
   const samples = useRef<[number, number][]>([]);
   const selectedRef = useRef<string | null>(null);
   /** A card's detail that took a while to come (an eBay search): shown only if the card is still the open one. */
@@ -193,15 +195,6 @@ function SessionView({ id }: { id: string }) {
       void unDeleted.then((f) => f());
     };
   }, [id, navigate]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "?" || (e.target as HTMLElement)?.closest("input, textarea, select")) return;
-      setKeysHelp(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
 
   const select = useCallback((key: string) => {
     setSelected(key);
@@ -528,24 +521,18 @@ function SessionView({ id }: { id: string }) {
               </div>
             )}
             {agent && active && counts.inProgress > 0 && (
-              <p className="mt-2 flex items-start gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm text-slate-700 dark:bg-accent/10 dark:text-slate-200">
-                <Bot className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                <span>
-                  {rich(t("session.agentWaiting", { count: counts.inProgress, name: session.name }), {
-                    b: (s) => <b>{s}</b>,
-                  })}
-                </span>
-              </p>
+              <AgentBanner prompt={t("session.agentPrompt.identify", { name: session.name, id: session.id })}>
+                {rich(t("session.agentWaiting", { count: counts.inProgress, name: session.name, id: session.id }), {
+                  b: (s) => <b>{s}</b>,
+                })}
+              </AgentBanner>
             )}
             {prices === "agent" && active && counts.pricing > 0 && (
-              <p className="mt-2 flex items-start gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm text-slate-700 dark:bg-accent/10 dark:text-slate-200">
-                <Bot className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-                <span>
-                  {rich(t("session.agentPricing", { count: counts.pricing, name: session.name }), {
-                    b: (s) => <b>{s}</b>,
-                  })}
-                </span>
-              </p>
+              <AgentBanner prompt={t("session.agentPrompt.price", { name: session.name, id: session.id })}>
+                {rich(t("session.agentPricing", { count: counts.pricing, name: session.name, id: session.id }), {
+                  b: (s) => <b>{s}</b>,
+                })}
+              </AgentBanner>
             )}
             {session.syncError && !running && (
               <Warning
@@ -688,6 +675,7 @@ function SessionView({ id }: { id: string }) {
                 <input
                   className="input w-52 py-1 pl-7 text-sm"
                   placeholder={t("session.filter.find")}
+                  {...SEARCH_FIELD}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   onKeyDown={(e) => e.key === "Escape" && setQuery("")}
@@ -696,7 +684,7 @@ function SessionView({ id }: { id: string }) {
               </label>
               <button
                 className="btn btn-ghost px-1.5"
-                onClick={() => setKeysHelp(true)}
+                onClick={() => showHelp(true)}
                 title={t("session.keys.title")}
                 aria-label={t("session.keys.title")}
               >
@@ -840,8 +828,6 @@ function SessionView({ id }: { id: string }) {
         />
       )}
 
-      {keysHelp && <KeysHelp onClose={() => setKeysHelp(false)} />}
-
       {actions.node}
     </div>
   );
@@ -885,37 +871,27 @@ function Warning({ text, action, onAction }: { text: string; action: string; onA
   );
 }
 
-function keys(): [string, string][] {
-  return [
-    ["J  /  ↓", t("session.keys.next")],
-    ["K  /  ↑", t("session.keys.previous")],
-    ["A", t("session.keys.accept")],
-    ["1 – 9", t("session.keys.select")],
-    ["E", t("session.keys.edit")],
-    ["Delete", t("session.keys.delete")],
-    ["Esc", t("session.keys.close")],
-    [t("session.keys.shiftClick"), t("session.keys.range")],
-  ];
-}
-
-function KeysHelp({ onClose }: { onClose: () => void }) {
+/** Cards wait for the user's AI agent: what to ask it, with a button that copies the prompt. */
+function AgentBanner({ prompt, children }: { prompt: string; children: ReactNode }) {
   const t = useT();
+  const copy = () =>
+    navigator.clipboard
+      .writeText(prompt)
+      .then(() => toast(t("common.copied")))
+      .catch(toastError);
   return (
-    <Modal title={t("session.keys.title")} width="max-w-sm" onClose={onClose}>
-      <dl className="grid grid-cols-[110px_1fr] gap-y-2 text-sm">
-        {keys().map(([k, v]) => (
-          <div key={k} className="contents">
-            <dt>
-              <kbd className="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 font-mono text-xs dark:border-slate-700 dark:bg-slate-900">
-                {k}
-              </kbd>
-            </dt>
-            <dd className="text-slate-600 dark:text-slate-300">{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className="mt-4 text-xs text-slate-500">{t("session.keys.tip")}</p>
-    </Modal>
+    <div className="mt-2 flex items-start gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm text-slate-700 dark:bg-accent/10 dark:text-slate-200">
+      <Bot className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+      <span className="flex-1">{children}</span>
+      <button
+        className="btn btn-ghost -my-1 shrink-0 px-1.5"
+        onClick={copy}
+        title={t("session.agentPrompt.copy")}
+        aria-label={t("session.agentPrompt.copy")}
+      >
+        <Copy className="h-4 w-4" />
+      </button>
+    </div>
   );
 }
 

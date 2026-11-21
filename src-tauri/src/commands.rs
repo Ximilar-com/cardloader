@@ -17,6 +17,7 @@ use crate::export;
 use crate::local::compare::{self, CompareReport, CompareRow};
 use crate::local::{self, ModelStatus};
 use crate::market::{self, shopify, tcgplayer, whatnot, Format, PricedItem};
+use crate::mcp::claude_desktop::{self, ClaudeDesktop};
 use crate::mcp::{McpServer, McpStatus};
 use crate::model::*;
 use crate::runner::Runner;
@@ -63,6 +64,26 @@ pub async fn save_settings(
 #[tauri::command]
 pub async fn mcp_status(mcp: State<'_, Arc<McpServer>>) -> Result<McpStatus> {
     Ok(mcp.status().await)
+}
+
+/// Whether Claude Desktop is installed here and already starts Cardloader.
+#[tauri::command]
+pub fn claude_desktop_status() -> Result<ClaudeDesktop> {
+    let path =
+        claude_desktop::config_path().ok_or_else(|| Error::msg("no configuration folder"))?;
+    Ok(claude_desktop::status(&path, &this_program()?))
+}
+
+/// Adds Cardloader to Claude Desktop's MCP servers: Claude starts it the next time it opens.
+#[tauri::command]
+pub fn add_to_claude_desktop() -> Result<ClaudeDesktop> {
+    let path =
+        claude_desktop::config_path().ok_or_else(|| Error::msg("no configuration folder"))?;
+    claude_desktop::add(&path, &this_program()?)
+}
+
+fn this_program() -> Result<String> {
+    Ok(std::env::current_exe()?.to_string_lossy().into_owned())
 }
 
 /// A new token for agents; the old one stops working.

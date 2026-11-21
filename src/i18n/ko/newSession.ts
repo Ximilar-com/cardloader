@@ -227,5 +227,9 @@ const messages: Messages<typeof en> = {
   gradeWhat: "그레이딩 대상",
   sameModel: "같은 모델이 카드를 식별합니다.",
   cropNote: "자르기는 항상 Ximilar API로 합니다.",
+  missing: {
+    csv: "가져올 CSV 파일을 선택하세요.",
+    csvUnreadable: "CSV 파일을 읽을 수 없습니다.",
+  },
 };
 export default messages;

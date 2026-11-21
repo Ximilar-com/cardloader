@@ -6,6 +6,7 @@
 //! Clients that only start programs (Claude Desktop) run `cardloader mcp` (`bridge`), which relays stdio here.
 
 pub mod bridge;
+pub mod claude_desktop;
 mod prompts;
 mod tools;
 

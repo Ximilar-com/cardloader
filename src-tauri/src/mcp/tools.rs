@@ -38,7 +38,8 @@ candidates. Every identified card waits for review until it is accepted. Whereve
 until finished) → list_cards with filter to_review → get_card (look at the picture) → accept_cards or \
 select_candidate. To identify the cards yourself instead, create the session with engine \"agent\": Cardloader \
 reads the images and hands you each card's pictures through next_cards_to_identify, and you answer with \
-identify_cards. To price identified cards yourself, create the session with prices \"agent\": next_cards_to_price \
+identify_cards. Both next_cards_to_identify and next_cards_to_price say whether the user lets you search the web \
+(webSearch): when not, use only the cards' pictures and Cardloader's tools. To price identified cards yourself, create the session with prices \"agent\": next_cards_to_price \
 hands you each identified card, and you answer with price_cards. For what an identified card asks on eBay now, call \
 find_ebay_listings, then keep_ebay_listings with the listings that are the card. Cards you accept are marked as accepted by AI in the app, with your note; the \
 user sees everything you do live. Tools you may not use are left out: the user allows them in Cardloader → Settings → AI \
@@ -95,7 +96,7 @@ struct NoArgs {}
 
 #[derive(Deserialize, JsonSchema)]
 struct SessionArg {
-    /// The session id, or "latest" for the newest session.
+    /// The session: its id, its name, or "latest" for the newest session.
     session_id: String,
 }
 
@@ -126,7 +127,7 @@ enum CardFilter {
 
 #[derive(Deserialize, JsonSchema)]
 struct ListCards {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     #[serde(default)]
     filter: CardFilter,
@@ -240,7 +241,7 @@ struct CreateSession {
 
 #[derive(Deserialize, JsonSchema)]
 struct RunSession {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Only analyse the cards waiting in the queue: no new files, no scan (default false).
     only_queued: Option<bool>,
@@ -248,7 +249,7 @@ struct RunSession {
 
 #[derive(Deserialize, JsonSchema)]
 struct NextCards {
-    /// A session identified by an AI agent (its id, or "latest"); empty for any.
+    /// A session identified or priced by an AI agent (its id, its name, or "latest"); empty for any.
     session_id: Option<String>,
     /// Cards to return at most (default 3, at most 10): each comes with its pictures.
     max: Option<usize>,
@@ -331,7 +332,7 @@ struct KeepEbayListings {
 
 #[derive(Deserialize, JsonSchema)]
 struct WaitForSession {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Return after this many seconds even if it still runs (default 50, at most 120).
     timeout_seconds: Option<u64>,
@@ -378,7 +379,7 @@ struct EditCard {
 
 #[derive(Deserialize, JsonSchema)]
 struct RetryCards {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Default: every card that failed.
     item_ids: Option<Vec<i64>>,
@@ -398,7 +399,7 @@ struct SetLocation {
 
 #[derive(Deserialize, JsonSchema)]
 struct ExportCsv {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -408,7 +409,7 @@ struct ExportCsv {
 
 #[derive(Deserialize, JsonSchema)]
 struct ExportTcgplayer {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -421,7 +422,7 @@ struct ExportTcgplayer {
 
 #[derive(Deserialize, JsonSchema)]
 struct DeleteCards {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     item_ids: Vec<i64>,
 }
@@ -436,7 +437,7 @@ struct DeleteSession {
 
 #[derive(Deserialize, JsonSchema)]
 struct EbayDrafts {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// The cards and their prices. Default: every identified card that has a market price, at that price.
     items: Option<Vec<DraftItem>>,
@@ -446,7 +447,7 @@ struct EbayDrafts {
 
 #[derive(Deserialize, JsonSchema)]
 struct EbayCards {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Default: all of the session's cards that apply.
     item_ids: Option<Vec<i64>>,
@@ -454,7 +455,7 @@ struct EbayCards {
 
 #[derive(Deserialize, JsonSchema)]
 struct EbayRefresh {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Read the listings even if they were read a few minutes ago.
     force: Option<bool>,
@@ -462,7 +463,7 @@ struct EbayRefresh {
 
 #[derive(Deserialize, JsonSchema)]
 struct ExportWhatnot {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -474,7 +475,7 @@ struct ExportWhatnot {
 
 #[derive(Deserialize, JsonSchema)]
 struct ExportShopify {
-    /// The session id, or "latest".
+    /// The session: its id, its name, or "latest".
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -947,19 +948,45 @@ impl Handler {
     }
 
     /// The session an agent named: its id, or "latest" (also empty) for the newest.
+    /// The session an agent means: its id (also inside other text, e.g. "(id …)"), its name, or "latest". Agents
+    /// pass what the user told them, often the name; a name several sessions share is refused with their ids.
     fn session_id(&self, given: &str) -> Result<String> {
-        let given = given.trim();
+        let given = given
+            .trim()
+            .trim_matches(|c: char| "\"'“”„«»「」".contains(c))
+            .trim();
+        let sessions = || self.state.db.sessions();
         if given.is_empty() || given.eq_ignore_ascii_case("latest") {
-            return self
-                .state
-                .db
-                .sessions()?
+            return sessions()?
                 .into_iter()
                 .next()
                 .map(|s| s.id)
                 .ok_or_else(|| Error::msg("there are no sessions yet"));
         }
-        Ok(self.state.db.session(given)?.id)
+        if let Ok(s) = self.state.db.session(given) {
+            return Ok(s.id);
+        }
+        if let Some(id) = uuid_in(given) {
+            return Ok(self.state.db.session(id)?.id);
+        }
+        let named: Vec<Session> = sessions()?
+            .into_iter()
+            .filter(|s| s.name.trim().eq_ignore_ascii_case(given))
+            .collect();
+        match named.as_slice() {
+            [one] => Ok(one.id.clone()),
+            [] => Err(Error::msg(format!(
+                "no session has the id or name \"{given}\": list_sessions shows them"
+            ))),
+            many => Err(Error::msg(format!(
+                "{} sessions are named \"{given}\": pass one's id ({})",
+                many.len(),
+                many.iter()
+                    .map(|s| s.id.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+        }
     }
 
     fn session_out(&self, id: &str) -> Result<Vec<ContentBlock>> {
@@ -1203,14 +1230,33 @@ impl Handler {
             cards.push(card);
             pics.extend(pictures(&item, long_edge).await?);
         }
+        // Whether the agent may look beyond the pictures is the user's choice (Settings → AI agents), said with
+        // every batch: Cardloader can't switch off an agent's own web search.
+        let web = self.state.settings.get().mcp.allow_web;
+        let next = match (task, web) {
+            (AgentTask::Identify, false) => format!(
+                "read each card from its pictures below only: the user turned web search off in Cardloader, so don't \
+                 search the web or other sources. Then send them with {answer}"
+            ),
+            (AgentTask::Identify, true) => format!(
+                "read each card's pictures below; when one is unclear you may search the web (the user allows it) to \
+                 confirm its set, number or parallel. Then send them with {answer}"
+            ),
+            (AgentTask::Price, false) => format!(
+                "price each card as it is (raw, or the slab's grade) from Cardloader's tools (find_ebay_listings, \
+                 keep_ebay_listings) and what you know: the user turned web search off in Cardloader, so don't \
+                 search the web. Then send the prices with {answer}"
+            ),
+            (AgentTask::Price, true) => format!(
+                "price each card as it is (raw, or the slab's grade); you may search the web for recent sales (the \
+                 user allows it), and find_ebay_listings helps too. Then send the prices with {answer}"
+            ),
+        };
         let mut content = out(json!({
             "cards": cards,
             "waiting": waiting.len(),
-            "next": match task {
-                AgentTask::Identify => format!("read each card's pictures below, then send them with {answer}"),
-                AgentTask::Price => format!("price each card (as is: raw, or the slab's grade), then send the prices \
-                                             with {answer}"),
-            },
+            "webSearch": web,
+            "next": next,
         }))?;
         content.extend(pics);
         Ok(content)
@@ -1861,7 +1907,23 @@ fn allowed(mcp: &McpSettings) -> Value {
         "delete": mcp.allow_delete,
         "marketplaces": mcp.allow_market,
         "settings": mcp.allow_settings,
+        "webSearch": mcp.allow_web,
     })
+}
+
+/// The first UUID written in `text` (sessions' ids are UUIDs).
+pub(super) fn uuid_in(text: &str) -> Option<&str> {
+    let is_uuid = |w: &str| {
+        w.len() == 36
+            && w.char_indices().all(|(i, c)| match i {
+                8 | 13 | 18 | 23 => c == '-',
+                _ => c.is_ascii_hexdigit(),
+            })
+    };
+    (0..text.len().saturating_sub(35))
+        .filter(|&i| text.is_char_boundary(i) && text.is_char_boundary(i + 36))
+        .map(|i| &text[i..i + 36])
+        .find(|w| is_uuid(w))
 }
 
 /// The game or sport as Ximilar's taxonomy spells it, whatever the case.

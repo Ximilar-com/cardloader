@@ -196,14 +196,20 @@ export default {
         "“{name}” and its {count} cards with their images are deleted from Cards Cloud for everyone in the workspace. A local session it was uploaded from keeps its cards; uploading it again creates a new session there.",
     },
   },
+  /** What to ask the agent: the copy button of the agentPricing and agentWaiting banners. */
+  agentPrompt: {
+    identify: "Identify the cards of the Cardloader session {name} (id {id}) via MCP.",
+    price: "Price the cards of the Cardloader session {name} (id {id}) via MCP.",
+    copy: "Copy the prompt",
+  },
   agentPricing: {
-    one: "<b>{count} card</b> waits for your AI agent’s price. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name}.”",
+    one: "<b>{count} card</b> waits for your AI agent’s price. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name} (id {id}) via MCP.”",
     other:
-      "<b>{count} cards</b> wait for your AI agent’s prices. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name}.”",
+      "<b>{count} cards</b> wait for your AI agent’s prices. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name} (id {id}) via MCP.”",
   },
   agentWaiting: {
-    one: "<b>{count} card</b> waits for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name}.”",
+    one: "<b>{count} card</b> waits for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name} (id {id}) via MCP.”",
     other:
-      "<b>{count} cards</b> wait for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name}.”",
+      "<b>{count} cards</b> wait for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name} (id {id}) via MCP.”",
   },
 };

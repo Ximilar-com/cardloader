@@ -22,6 +22,7 @@ import {
 import { rowFromItem, sortRows, viewFromItem, type Sort, type SortKey } from "../lib/cardview";
 import { rich, useT } from "../i18n";
 import { price } from "../lib/format";
+import { SEARCH_FIELD } from "../lib/shortcuts";
 
 const FILTERS: CardFilter[] = ["all", "review", "graded", "duplicates", "agent"];
 
@@ -209,6 +210,7 @@ export default function CardsPage() {
                 onChange={(e) => search(e.target.value)}
                 onKeyDown={(e) => e.key === "Escape" && search("")}
                 aria-label={t("cards.search")}
+                {...SEARCH_FIELD}
                 autoFocus
               />
             </label>

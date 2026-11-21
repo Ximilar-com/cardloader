@@ -498,8 +498,8 @@ async fn agent_identifies_a_session() {
             .save(cards.join(format!("{name}.png")))
             .unwrap();
     }
-    let (_mcp, state, agent) =
-        app_with_agent(dir.path(), &server.uri(), McpSettings::default()).await;
+    let (_mcp, state, agent, events) =
+        app_with_events(dir.path(), &server.uri(), McpSettings::default()).await;
     let created = agent
         .ok(
             "create_session",
@@ -513,7 +513,23 @@ async fn agent_identifies_a_session() {
         .contains("next_cards_to_identify"));
     let session = created["id"].as_str().unwrap().to_string();
 
+    // Agents pass what the user told them: the session's name, or the copied prompt's "(id …)".
+    let name = created["name"].as_str().unwrap().to_string();
+    cards_from(&agent, "next_cards_to_identify", &name, 2).await;
+    cards_from(
+        &agent,
+        "next_cards_to_identify",
+        &format!("(id {session})"),
+        2,
+    )
+    .await;
     let (waiting, result) = waiting_cards(&agent, &session, 2).await;
+    // The session page counts the cards waiting from the session's own updates, not only the cards'.
+    assert_eq!(
+        events.last_session(&session).map(|s| s.counts.in_progress),
+        Some(2),
+        "the session's counts follow the cards handed to the agent"
+    );
     let images = result["content"]
         .as_array()
         .unwrap()
@@ -613,6 +629,22 @@ async fn agent_identifies_a_session() {
         .await;
     let second = second["id"].as_str().unwrap().to_string();
     waiting_cards(&agent, &second, 2).await;
+    // A name two sessions share isn't guessed at: the agent is told their ids.
+    let twin = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "agent", "name": "Again", "start": false}),
+        )
+        .await;
+    let (refusal, failed) = agent
+        .tool("next_cards_to_identify", json!({"session_id": "Again"}))
+        .await;
+    assert!(failed);
+    let refusal = refusal.as_str().unwrap();
+    assert!(
+        refusal.contains("2 sessions are named") && refusal.contains(twin["id"].as_str().unwrap()),
+        "{refusal}"
+    );
     agent
         .ok("stop_session", json!({"session_id": second}))
         .await;
@@ -661,8 +693,34 @@ async fn agent_prices_a_session() {
         .contains("next_cards_to_price"));
     let session = created["id"].as_str().unwrap().to_string();
 
-    let (waiting, _) = cards_from(&agent, "next_cards_to_price", &session, 2).await;
+    let (waiting, result) = cards_from(&agent, "next_cards_to_price", &session, 2).await;
     assert_eq!(waiting[0]["card"]["name"], "Charizard ex");
+    // Pictures and Cardloader's tools only, unless the user lets agents search the web; said with every batch.
+    let said = |result: &Value| -> Value {
+        serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+    let batch = said(&result);
+    assert_eq!(batch["webSearch"], false);
+    assert!(
+        batch["next"]
+            .as_str()
+            .unwrap()
+            .contains("don't search the web"),
+        "{batch}"
+    );
+    let mut settings = state.settings.get();
+    settings.mcp.allow_web = true;
+    state.settings.update(settings).unwrap();
+    let (_, result) = cards_from(&agent, "next_cards_to_price", &session, 2).await;
+    let batch = said(&result);
+    assert_eq!(batch["webSearch"], true);
+    assert!(
+        batch["next"]
+            .as_str()
+            .unwrap()
+            .contains("you may search the web"),
+        "{batch}"
+    );
     assert_eq!(waiting[0]["card"]["cardNumber"], "125");
     let (priced, unpriced) = (
         waiting[0]["itemId"].as_i64().unwrap(),
@@ -734,6 +792,16 @@ async fn app_with_agent(
     api: &str,
     mcp: McpSettings,
 ) -> (Arc<McpServer>, AppState, Agent) {
+    let (server, state, agent, _) = app_with_events(dir, api, mcp).await;
+    (server, state, agent)
+}
+
+/// `app_with_agent`, with the events the UI gets.
+async fn app_with_events(
+    dir: &Path,
+    api: &str,
+    mcp: McpSettings,
+) -> (Arc<McpServer>, AppState, Agent, Arc<Recorder>) {
     let settings = Arc::new(SettingsStore::for_test(
         dir.join("config").join("settings.json"),
         Settings {
@@ -748,9 +816,10 @@ async fn app_with_agent(
         "token",
     ));
     let db = Db::memory().unwrap();
+    let events = Arc::new(Recorder::default());
     let runner = Runner::new(
         None,
-        Arc::new(Recorder::default()),
+        events.clone(),
         db.clone(),
         settings.clone(),
         dir.join("data"),
@@ -769,7 +838,7 @@ async fn app_with_agent(
         url: status.url.unwrap(),
         token: status.token.unwrap(),
     };
-    (server, state, agent)
+    (server, state, agent, events)
 }
 
 /// A session of identified cards waiting for review, as a run leaves them.
@@ -1040,4 +1109,19 @@ fn compares_tokens() {
     assert!(same(b"cl_abc", b"cl_abc"));
     assert!(!same(b"cl_abc", b"cl_abd"));
     assert!(!same(b"cl_abc", b"cl_ab"));
+}
+
+#[test]
+fn finds_a_uuid_in_text() {
+    let id = "7311776c-6a70-4b7c-a66d-f902282a195d";
+    assert_eq!(super::tools::uuid_in(&format!("(id {id})")), Some(id));
+    assert_eq!(
+        super::tools::uuid_in(&format!("Session „{id}“ via MCP")),
+        Some(id)
+    );
+    assert_eq!(super::tools::uuid_in("Session 2026-11-21 13:57"), None);
+    assert_eq!(
+        super::tools::uuid_in("7311776c-6a70-4b7c-a66d-f902282a195"),
+        None
+    );
 }

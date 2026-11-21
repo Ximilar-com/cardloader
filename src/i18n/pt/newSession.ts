@@ -245,5 +245,9 @@ const messages: Messages<typeof en> = {
   gradeWhat: "O que graduar",
   sameModel: "O mesmo modelo identifica as cartas.",
   cropNote: "Os recortes são sempre feitos com a API da Ximilar.",
+  missing: {
+    csv: "Escolha o arquivo CSV a importar.",
+    csvUnreadable: "Não é possível ler o arquivo CSV.",
+  },
 };
 export default messages;

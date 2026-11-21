@@ -241,4 +241,8 @@ export default {
   gradeWhat: "What to grade",
   sameModel: "The same model identifies the cards.",
   cropNote: "Crops are always made with the Ximilar API.",
+  missing: {
+    csv: "Choose the CSV file to import.",
+    csvUnreadable: "The CSV file can’t be read.",
+  },
 };

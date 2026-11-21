@@ -357,7 +357,11 @@ graded.
 Cardloader includes an [MCP](https://modelcontextprotocol.io) server, so AI apps can drive it. Turn it on in
 **Settings → AI agents**, choose what agents may do, and copy the setup for your app from the same page:
 
-- **Claude Desktop:** Settings → Developer → Edit Config, then add the server and restart Claude:
+- **Claude Desktop:** click **Add to Claude Desktop** in Settings → AI agents, then quit and reopen Claude. Or add
+  the server to its config file by hand. The file is
+  `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
+  `%APPDATA%\Claude\claude_desktop_config.json` on Windows and `~/.config/Claude/claude_desktop_config.json` on
+  Linux (make it if there is none):
 
   ```json
   { "mcpServers": { "cardloader": { "command": "/Applications/Cardloader.app/Contents/MacOS/cardloader", "args": ["mcp"] } } }
@@ -390,7 +394,10 @@ which then fails with its note. The session then goes on as usual: grading and c
 session asks for them, Cards Cloud, exports. Each card the agent identified shows **AI agent** as its confidence,
 with the agent's certainty and note, and waits for your review like any other. While cards wait, the session page
 says so; nothing is identified without the agent. The **Identify cards yourself** prompt (`identify_session`)
-walks an agent through it. An agent session needs no Ximilar token unless it grades, crops or syncs.
+walks an agent through it. An agent session needs no Ximilar token unless it grades, crops or syncs. By default
+the agent is told to read each card from its pictures alone; **Settings → AI agents → Search the internet** lets it
+look up a card's set, number or parallel (and, when pricing, recent sales) online: slower and costlier, but more
+precise.
 
 An agent can price the cards too: choose **Prices** in New session and price them with **AI agent (MCP)** (or
 `prices: "agent"` in `create_session`). Once a card is identified, by whatever identifies the session's cards, it

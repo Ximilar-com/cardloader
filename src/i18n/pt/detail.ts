@@ -61,7 +61,8 @@ const messages: Messages<typeof en> = {
   raw: "Resposta bruta",
   deleteCard: "Excluir esta carta",
   images: {
-    openOriginal: "Clique duas vezes para abrir o original",
+    enlarge: "Clique para ampliar (Espaço)",
+    original: "Abrir o original",
     none: "Sem imagem",
   },
   files: {

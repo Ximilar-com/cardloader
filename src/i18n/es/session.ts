@@ -201,15 +201,20 @@ const messages: Messages<typeof en> = {
         "«{name}» y sus {count} cartas, con sus imágenes, se eliminan de Cards Cloud para todos en el espacio de trabajo. Una sesión local desde la que se subió conserva sus cartas; subirla de nuevo crea allí una sesión nueva.",
     },
   },
+  agentPrompt: {
+    identify: "Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",
+    price: "Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",
+    copy: "Copiar el prompt",
+  },
   agentPricing: {
-    one: "<b>{count} carta</b> espera el precio de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} de Cardloader».",
+    one: "<b>{count} carta</b> espera el precio de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
     other:
-      "<b>{count} cartas</b> esperan los precios de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} de Cardloader».",
+      "<b>{count} cartas</b> esperan los precios de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
   },
   agentWaiting: {
-    one: "<b>{count} carta</b> espera a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} de Cardloader».",
+    one: "<b>{count} carta</b> espera a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
     other:
-      "<b>{count} cartas</b> esperan a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} de Cardloader».",
+      "<b>{count} cartas</b> esperan a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
   },
 };
 export default messages;

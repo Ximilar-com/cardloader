@@ -344,6 +344,17 @@ export interface McpSettings {
   allowMarket: boolean;
   /** Change the defaults of new sessions. */
   allowSettings: boolean;
+  /** Search the web while identifying or pricing cards; off, an agent reads cards from their pictures alone (it is
+   * told so with every card). */
+  allowWeb: boolean;
+}
+
+/** Claude Desktop on this computer, and whether its configuration starts Cardloader. */
+export interface ClaudeDesktop {
+  installed: boolean;
+  configured: boolean;
+  /** Its configuration file. */
+  path: string;
 }
 
 export interface McpStatus {
@@ -671,6 +682,9 @@ export const api = {
   setToken: (token: string) => invoke<SettingsView>("set_token", { token }),
   testConnection: () => invoke<ConnectionCheck>("test_connection"),
   mcpStatus: () => invoke<McpStatus>("mcp_status"),
+  claudeDesktopStatus: () => invoke<ClaudeDesktop>("claude_desktop_status"),
+  /** Adds Cardloader to Claude Desktop's MCP servers (Claude starts it when it opens again). */
+  addToClaudeDesktop: () => invoke<ClaudeDesktop>("add_to_claude_desktop"),
   /** A new token for agents; the old one stops working. */
   regenerateMcpToken: () => invoke<McpStatus>("regenerate_mcp_token"),
 

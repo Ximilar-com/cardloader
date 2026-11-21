@@ -191,13 +191,18 @@ const messages: Messages<typeof en> = {
         "「{name}」とそのカード{count}枚および画像は、ワークスペースの全員に対してCards Cloudから削除されます。アップロード元のローカルセッションのカードは残ります。再度アップロードすると、Cards Cloudに新しいセッションが作成されます。",
     },
   },
+  agentPrompt: {
+    identify: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを識別して",
+    price: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードに価格を付けて",
+    copy: "プロンプトをコピー",
+  },
   agentPricing: {
     other:
-      "<b>{count}枚のカード</b>がAIエージェントの価格付けを待っています。Claudeなどで「Cardloaderのセッション {name} のカードに価格を付けて」と頼んでください。",
+      "<b>{count}枚のカード</b>がAIエージェントの価格付けを待っています。Claudeなどで「MCP経由でCardloaderのセッション {name}（ID {id}）のカードに価格を付けて」と頼んでください。",
   },
   agentWaiting: {
     other:
-      "<b>{count}枚のカード</b>がAIエージェントを待っています。Claudeなどで「Cardloaderのセッション {name} のカードを識別して」と頼んでください。",
+      "<b>{count}枚のカード</b>がAIエージェントを待っています。Claudeなどで「MCP経由でCardloaderのセッション {name}（ID {id}）のカードを識別して」と頼んでください。",
   },
 };
 export default messages;

@@ -24,6 +24,7 @@ const messages: Messages<typeof en> = {
     ebay: "Vente",
     scanner: "Scanner",
     agents: "Agents IA",
+    shortcuts: "Raccourcis clavier",
     about: "À propos",
   },
   ximilar: {
@@ -131,6 +132,9 @@ const messages: Messages<typeof en> = {
         "brouillons eBay, publication et retrait d’annonces ; exports Whatnot et Shopify (ils envoient des images)",
       settings: "Réglages",
       settingsHint: "les valeurs par défaut des nouvelles sessions (jamais vos jetons ni vos clés)",
+      web: "Chercher sur Internet",
+      webHint:
+        "pour confirmer l’extension, le numéro ou la variante d’une carte et son prix : plus lent, plus précis, et l’agent consomme davantage de votre forfait. Désactivé : les agents lisent chaque carte à partir de ses images seulement.",
     },
     port: "Port",
     portHint: "Uniquement sur 127.0.0.1 ; le suivant libre est utilisé s’il est occupé.",
@@ -142,7 +146,14 @@ const messages: Messages<typeof en> = {
       title: "Connecter une app",
       text: "Les apps lancent le programme de Cardloader avec l’argument mcp ; il trouve tout seul l’app ouverte et son jeton.",
       otherApp: "Autre (HTTP)",
-      claudeDesktopHint: "Settings → Developer → Edit Config : ajoutez ceci, puis quittez et rouvrez Claude.",
+      addClaudeDesktop: "Ajouter à Claude Desktop",
+      claudeDesktopAddHint:
+        "Claude Desktop n’utilise pas encore Cardloader. Ceci l’ajoute aux réglages de Claude ; rien d’autre n’y change.",
+      claudeDesktopAdded: "Ajouté. Quittez Claude Desktop et rouvrez-le : il affichera alors Cardloader.",
+      claudeDesktopReady:
+        "Claude Desktop lance Cardloader. Si Claude ne l’affiche pas encore, quittez-le et rouvrez-le.",
+      claudeDesktopMissing: "Claude Desktop n’est pas installé sur cet ordinateur.",
+      claudeDesktopHint: "Ajoutez ceci à {path} (créez le fichier s’il n’existe pas), puis quittez et rouvrez Claude.",
       claudeCodeHint: "Exécutez ceci dans un terminal ; /mcp liste alors Cardloader.",
       codex: "Codex CLI et extension IDE",
       codexHint: "Exécutez ceci dans un terminal ; les deux lisent la même configuration.",
@@ -167,6 +178,24 @@ const messages: Messages<typeof en> = {
   },
   language: {
     text: "La langue des écrans de Cardloader. Les exports, les noms de cartes et les messages de Ximilar restent tels quels.",
+  },
+  shortcuts: {
+    text: "Appuyez sur ? n’importe où pour les voir. Sur macOS, ils utilisent la touche Commande (⌘), sur Windows et Linux Ctrl.",
+    anywhere: "Partout",
+    newSession: "Nouvelle session",
+    home: "Aller à l’Accueil",
+    sessions: "Aller aux Sessions",
+    cards: "Aller aux Cartes",
+    settings: "Ouvrir les Réglages",
+    search: "Rechercher sur cette page",
+    help: "Afficher les raccourcis clavier",
+    inSession: "Dans une session",
+    space: "Espace",
+    enlarge: "Agrandir l’image de la carte",
+    picture: "Image agrandie",
+    sides: "Recto / verso",
+    original: "Ouvrir l’original",
+    closePicture: "Fermer l’image",
   },
   about: {
     title: "À propos de Cardloader",

@@ -3,6 +3,7 @@ import clsx from "clsx";
 import {
   BadgeCheck,
   Bot,
+  CircleAlert,
   Check as CheckMark,
   ChevronRight,
   Cloud,
@@ -20,7 +21,7 @@ import {
   ShoppingBag,
   Zap,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   api,
@@ -128,6 +129,11 @@ export default function NewSessionDialog({
   const [ebaySearch, setEbaySearch] = useState(true);
   /** The task tab shown below the source; falls back to the first chosen task. */
   const [tab, setTab] = useState<TaskChoice>("identify");
+  const tabs = useRef<HTMLDivElement>(null);
+  const showTab = (k: TaskChoice) => {
+    setTab(k);
+    tabs.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
   const [remoteSession, setRemoteSession] = useState("");
   const models = useModels();
   const [error, setError] = useState<string | null>(null);
@@ -328,6 +334,8 @@ export default function NewSessionDialog({
     ({
       ...picked,
       gradeEngine: gradeEngineOf(picked),
+      // Hidden for trading cards: a Magic AI ticked before switching to them doesn't stay on.
+      magicAi: picked.magicAi && sessionIdMode !== "tcg",
       prices: pricesOf(picked),
       priceStats: pricesOf(picked) === "ximilar",
       ...(identifies ? {} : { syncRemote: false, engine: engineOf(picked) }),
@@ -339,6 +347,31 @@ export default function NewSessionDialog({
     (!usesLocal || !!model) &&
     (!(agent || agentPrices) || agentsReady) &&
     (!ebayPrices || ebaySearch);
+  // Everything still to fill in or set up, in one list above the buttons, each with the tab it is on.
+  const found: (Issue | false | null | undefined)[] = [
+    needsFolder && {
+      text: t(kind === "watch_folder" ? "newSession.folder.chooseWatch" : "newSession.folder.choose"),
+    },
+    needsCsv && { text: t("newSession.missing.csv") },
+    kind === "csv" && !needsCsv && !!csv?.error && { text: t("newSession.missing.csvUnreadable") },
+    needsCropFolder && { text: t("newSession.crop.choose"), tab: "crop" as const },
+    needsToken && !tokenSet && { text: t("newSession.needsToken"), settings: "ximilar" },
+    usesLocal &&
+      models &&
+      !model && {
+        text: t("newSession.needsModel"),
+        tab: identifiesLocally ? ("identify" as const) : ("grade" as const),
+        settings: "models",
+      },
+    (agent || agentPrices) &&
+      !agentsReady && {
+        text: t(agent ? "newSession.needsAgents" : "newSession.needsAgentsPrices"),
+        tab: agent ? ("identify" as const) : ("prices" as const),
+        settings: "agents",
+      },
+    ebayPrices && !ebaySearch && { text: t("newSession.needsEbay"), tab: "prices" as const, settings: "ebay" },
+  ];
+  const issues = found.filter((i): i is Issue => !!i);
 
   // The scanner row edits Settings → Scanner, which every scanner run uses; the next session that crops starts in
   // this one's folder, with its file type.
@@ -444,6 +477,31 @@ export default function NewSessionDialog({
     </div>
   );
 
+  const buttons = editing ? (
+    <>
+      <button className="btn" onClick={onClose}>
+        {t("common.cancel")}
+      </button>
+      <button className="btn btn-primary" onClick={save} disabled={busy || !options || needsCropFolder}>
+        {t("common.save")}
+      </button>
+    </>
+  ) : (
+    <>
+      <button className="btn" onClick={() => create(false)} disabled={busy || !options || csvBlocked || sourceMissing}>
+        {kind === "csv" ? (busy ? t("newSession.importing") : t("newSession.import")) : t("newSession.create")}
+      </button>
+      <button
+        className="btn btn-primary"
+        onClick={() => create(true)}
+        disabled={busy || !options || !canRun || csvBlocked || sourceMissing}
+        title={kind === "csv" ? t("newSession.importAndRunTitle") : undefined}
+      >
+        {kind === "csv" ? t("newSession.importAndRun") : t("newSession.createAndRun")}
+      </button>
+    </>
+  );
+
   return (
     <Modal
       title={t(
@@ -455,69 +513,13 @@ export default function NewSessionDialog({
       )}
       onClose={onClose}
       footer={
-        editing ? (
-          <>
-            <button className="btn" onClick={onClose}>
-              {t("common.cancel")}
-            </button>
-            <button className="btn btn-primary" onClick={save} disabled={busy || !options || needsCropFolder}>
-              {t("common.save")}
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              className="btn"
-              onClick={() => create(false)}
-              disabled={busy || !options || csvBlocked || sourceMissing}
-            >
-              {kind === "csv" ? (busy ? t("newSession.importing") : t("newSession.import")) : t("newSession.create")}
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={() => create(true)}
-              disabled={busy || !options || !canRun || csvBlocked || sourceMissing}
-              title={kind === "csv" ? t("newSession.importAndRunTitle") : undefined}
-            >
-              {kind === "csv" ? t("newSession.importAndRun") : t("newSession.createAndRun")}
-            </button>
-          </>
-        )
+        <>
+          {issues.length > 0 && <Missing issues={issues} onTab={showTab} onClose={onClose} />}
+          <div className="flex shrink-0 items-end gap-2 self-end">{buttons}</div>
+        </>
       }
     >
       <div className="space-y-5">
-        {needsToken && !tokenSet && (
-          <ErrorNote>
-            <div className="flex items-center gap-3">
-              <span className="flex-1">{t("newSession.needsToken")}</span>
-              <OpenSettings section="ximilar" onOpen={onClose} />
-            </div>
-          </ErrorNote>
-        )}
-        {(agent || agentPrices) && !agentsReady && (
-          <ErrorNote>
-            <div className="flex items-center gap-3">
-              <span className="flex-1">{t(agent ? "newSession.needsAgents" : "newSession.needsAgentsPrices")}</span>
-              <OpenSettings section="agents" onOpen={onClose} />
-            </div>
-          </ErrorNote>
-        )}
-        {ebayPrices && !ebaySearch && (
-          <ErrorNote>
-            <div className="flex items-center gap-3">
-              <span className="flex-1">{t("newSession.needsEbay")}</span>
-              <OpenSettings section="ebay" onOpen={onClose} />
-            </div>
-          </ErrorNote>
-        )}
-        {usesLocal && models && !model && (
-          <ErrorNote>
-            <div className="flex items-center gap-3">
-              <span className="flex-1">{t("newSession.needsModel")}</span>
-              <OpenSettings section="models" onOpen={onClose} />
-            </div>
-          </ErrorNote>
-        )}
         {editing && (
           <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
             {rich(t("newSession.editNote"), { b: (s) => <b>{s}</b> })}
@@ -658,7 +660,7 @@ export default function NewSessionDialog({
                     : imageCount === 0
                       ? t("newSession.folder.noImages")
                       : t("newSession.folder.found", { count: imageCount })}
-                  {imageCount > 0 && options && kind === "folder" && ` · ${costOf(options, imageCount)}`}
+                  {imageCount > 0 && kind === "folder" && chosen && ` · ${costOf(chosen, imageCount)}`}
                 </p>
               )
             )}
@@ -757,7 +759,7 @@ export default function NewSessionDialog({
 
         {options && shownTab && (
           <div>
-            <div role="tablist" className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+            <div ref={tabs} role="tablist" className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
               {chosenTasks.map((k) => (
                 <button
                   key={k}
@@ -772,6 +774,9 @@ export default function NewSessionDialog({
                   )}
                 >
                   {t(`newSession.tasks.${k}`)}
+                  {issues.some((i) => i.tab === k) && (
+                    <span className="h-1.5 w-1.5 self-center rounded-full bg-amber-500" aria-hidden />
+                  )}
                   <span className="text-xs font-normal text-slate-400">
                     {k === "identify"
                       ? engineLabels()[options.engine]
@@ -929,6 +934,39 @@ export default function NewSessionDialog({
         <ErrorNote>{error}</ErrorNote>
       </div>
     </Modal>
+  );
+}
+
+/** Something a session still needs: on a task's tab, or in Settings. */
+type Issue = { text: string; tab?: TaskChoice; settings?: string };
+
+/** What still has to be filled in or set up before the session can be created or run, next to the buttons: an
+ * item on a tab shows that tab, one in Settings opens it. */
+function Missing({
+  issues,
+  onTab,
+  onClose,
+}: {
+  issues: Issue[];
+  onTab: (tab: TaskChoice) => void;
+  onClose: () => void;
+}) {
+  return (
+    <ul className="mr-auto min-w-0 space-y-1.5 self-center text-xs text-amber-700 dark:text-amber-400">
+      {issues.map((i) => (
+        <li key={i.text} className="flex items-center gap-1.5">
+          <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+          {i.tab ? (
+            <button className="text-left hover:underline" onClick={() => onTab(i.tab!)}>
+              {i.text}
+            </button>
+          ) : (
+            <span>{i.text}</span>
+          )}
+          {i.settings && <OpenSettings section={i.settings} onOpen={onClose} />}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1240,19 +1278,22 @@ function BothSides({
           )}
         </p>
       </div>
-      <div className="space-y-1">
-        <Check
-          label={t("newSession.bothSides.magicAi")}
-          checked={options.magicAi}
-          onChange={(v) => onChange({ magicAi: v })}
-        />
-        <p className="pl-6 text-xs text-slate-500">
-          {t("newSession.bothSides.magicAiHint")}
-          {options.magicAi && !sport && (
-            <span className="text-amber-700 dark:text-amber-400"> {t("newSession.bothSides.magicAiSportOnly")}</span>
-          )}
-        </p>
-      </div>
+      {/* Magic AI is sport_id's: trading cards never use it. */}
+      {idMode !== "tcg" && (
+        <div className="space-y-1">
+          <Check
+            label={t("newSession.bothSides.magicAi")}
+            checked={options.magicAi}
+            onChange={(v) => onChange({ magicAi: v })}
+          />
+          <p className="pl-6 text-xs text-slate-500">
+            {t("newSession.bothSides.magicAiHint")}
+            {options.magicAi && !sport && (
+              <span className="text-amber-700 dark:text-amber-400"> {t("newSession.bothSides.magicAiSportOnly")}</span>
+            )}
+          </p>
+        </div>
+      )}
       {idMode === "auto" && !custom && (options.bothSides || options.magicAi) && (
         <p className="text-xs text-slate-500">{t("newSession.bothSides.autoNote")}</p>
       )}

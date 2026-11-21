@@ -18,6 +18,7 @@ import Menu from "../components/Menu";
 import { ErrorNote } from "../components/Modal";
 import { useRemoteSessionActions, useSessionActions } from "../components/SessionActions";
 import NewSessionDialog from "../components/NewSessionDialog";
+import { SEARCH_FIELD } from "../lib/shortcuts";
 import StatusChip from "../components/StatusChip";
 import {
   api,
@@ -306,6 +307,7 @@ function SearchBox({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         onKeyDown={(e) => e.key === "Escape" && onChange("")}
+        {...SEARCH_FIELD}
       />
     </div>
   );

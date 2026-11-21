@@ -60,7 +60,8 @@ export default {
   raw: "Raw response",
   deleteCard: "Delete this card",
   images: {
-    openOriginal: "Double-click to open the original",
+    enlarge: "Click to enlarge (Space)",
+    original: "Open the original",
     none: "No image",
   },
   files: {

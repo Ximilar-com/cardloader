@@ -201,15 +201,20 @@ const messages: Messages<typeof en> = {
         "“{name}” e le sue {count} carte con le immagini vengono eliminate da Cards Cloud per tutti nel workspace. Una sessione locale da cui è stata caricata mantiene le sue carte; caricarla di nuovo crea lì una nuova sessione.",
     },
   },
+  agentPrompt: {
+    identify: "Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.",
+    price: "Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.",
+    copy: "Copia il prompt",
+  },
   agentPricing: {
-    one: "<b>{count} carta</b> attende il prezzo del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name}.”",
+    one: "<b>{count} carta</b> attende il prezzo del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
     other:
-      "<b>{count} carte</b> attendono i prezzi del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name}.”",
+      "<b>{count} carte</b> attendono i prezzi del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
   },
   agentWaiting: {
-    one: "<b>{count} carta</b> attende il tuo agente IA. Chiedigli, ad es. in Claude: “Identifica le carte della sessione Cardloader {name}.”",
+    one: "<b>{count} carta</b> attende il tuo agente IA. Chiedigli, ad es. in Claude: “Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
     other:
-      "<b>{count} carte</b> attendono il tuo agente IA. Chiedigli, ad es. in Claude: “Identifica le carte della sessione Cardloader {name}.”",
+      "<b>{count} carte</b> attendono il tuo agente IA. Chiedigli, ad es. in Claude: “Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
   },
 };
 export default messages;
