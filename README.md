@@ -308,7 +308,7 @@ ship eBay's client secret, and nothing runs on a server in between.
    Account Deletion notifications or apply for the exemption (Cardloader keeps no eBay user data on a server).
 2. Under **User Tokens** of the keyset, add an eBay Redirect URL (RuName). Leave its "auth accepted" URL as eBay's
    own page.
-3. In **Settings → eBay**, choose the environment and enter the App ID, Cert ID and RuName, then **Connect eBay
+3. In **Settings → Selling**, choose the environment and enter the App ID, Cert ID and RuName, then **Connect eBay
    account** and agree on eBay's page. The login lasts about 18 months and is kept in the system keychain.
 4. Choose the shipping, payment and return policies and where cards ship from. Accounts without business policies
    can turn them on there; create the policies in eBay's Seller Hub.
@@ -403,7 +403,7 @@ through a session.
 
 The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
 out greyed) with **Search eBay** to search again yourself. The search uses your eBay keyset's App ID and Cert ID
-(Settings → eBay; no eBay login needed for it), or `EBAY_APP_ID` in the environment: the base64 of
+(Settings → Selling; no eBay login needed for it), or `EBAY_APP_ID` in the environment: the base64 of
 `client_id:client_secret` of a production keyset. eBay allows 5,000 searches a day per keyset.
 
 Agents can always read sessions, cards and their pictures. Everything else needs a switch in Settings:

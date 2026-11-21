@@ -651,10 +651,10 @@ function seed() {
     {
       ...base,
       id: "demo-5",
-      name: "Football — read by Claude",
+      name: "Binder #7 — read by Claude",
       sourceKind: "folder",
-      sourceRef: "/Users/demo/Cards/football",
-      idMode: "sport",
+      sourceRef: "/Users/demo/Cards/binder7",
+      idMode: "auto",
       options: { ...options, engine: "agent" as const, grading: "off" as const, syncRemote: false },
       status: "running",
       createdAt: "2026-10-16T18:00:00Z",
@@ -704,12 +704,12 @@ function seed() {
   binder[3].ebay = listing("sold", 12);
   binder[4].ebay = listing(null, null, "Invalid category. (25005)");
   items.set("demo-2", []);
-  // Two cards the agent identified, three waiting for it.
+  // Four cards the agent identified and priced on eBay, two waiting for it.
   items.set(
     "demo-5",
-    Array.from({ length: 5 }, (_, i) => {
+    Array.from({ length: 6 }, (_, i) => {
       const card = makeItem("demo-5", i + 1);
-      if (i < 2)
+      if (i < 4)
         return {
           ...card,
           confidence: "agent",

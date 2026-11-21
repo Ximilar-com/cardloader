@@ -397,7 +397,7 @@ async fn agent_prices_a_card_on_ebay() {
         .await;
     assert!(failed);
     assert!(
-        refusal.as_str().unwrap().contains("Settings → eBay"),
+        refusal.as_str().unwrap().contains("Settings → Selling"),
         "{refusal}"
     );
 

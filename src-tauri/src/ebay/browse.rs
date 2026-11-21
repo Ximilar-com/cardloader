@@ -1,7 +1,7 @@
 //! Active eBay listings of a card, and the range of their prices: the Browse API's search
 //! (`buy/browse/v1/item_summary/search`) with an application token, so no seller account is needed.
 //!
-//! The token comes from the user's keyset (App ID and Cert ID in Settings → eBay), or from `EBAY_APP_ID` in the
+//! The token comes from the user's keyset (App ID and Cert ID in Settings → Selling), or from `EBAY_APP_ID` in the
 //! environment: the base64 of `client_id:client_secret`, as Ximilar's pricing crawlers read it. The query is built
 //! from the identified card; an AI agent can then keep only the listings that are the card (`keep`).
 
@@ -66,7 +66,7 @@ pub fn available(settings: &SettingsStore) -> bool {
 }
 
 pub const NO_KEY: &str =
-    "enter your eBay App ID and Cert ID in Settings → eBay to search eBay listings";
+    "enter your eBay App ID and Cert ID in Settings → Selling to search eBay listings";
 
 /// The application token (2 h), kept until shortly before it expires.
 #[derive(Default)]
