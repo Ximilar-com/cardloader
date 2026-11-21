@@ -11,7 +11,7 @@ use tauri::{AppHandle, State};
 use crate::db::Db;
 use crate::ebay::listing::{self as ebay_listing, CardCondition};
 use crate::ebay::sync::{DraftItem, EbayProgress, Job};
-use crate::ebay::{self, EbaySetup};
+use crate::ebay::{self, browse, EbaySetup};
 use crate::error::{Error, Result};
 use crate::export;
 use crate::local::compare::{self, CompareReport, CompareRow};
@@ -355,6 +355,68 @@ pub fn session_folder(state: S, id: String) -> Result<String> {
             .into_owned(),
         _ => session.source_ref,
     })
+}
+
+/// Searches eBay for the card's active listings (and their price range) and keeps them on the card.
+#[tauri::command]
+pub async fn find_ebay_listings(
+    state: S<'_>,
+    item_id: i64,
+    query: Option<String>,
+) -> Result<ItemDetail> {
+    state
+        .find_ebay_listings(item_id, query, false, None)
+        .await?;
+    state.db.item(item_id)
+}
+
+impl AppState {
+    /// Searches eBay for an identified card's active listings, by its fields or `query`, and keeps them and their
+    /// price range on the card.
+    pub async fn find_ebay_listings(
+        &self,
+        item_id: i64,
+        query: Option<String>,
+        auctions: bool,
+        limit: Option<u32>,
+    ) -> Result<EbayMarket> {
+        let item = self.db.item_summary(item_id)?;
+        let mut search = browse::search_for(&item)
+            .ok_or_else(|| Error::msg("the card isn't identified yet: identify it first"))?;
+        if let Some(q) = query
+            .map(|q| q.trim().to_string())
+            .filter(|q| !q.is_empty())
+        {
+            search.query = q;
+        }
+        search.auctions = auctions;
+        if let Some(limit) = limit {
+            search.limit = limit.clamp(1, browse::MAX_LIMIT);
+        }
+        let client = self.runner.ebay.app.client(&self.settings).await?;
+        let (total, listings) = browse::search(&client, &search).await?;
+        let market = browse::market(&search, total, listings);
+        self.db.save_market(item_id, &market)?;
+        self.runner.emit_item(item_id);
+        Ok(market)
+    }
+
+    /// Only these listings of the card's last search are the card: the range counts them alone.
+    pub fn keep_ebay_listings(
+        &self,
+        item_id: i64,
+        ids: &[String],
+        note: &str,
+    ) -> Result<EbayMarket> {
+        let mut market =
+            self.db.item(item_id)?.market.ok_or_else(|| {
+                Error::msg("search the card's listings first (find_ebay_listings)")
+            })?;
+        browse::keep(&mut market, ids, note).map_err(Error::msg)?;
+        self.db.save_market(item_id, &market)?;
+        self.runner.emit_item(item_id);
+        Ok(market)
+    }
 }
 
 /// Where a crop session's pictures are (made if there are none yet, so it can be opened).

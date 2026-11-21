@@ -199,6 +199,8 @@ const messages: Messages<typeof en> = {
       certId: "Cert ID（Client Secret）",
       certPlaceholder: "Cert IDを貼り付け",
       certNote: "APIトークンと一緒に保存されます。キーを変更するとeBayとの接続が解除されます。",
+      search:
+        "このキーで、あなたやAIエージェントがカードのeBay出品中リストを検索して価格帯を調べることもできます（eBayへのログインは不要）。",
     },
     account: {
       title: "eBayアカウント",

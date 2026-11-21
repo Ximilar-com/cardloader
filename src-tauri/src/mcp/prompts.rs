@@ -40,6 +40,14 @@ pub fn list() -> Vec<Prompt> {
             ]),
         )
         .with_title("Identify cards yourself"),
+        Prompt::new(
+            "ebay_prices",
+            Some("Find each identified card's active eBay listings and its price range"),
+            Some(vec![PromptArgument::new("session")
+                .with_description("The session id; empty for the newest session")
+                .with_required(false)]),
+        )
+        .with_title("Prices from eBay"),
     ]
 }
 
@@ -56,6 +64,7 @@ pub fn get(name: &str, arguments: Option<&JsonObject>) -> Option<GetPromptResult
         "review_session" => review(&arg("session").unwrap_or_else(|| "latest".into())),
         "new_session" => new_session(&arg("path")?, arg("about").as_deref()),
         "identify_session" => identify(arg("path").as_deref(), arg("session").as_deref()),
+        "ebay_prices" => ebay_prices(&arg("session").unwrap_or_else(|| "latest".into())),
         _ => return None,
     };
     Some(GetPromptResult::new(vec![PromptMessage::new_text(
@@ -134,5 +143,23 @@ what you read. If you can't tell a card, send it with unidentified and say why: 
 
 The user reviews every card you identify. At the end, say how many cards you identified, which ones you were \
 unsure of, and which you couldn't identify."
+    )
+}
+
+fn ebay_prices(session: &str) -> String {
+    format!(
+        "Find what the identified cards of the Cardloader session \"{session}\" ask on eBay now.
+
+1. Call list_cards with session_id \"{session}\" (page with offset while `more` is true). Skip cards that aren't \
+identified (no name), and cards that already have an ebayRange unless the user asks again.
+2. For each card, call find_ebay_listings. It searches by the card's name, set and number; if it finds nothing or \
+mostly other cards, call it again with a better query (e.g. the player, year, set and parallel, or fewer words).
+3. Read the listing titles and keep_ebay_listings with the ids of those that are this card: the same card and number, \
+the same parallel or variant, the same grade if the card is graded; no lots, no reprints or proxies. Say in the note \
+what you left out.
+4. If no listing is this card, keep none and say so in the note.
+
+At the end, list each card with its price range (min–max), average and median and how many listings count, and \
+point out cards whose range is wide or that had few listings."
     )
 }

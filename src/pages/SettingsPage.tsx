@@ -1221,6 +1221,7 @@ function EbayTab({
           b: (s) => <b>{s}</b>,
         })}
       >
+        <p className="-mt-1 text-xs text-slate-500">{t("settings.ebay.keys.search")}</p>
         <div className="grid grid-cols-2 gap-4">
           <Field
             label={t("settings.ebay.keys.environment")}

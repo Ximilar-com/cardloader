@@ -196,6 +196,14 @@ state from them.
   Stop cancels the waits (cards back to `queued`); up to `AGENT_BATCH` cards wait at once. `SessionOptions::uses_api`
   (mirrored by `usesApi` in `format.ts`) says whether a session needs the token: an agent or local session that only
   identifies doesn't. Prompt `identify_session` in `mcp/prompts.rs`.
+- **eBay prices** (`ebay/browse.rs`): the Browse API's `item_summary/search` with an application token
+  (client credentials: the Settings keyset's App ID + Cert ID, or `EBAY_APP_ID` = base64 `client_id:secret`, which
+  tests ignore unless `CARDLOADER_REAL_EBAY=1`, and never with a mock `api_base`). `search_for` builds the query and
+  category from the card (TCG 183454, sports singles 261328, comics 63; condition 2750 graded / 4000 ungraded),
+  fixed price unless asked for auctions. `AppState::find_ebay_listings` / `keep_ebay_listings` (Tauri command and MCP
+  tools) store `items.market` (all listings, `counted` flags, the agent's note) and `items.market_range`
+  (`PriceRange`, read with every row for the session table's eBay column), migration 009. `real_ebay_search` is the
+  opt-in check against eBay.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail

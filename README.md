@@ -391,6 +391,21 @@ with the agent's certainty and note, and waits for your review like any other. W
 says so; nothing is identified without the agent. The **Identify cards yourself** prompt (`identify_session`)
 walks an agent through it. An agent session needs no Ximilar token unless it grades, crops or syncs.
 
+### Prices from eBay
+
+Once a card is identified (by the agent, Ximilar or the local model), an agent can look up what it asks on eBay now:
+`find_ebay_listings` searches eBay's active fixed-price listings for the card (its name, set and number, a sports
+card's year and parallel, in its eBay category; raw cards among ungraded listings, slabs among graded ones with their
+grader and grade) and keeps them on the card with their price range: min, max, average and median. The agent then
+reads the titles and calls `keep_ebay_listings` with the ones that are this card, so other cards, lots and other
+grades stop counting; its note says what it left out. The **Prices from eBay** prompt (`ebay_prices`) walks it
+through a session.
+
+The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
+out greyed) with **Search eBay** to search again yourself. The search uses your eBay keyset's App ID and Cert ID
+(Settings → eBay; no eBay login needed for it), or `EBAY_APP_ID` in the environment: the base64 of
+`client_id:client_secret` of a production keyset. eBay allows 5,000 searches a day per keyset.
+
 Agents can always read sessions, cards and their pictures. Everything else needs a switch in Settings:
 
 | Switch | Lets agents |

@@ -79,6 +79,11 @@ const messages: Messages<typeof en> = {
     synced: "Synchronisiert",
     sort: "Sortieren",
     certificate: "Zertifikat {number}",
+    ebayRange: "eBay",
+    ebayRangeTitle: {
+      one: "{count} Angebot auf eBay · Durchschnitt {average} · Median {median}",
+      other: "{count} Angebote auf eBay · Durchschnitt {average} · Median {median}",
+    },
   },
 };
 export default messages;

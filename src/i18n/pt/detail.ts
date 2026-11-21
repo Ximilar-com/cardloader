@@ -104,5 +104,20 @@ const messages: Messages<typeof en> = {
   },
   agentCertainty: "Certeza do agente: {certainty}",
   agentNote: "Agente de IA: {note}",
+  market: {
+    title: "À venda no eBay",
+    search: "Buscar no eBay",
+    again: "Buscar de novo",
+    none: "Busca no eBay os anúncios ativos desta carta e a faixa de preço.",
+    summary: {
+      one: "{count} anúncio · média {average} · mediana {median}",
+      other: "{count} anúncios · média {average} · mediana {median}",
+    },
+    noPrices: "Nenhum anúncio é desta carta.",
+    auction: "Leilão",
+    leftOut: "descartado",
+    searched: "“{query}”, {date} · {total} no eBay",
+    leftOutCount: { one: "{count} descartado.", other: "{count} descartados." },
+  },
 };
 export default messages;

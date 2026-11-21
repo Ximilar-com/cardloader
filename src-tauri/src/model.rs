@@ -463,6 +463,94 @@ pub struct ItemSummary {
     pub location: String,
     /// The card's eBay listing, once one was attempted.
     pub ebay: Option<EbayListing>,
+    /// What its active eBay listings ask, once they were searched.
+    pub market_range: Option<PriceRange>,
+}
+
+/// What active eBay listings of a card ask, over those that are the card (see [`EbayMarket`]).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceRange {
+    pub min: f64,
+    pub max: f64,
+    pub average: f64,
+    pub median: f64,
+    pub count: i64,
+    pub currency: String,
+}
+
+impl PriceRange {
+    /// The range of the listings that count, in the currency most of them ask in; none without a price.
+    pub fn of(listings: &[MarketListing]) -> Option<PriceRange> {
+        let counted: Vec<&MarketListing> = listings.iter().filter(|l| l.counted).collect();
+        let mut currencies: Vec<&str> = counted.iter().map(|l| l.currency.as_str()).collect();
+        currencies.sort_unstable();
+        let currency = currencies
+            .chunk_by(|a, b| a == b)
+            .max_by_key(|run| run.len())?
+            .first()?
+            .to_string();
+        let mut prices: Vec<f64> = counted
+            .iter()
+            .filter(|l| l.currency == currency && l.price.is_finite())
+            .map(|l| l.price)
+            .collect();
+        prices.sort_by(|a, b| a.total_cmp(b));
+        let n = prices.len();
+        if n == 0 {
+            return None;
+        }
+        let median = if n % 2 == 1 {
+            prices[n / 2]
+        } else {
+            (prices[n / 2 - 1] + prices[n / 2]) / 2.0
+        };
+        let cents = |v: f64| (v * 100.0).round() / 100.0;
+        Some(PriceRange {
+            min: prices[0],
+            max: prices[n - 1],
+            average: cents(prices.iter().sum::<f64>() / n as f64),
+            median: cents(median),
+            count: n as i64,
+            currency,
+        })
+    }
+}
+
+/// One active eBay listing found for a card.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketListing {
+    /// eBay's item id (`v1|…|0`).
+    pub id: String,
+    pub title: String,
+    /// The asking price, or an auction's current bid.
+    pub price: f64,
+    pub currency: String,
+    pub url: String,
+    pub image: Option<String>,
+    pub condition: String,
+    /// FIXED_PRICE, AUCTION, BEST_OFFER.
+    pub buying: Vec<String>,
+    pub seller: String,
+    pub country: String,
+    /// It is this card: its price counts in the range (all do until an agent or the user keeps only some).
+    pub counted: bool,
+}
+
+/// A card's active listings on eBay, as last searched, and the range of those that are the card.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EbayMarket {
+    pub query: String,
+    pub category_id: Option<String>,
+    pub searched_at: String,
+    /// How many listings eBay has for the query: more than are kept here.
+    pub total: i64,
+    pub listings: Vec<MarketListing>,
+    /// Why only some listings count (an agent's note), if it chose.
+    pub note: String,
+    pub range: Option<PriceRange>,
 }
 
 /// Who accepts, picks or corrects a card: the user in the app, or an AI agent over MCP saying why.
@@ -552,6 +640,8 @@ pub struct ItemDetail {
     /// Its crop job's result (`{"endpoint": "crop_level", "response": …}`) and the cropped pictures saved.
     pub crop: Option<Value>,
     pub crop_images: Vec<String>,
+    /// Its active eBay listings, once searched.
+    pub market: Option<EbayMarket>,
 }
 
 /// Cards analysed on one local day (`YYYY-MM-DD`).

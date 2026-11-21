@@ -20,6 +20,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/006_review.sql"),
     include_str!("../migrations/007_agent_review.sql"),
     include_str!("../migrations/008_crop.sql"),
+    include_str!("../migrations/009_market.sql"),
 ];
 
 #[derive(Clone)]
@@ -31,7 +32,7 @@ const ITEM_SUMMARY_COLUMNS: &str =
      confidence, distance, price, grade, condition, error, synced_rev, rev, updated_at, \
      picks, picks_synced, slab_company, slab_grade, slab_certificate, \
      ebay_status, ebay_price, ebay_listing_id, ebay_error, reviewed, edited, notes, location, \
-     agent_reviewed, review_note";
+     agent_reviewed, review_note, market_range";
 
 /// An identified card nobody has accepted or corrected yet, whatever its confidence (the same rule as
 /// `needsReview` in `src/lib/cardview.ts`). A crop session's cards have no type: there is nothing to review.
@@ -447,11 +448,11 @@ impl Db {
                 Ok((
                     CardRow {
                         item: item_summary(r)?,
-                        session_name: r.get(40)?,
-                        copies: r.get(41)?,
+                        session_name: r.get(41)?,
+                        copies: r.get(42)?,
                     },
-                    r.get::<_, i64>(42)?,
-                    r.get::<_, f64>(43)?,
+                    r.get::<_, i64>(43)?,
+                    r.get::<_, f64>(44)?,
                 ))
             })?;
             for row in rows {
@@ -863,6 +864,25 @@ impl Db {
         Ok(())
     }
 
+    /// A card's active eBay listings and their range (local only: nothing Cards Cloud has changes).
+    pub fn save_market(&self, id: i64, market: &EbayMarket) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET market = ?2, market_range = ?3, updated_at = ?4 WHERE id = ?1",
+                params![
+                    id,
+                    serde_json::to_string(market).unwrap_or_default(),
+                    market
+                        .range
+                        .as_ref()
+                        .map(|r| serde_json::to_string(r).unwrap_or_default()),
+                    now()
+                ],
+            )
+        })?;
+        Ok(())
+    }
+
     /// The async jobs a session's cards wait for: (item id, kind, job id).
     pub fn jobs(&self, session_id: &str) -> Result<Vec<(i64, JobKind, String)>> {
         self.with(|c| {
@@ -914,7 +934,7 @@ impl Db {
         self.with(|c| {
             c.query_row(
                 "SELECT event_id, preview_path, back_preview_path, recognition, grading, grading_images, calls, analyzed_at,
-                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images, crop, crop_images
+                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images, crop, crop_images, market
                  FROM items WHERE id = ?1",
                 params![id],
                 |r| {
@@ -943,6 +963,7 @@ impl Db {
                         crop_images: json_col(r.get(14)?)
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
+                        market: json_col(r.get(15)?).and_then(|v| serde_json::from_value(v).ok()),
                     })
                 },
             )
@@ -1177,6 +1198,7 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         notes: text(36)?,
         location: text(37)?,
         ebay: ebay_listing(r)?,
+        market_range: json_col(r.get(40)?).and_then(|v| serde_json::from_value(v).ok()),
     })
 }
 

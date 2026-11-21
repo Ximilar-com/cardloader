@@ -2,6 +2,8 @@
 
 import type {
   CardFields,
+  EbayMarket,
+  PriceRange,
   EbayListing,
   ItemDetail,
   ItemEdit,
@@ -48,6 +50,8 @@ export interface Row {
   sessionName?: string;
   copies?: number;
   ebay?: EbayListing | null;
+  /** What its active eBay listings ask. */
+  marketRange?: PriceRange | null;
 }
 
 export interface CardImage {
@@ -92,6 +96,8 @@ export interface CardView {
   raw: Json;
   /** Read by an on-device model: which one, and how long it took. */
   local?: { model: string; seconds: number | null };
+  /** Its active eBay listings, once searched (local cards only). */
+  market?: EbayMarket | null;
   /** Identified by an AI agent: how sure it was, and what it read. */
   agent?: { certainty: string | null; note: string };
   /** How Ximilar read it, when not the usual way: "front + back", "Magic AI", a custom endpoint. */
@@ -226,6 +232,7 @@ export function rowFromItem(i: ItemSummary): Row {
     reviewNote: i.reviewNote,
     location: i.location,
     ebay: i.ebay,
+    marketRange: i.marketRange,
   };
 }
 
@@ -421,6 +428,7 @@ export function viewFromItem(i: ItemDetail): CardView {
     local: String(i.recognition?.endpoint ?? "").startsWith("local/")
       ? { model: String(i.recognition.model ?? ""), seconds: i.recognition.seconds ?? null }
       : undefined,
+    market: i.market,
     agent:
       i.recognition?.endpoint === "agent"
         ? { certainty: i.recognition.certainty ?? null, note: String(i.recognition.note ?? "") }

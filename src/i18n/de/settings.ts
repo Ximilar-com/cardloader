@@ -200,6 +200,8 @@ const messages: Messages<typeof en> = {
       certId: "Cert ID (Client Secret)",
       certPlaceholder: "Cert ID einfügen",
       certNote: "Wird beim API-Token aufbewahrt; eine Änderung der Schlüssel trennt eBay.",
+      search:
+        "Mit diesen Schlüsseln können du und KI-Agenten auch die aktiven eBay-Angebote einer Karte nach ihrer Preisspanne durchsuchen – dafür ist keine eBay-Anmeldung nötig.",
     },
     account: {
       title: "eBay-Konto",

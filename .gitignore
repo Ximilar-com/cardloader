@@ -22,3 +22,6 @@ Thumbs.db
 
 # llama.cpp libraries gathered by build.rs for the bundle (gpu-backends)
 src-tauri/llama/
+
+# Local secrets (e.g. EBAY_APP_ID for trying the eBay search)
+.env

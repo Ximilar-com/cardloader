@@ -10,6 +10,7 @@ import type {
   ItemDetail,
   ItemEdit,
   ItemSummary,
+  MarketListing,
   Json,
   ModelStatus,
   Session,
@@ -110,6 +111,7 @@ const settings: SettingsView = {
   ebayCertSet: true,
   ebayConnected: true,
   imgbbKeySet: true,
+  ebaySearch: true,
 };
 
 let mcpToken = "cl_demo0a1b2c3d4e5f60718293a4b5c6d7e8f9";
@@ -350,6 +352,8 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     gradingImages: [],
     crop: null,
     cropImages: [],
+    market: null,
+    marketRange: null,
     calls: grade == null ? 2 : 3,
     analyzedAt: now(),
   };
@@ -399,6 +403,57 @@ function makeCrop(sessionId: string, seq: number): ItemDetail {
     },
     cropImages: [card.previewPath!, back],
     calls: 1,
+  };
+}
+
+/** Active eBay listings of a card around its price, as `find_ebay_listings` keeps them; with a `note`, an agent kept
+ * only the ones that are the card (the last two are a lot and a graded copy). */
+function withMarket(item: ItemDetail, note: string, query?: string): Pick<ItemDetail, "market" | "marketRange"> {
+  const base = item.price ?? 12;
+  const title = `${item.name} ${item.setName} #${item.cardNumber}`;
+  const prices = [0.82, 0.9, 0.97, 1.0, 1.04, 1.12, 1.25, 4.6, 7.9];
+  const listings: MarketListing[] = prices.map((f, i) => ({
+    id: `v1|11055${item.id}${i}|0`,
+    title:
+      i === 7
+        ? `Lot of 20 cards incl. ${item.name}`
+        : i === 8
+          ? `${title} PSA 10`
+          : `${title} ${["NM", "LP", "Near Mint"][i % 3]}`,
+    price: Math.round(base * f * 100) / 100,
+    currency: "USD",
+    url: "https://www.ebay.com/",
+    image: null,
+    condition: "Ungraded",
+    buying: ["FIXED_PRICE"],
+    seller: `seller${i}`,
+    country: "US",
+    counted: !note || i < 7,
+  }));
+  const counted = listings
+    .filter((l) => l.counted)
+    .map((l) => l.price)
+    .sort((x, y) => x - y);
+  const mid = Math.floor(counted.length / 2);
+  const range = {
+    min: counted[0],
+    max: counted[counted.length - 1],
+    average: Math.round((counted.reduce((x, y) => x + y, 0) / counted.length) * 100) / 100,
+    median: counted.length % 2 ? counted[mid] : (counted[mid - 1] + counted[mid]) / 2,
+    count: counted.length,
+    currency: "USD",
+  };
+  return {
+    market: {
+      query: query ?? title,
+      categoryId: "183454",
+      searchedAt: now(),
+      total: 43,
+      listings,
+      note,
+      range,
+    },
+    marketRange: range,
   };
 }
 
@@ -524,6 +579,7 @@ const DETAIL_ONLY = [
   "ebayImages",
   "crop",
   "cropImages",
+  "market",
 ];
 
 function summary(i: ItemDetail): ItemSummary {
@@ -666,6 +722,7 @@ function seed() {
           agentReviewed: false,
           recognition: { endpoint: "agent", certainty: "high", note: "name and number are clear on the back" },
           grading: null,
+          ...withMarket(card, "Left out a lot of 20 cards and a graded copy."),
         };
       return {
         ...card,
@@ -1332,6 +1389,12 @@ export function installDemo() {
           return "/Users/demo/Cards";
         case "crops_folder":
           return "/Users/demo/Cards/Cropped";
+        case "find_ebay_listings": {
+          const item = [...items.values()].flat().find((i) => i.id === a.itemId)!;
+          Object.assign(item, withMarket(item, "", a.query ?? undefined));
+          void emit("item-updated", summary(item));
+          return { ...item };
+        }
         case "export_csv":
           return (items.get(a.id) ?? []).length;
         case "rename_remote_session":

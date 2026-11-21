@@ -78,6 +78,8 @@ const messages: Messages<typeof en> = {
     synced: "同期済み",
     sort: "並べ替え",
     certificate: "証明書 {number}",
+    ebayRange: "eBay",
+    ebayRangeTitle: { other: "eBayに{count}件 · 平均 {average} · 中央値 {median}" },
   },
 };
 export default messages;

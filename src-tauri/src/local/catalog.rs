@@ -89,6 +89,7 @@ impl Profile {
     };
 
     /// The user's turn with `message` in it, when the profile writes its turns out.
+    #[cfg_attr(not(feature = "local-model"), allow(dead_code))]
     pub fn user_turn(&self, message: &str) -> Option<String> {
         self.turn.map(|turn| turn.replace("{prompt}", message))
     }

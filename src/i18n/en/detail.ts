@@ -103,4 +103,19 @@ export default {
   },
   agentCertainty: "Agent's certainty: {certainty}",
   agentNote: "AI agent: {note}",
+  market: {
+    title: "Active on eBay",
+    search: "Search eBay",
+    again: "Search again",
+    none: "Search eBay for this card's active listings and their price range.",
+    summary: {
+      one: "{count} listing · average {average} · median {median}",
+      other: "{count} listings · average {average} · median {median}",
+    },
+    noPrices: "None of the listings is this card.",
+    auction: "Auction",
+    leftOut: "left out",
+    searched: "“{query}”, {date} · {total} on eBay",
+    leftOutCount: { one: "{count} left out.", other: "{count} left out." },
+  },
 };

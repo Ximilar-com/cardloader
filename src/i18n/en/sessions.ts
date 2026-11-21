@@ -77,5 +77,10 @@ export default {
     synced: "Synced",
     sort: "Sort",
     certificate: "certificate {number}",
+    ebayRange: "eBay",
+    ebayRangeTitle: {
+      one: "{count} listing on eBay · average {average} · median {median}",
+      other: "{count} listings on eBay · average {average} · median {median}",
+    },
   },
 };

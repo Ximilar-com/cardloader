@@ -38,8 +38,9 @@ candidates. Every identified card waits for review until it is accepted. Whereve
 until finished) → list_cards with filter to_review → get_card (look at the picture) → accept_cards or \
 select_candidate. To identify the cards yourself instead, create the session with engine \"agent\": Cardloader \
 reads the images and hands you each card's pictures through next_cards_to_identify, and you answer with \
-identify_cards. Cards you accept are marked as accepted by AI in the app, with your note; the user sees \
-everything you do live. Tools you may not use are left out: the user allows them in Cardloader → Settings → AI \
+identify_cards. For what an identified card asks on eBay now, call find_ebay_listings, then keep_ebay_listings \
+with the listings that are the card. Cards you accept are marked as accepted by AI in the app, with your note; the \
+user sees everything you do live. Tools you may not use are left out: the user allows them in Cardloader → Settings → AI \
 agents.";
 
 /// The long edge of card pictures sent to agents: enough to read the name and number, few tokens.
@@ -283,6 +284,29 @@ struct CardIdentity {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct FindEbayListings {
+    /// An identified card.
+    item_id: i64,
+    /// Search for this instead of the card's name, set and number (e.g. to add the parallel, or to leave out a
+    /// word no listing uses).
+    query: Option<String>,
+    /// Count auctions too (default false: their current bid is rarely what a card sells for).
+    include_auctions: Option<bool>,
+    /// Listings to return (default 50, at most 200).
+    limit: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct KeepEbayListings {
+    item_id: i64,
+    /// The listings of the card's last search that are this card; the others (other cards, lots, other grades)
+    /// stop counting in its price range.
+    listing_ids: Vec<String>,
+    /// Why, in a few words (shown to the user), e.g. "left out 3 lots and a PSA 9".
+    note: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct WaitForSession {
     /// The session id, or "latest".
     session_id: String,
@@ -520,6 +544,8 @@ fn specs() -> Vec<Spec> {
         spec::<SessionArg>(Run, "stop_session", "Stop a session", "Stops a running session."),
         spec::<NextCards>(Run, "next_cards_to_identify", "Cards to identify", "Cards of sessions with engine agent that wait for you to identify them, each with its front (and back) picture. Waits while the next cards are scanned; says finished when no more can come. Answer with identify_cards."),
         spec::<IdentifyCards>(Run, "identify_cards", "Identify cards", "Your identification of cards from next_cards_to_identify: name, set, number, year, variant, game. The session then goes on with them (grading, crops, Cards Cloud) and the user reviews them."),
+        spec::<FindEbayListings>(Run, "find_ebay_listings", "Find eBay listings", "Searches eBay for an identified card's active fixed-price listings (by its name, set and number, or your query) and keeps them on the card with their price range: min, max, average and median. Then call keep_ebay_listings with the listings that are this card. Needs the user's eBay keyset."),
+        spec::<KeepEbayListings>(Run, "keep_ebay_listings", "Keep eBay listings", "Of a card's last eBay search, only the listings that are this card count in its price range (the user sees the others left out, with your note)."),
         spec::<WaitForSession>(Run, "wait_for_session", "Wait for a session", "Waits until the session's run ends or the timeout passes, and returns its progress. Call it again while it still runs."),
         spec::<AcceptCards>(Run, "accept_cards", "Accept cards", "Accepts the cards' matches (or takes that back with accepted false). They are marked as accepted by AI with your note. Cards the user accepted stay theirs."),
         spec::<SelectCandidate>(Run, "select_candidate", "Select a candidate", "Makes another candidate the card's match (get_card lists them by index); the card counts as accepted."),
@@ -726,6 +752,8 @@ impl Handler {
             "wait_for_session" => self.wait(args(a)?).await,
             "next_cards_to_identify" => self.next_cards(args(a)?).await,
             "identify_cards" => self.identify_cards(args(a)?),
+            "find_ebay_listings" => self.find_ebay_listings(args(a)?).await,
+            "keep_ebay_listings" => self.keep_ebay_listings(args(a)?),
             "accept_cards" => self.accept(args(a)?),
             "select_candidate" => {
                 let a: SelectCandidate = args(a)?;
@@ -1110,6 +1138,50 @@ impl Handler {
         }))?;
         content.extend(pics);
         Ok(content)
+    }
+
+    async fn find_ebay_listings(&self, a: FindEbayListings) -> Result<Vec<ContentBlock>> {
+        let market = self
+            .state
+            .find_ebay_listings(
+                a.item_id,
+                a.query,
+                a.include_auctions.unwrap_or(false),
+                a.limit,
+            )
+            .await?;
+        // Titles and prices are what tells the card's listings from others: no pictures (tokens).
+        let listings: Vec<Value> = market
+            .listings
+            .iter()
+            .map(|l| {
+                json!({"id": l.id, "title": l.title, "price": l.price, "currency": l.currency,
+                       "condition": l.condition, "buying": l.buying})
+            })
+            .collect();
+        out(json!({
+            "itemId": a.item_id,
+            "query": market.query,
+            "totalOnEbay": market.total,
+            "range": market.range,
+            "listings": listings,
+            "next": "keep_ebay_listings with the ids of the listings that are this card (same card, number, \
+                     parallel and grade; no lots): the range then counts them alone",
+        }))
+    }
+
+    fn keep_ebay_listings(&self, a: KeepEbayListings) -> Result<Vec<ContentBlock>> {
+        let market = self.state.keep_ebay_listings(
+            a.item_id,
+            &a.listing_ids,
+            a.note.as_deref().unwrap_or_default(),
+        )?;
+        out(json!({
+            "itemId": a.item_id,
+            "kept": market.listings.iter().filter(|l| l.counted).count(),
+            "leftOut": market.listings.iter().filter(|l| !l.counted).count(),
+            "range": market.range,
+        }))
     }
 
     fn identify_cards(&self, a: IdentifyCards) -> Result<Vec<ContentBlock>> {
@@ -1637,6 +1709,7 @@ fn card_row(i: &ItemSummary) -> Value {
         "edited": i.edited,
         "location": i.location,
         "error": i.error,
+        "ebayRange": i.market_range,
     })
 }
 

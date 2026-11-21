@@ -104,5 +104,20 @@ const messages: Messages<typeof en> = {
   },
   agentCertainty: "Certitude de l’agent : {certainty}",
   agentNote: "Agent IA : {note}",
+  market: {
+    title: "En vente sur eBay",
+    search: "Chercher sur eBay",
+    again: "Chercher à nouveau",
+    none: "Cherche les annonces actives de cette carte sur eBay et leur fourchette de prix.",
+    summary: {
+      one: "{count} annonce · moyenne {average} · médiane {median}",
+      other: "{count} annonces · moyenne {average} · médiane {median}",
+    },
+    noPrices: "Aucune annonce n’est cette carte.",
+    auction: "Enchère",
+    leftOut: "écartée",
+    searched: "« {query} », {date} · {total} sur eBay",
+    leftOutCount: { one: "{count} écartée.", other: "{count} écartées." },
+  },
 };
 export default messages;

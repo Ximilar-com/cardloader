@@ -347,6 +347,113 @@ async fn agent_runs_and_reviews_a_folder() {
 }
 
 /// The app with agents on (any port, allowed what `mcp` says), Ximilar at `api`, its data and config in `dir`.
+/// An agent prices an identified card on eBay: the search goes out with the user's keyset (an application token),
+/// in the card's category, fixed price and ungraded; the listings and their range are kept on the card, and only
+/// those the agent keeps count. Without a keyset the tool says what to set up.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_prices_a_card_on_ebay() {
+    use crate::settings::Secret;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let ebay = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/identity/v1/oauth2/token"))
+        // base64("Demo-App:cert")
+        .and(header("Authorization", "Basic RGVtby1BcHA6Y2VydA=="))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"access_token": "app", "expires_in": 7200})),
+        )
+        .expect(1)
+        .mount(&ebay)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/buy/browse/v1/item_summary/search"))
+        .and(header("Authorization", "Bearer app"))
+        .and(header("X-EBAY-C-MARKETPLACE-ID", "EBAY_US"))
+        .and(query_param("category_ids", "183454"))
+        .and(query_param(
+            "filter",
+            "buyingOptions:{FIXED_PRICE},conditionIds:{4000}",
+        ))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"total": 57, "itemSummaries": [
+            {"itemId": "v1|1|0", "title": "Charizard ex 125/197 Obsidian Flames", "price": {"value": "18.00", "currency": "USD"},
+             "itemWebUrl": "https://www.ebay.com/itm/1", "condition": "Ungraded", "buyingOptions": ["FIXED_PRICE"]},
+            {"itemId": "v1|2|0", "title": "Charizard ex 125/197 NM", "price": {"value": "22.00", "currency": "USD"},
+             "itemWebUrl": "https://www.ebay.com/itm/2", "condition": "Ungraded", "buyingOptions": ["FIXED_PRICE"]},
+            {"itemId": "v1|3|0", "title": "Pokemon lot 50 cards Charizard ex", "price": {"value": "95.00", "currency": "USD"},
+             "itemWebUrl": "https://www.ebay.com/itm/3", "condition": "Ungraded", "buyingOptions": ["FIXED_PRICE"]}]})))
+        .mount(&ebay)
+        .await;
+    let dir = tempfile::tempdir().unwrap();
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), "http://127.0.0.1:9", McpSettings::default()).await;
+    let (_, ids) = identified_cards(&state.db, &["Charizard ex"]);
+    let card = ids[0];
+
+    let (refusal, failed) = agent
+        .tool("find_ebay_listings", json!({"item_id": card}))
+        .await;
+    assert!(failed);
+    assert!(
+        refusal.as_str().unwrap().contains("Settings → eBay"),
+        "{refusal}"
+    );
+
+    state
+        .settings
+        .update_ebay(|e| {
+            e.app_id = "Demo-App".into();
+            e.api_base = ebay.uri();
+        })
+        .unwrap();
+    state.settings.set_secret(Secret::EbayCert, "cert").unwrap();
+    let found = agent
+        .ok("find_ebay_listings", json!({"item_id": card}))
+        .await;
+    assert_eq!(found["query"], "Charizard ex");
+    assert_eq!(found["totalOnEbay"], 57);
+    assert_eq!(found["listings"].as_array().unwrap().len(), 3);
+    assert_eq!(found["range"]["max"], 95.0);
+
+    let kept = agent
+        .ok(
+            "keep_ebay_listings",
+            json!({"item_id": card, "listing_ids": ["v1|1|0", "v1|2|0"], "note": "left out a lot of 50"}),
+        )
+        .await;
+    assert_eq!(
+        (kept["kept"].as_i64(), kept["leftOut"].as_i64()),
+        (Some(2), Some(1))
+    );
+    assert_eq!(kept["range"]["min"], 18.0);
+    assert_eq!(kept["range"]["max"], 22.0);
+    assert_eq!(kept["range"]["average"], 20.0);
+
+    // The session table's row and the detail panel read it back; a second search reuses the token.
+    let row = state.db.item_summary(card).unwrap();
+    assert_eq!(row.market_range.as_ref().map(|r| r.count), Some(2));
+    let market = state.db.item(card).unwrap().market.unwrap();
+    assert_eq!(market.note, "left out a lot of 50");
+    assert!(!market.listings[2].counted);
+    let listed = agent
+        .ok("list_cards", json!({"session_id": "latest"}))
+        .await;
+    assert_eq!(listed["cards"][0]["ebayRange"]["median"], 20.0);
+    agent
+        .ok(
+            "find_ebay_listings",
+            json!({"item_id": card, "query": "Charizard ex 125/197"}),
+        )
+        .await;
+    assert_eq!(
+        state.db.item(card).unwrap().market.unwrap().query,
+        "Charizard ex 125/197",
+        "a search starts over: every listing counts again"
+    );
+}
+
 /// The cards waiting for the agent, once `n` of them are (scanning the folder takes a moment).
 async fn waiting_cards(agent: &Agent, session: &str, n: usize) -> (Vec<Value>, Value) {
     let started = Instant::now();

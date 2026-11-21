@@ -93,6 +93,7 @@ pub fn run() {
             commands::rename_session,
             commands::session_folder,
             commands::crops_folder,
+            commands::find_ebay_listings,
             commands::export_csv,
             commands::preview_csv,
             commands::import_csv,

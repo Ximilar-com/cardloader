@@ -200,6 +200,8 @@ const messages: Messages<typeof en> = {
       certId: "Cert ID (Client Secret)",
       certPlaceholder: "Collez le Cert ID",
       certNote: "Conservé avec le jeton API ; changer les clés déconnecte eBay.",
+      search:
+        "Ces clés vous permettent aussi, à vous et aux agents IA, de chercher les annonces actives d’une carte sur eBay pour sa fourchette de prix : sans connexion à eBay.",
     },
     account: {
       title: "Compte eBay",

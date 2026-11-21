@@ -195,6 +195,8 @@ const messages: Messages<typeof en> = {
       certId: "Cert ID(Client Secret)",
       certPlaceholder: "Cert ID를 붙여 넣으세요",
       certNote: "API 토큰과 함께 보관됩니다. 키를 바꾸면 eBay 연결이 해제됩니다.",
+      search:
+        "이 키로 나와 AI 에이전트가 카드의 eBay 판매 중 목록을 검색해 가격대를 알 수도 있습니다. eBay 로그인은 필요 없습니다.",
     },
     account: {
       title: "eBay 계정",

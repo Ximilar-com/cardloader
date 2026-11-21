@@ -104,5 +104,20 @@ const messages: Messages<typeof en> = {
   },
   agentCertainty: "Sicherheit des Agenten: {certainty}",
   agentNote: "KI-Agent: {note}",
+  market: {
+    title: "Aktiv auf eBay",
+    search: "Auf eBay suchen",
+    again: "Erneut suchen",
+    none: "Sucht die aktiven eBay-Angebote dieser Karte und ihre Preisspanne.",
+    summary: {
+      one: "{count} Angebot · Durchschnitt {average} · Median {median}",
+      other: "{count} Angebote · Durchschnitt {average} · Median {median}",
+    },
+    noPrices: "Keines der Angebote ist diese Karte.",
+    auction: "Auktion",
+    leftOut: "ausgelassen",
+    searched: "„{query}“, {date} · {total} auf eBay",
+    leftOutCount: { one: "{count} ausgelassen.", other: "{count} ausgelassen." },
+  },
 };
 export default messages;

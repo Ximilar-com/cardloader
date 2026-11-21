@@ -6,6 +6,7 @@
 //! for it locally). The refresh token (≈ 18 months) is kept with the other secrets; access tokens (2 h) only
 //! in memory. Cards become unpublished offers (drafts, see [`sync`]) and go live when the user publishes them.
 
+pub mod browse;
 pub mod client;
 pub mod listing;
 pub mod sync;
@@ -301,6 +302,8 @@ struct Access {
 #[derive(Default)]
 pub struct EbayAuth {
     access: tokio::sync::Mutex<Option<Access>>,
+    /// The application's own token, for searching listings (no seller account needed).
+    pub app: browse::AppToken,
 }
 
 impl EbayAuth {

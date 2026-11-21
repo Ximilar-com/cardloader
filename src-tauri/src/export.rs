@@ -138,6 +138,7 @@ mod tests {
             notes: String::new(),
             location: String::new(),
             ebay: None,
+            market_range: None,
         };
         let text = csv(&[item]);
         let mut lines = text.lines();

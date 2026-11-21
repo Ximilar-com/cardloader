@@ -196,6 +196,8 @@ export default {
       certId: "Cert ID (Client Secret)",
       certPlaceholder: "Paste the Cert ID",
       certNote: "Kept with the API token; changing the keys disconnects eBay.",
+      search:
+        "These keys also let you, and AI agents, search a card's active eBay listings for its price range: no eBay login needed for that.",
     },
     account: {
       title: "eBay account",

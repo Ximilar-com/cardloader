@@ -7,6 +7,15 @@ export function price(value: number | null | undefined): string {
   return value == null ? "—" : new Intl.NumberFormat(locale(), { style: "currency", currency: "USD" }).format(value);
 }
 
+/** A price without cents from $100 up: short enough for a range in a table cell. */
+export function shortPrice(value: number): string {
+  return new Intl.NumberFormat(locale(), {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: value >= 100 ? 0 : 2,
+  }).format(value);
+}
+
 export function grade(value: number | null | undefined): string {
   if (value == null) return "—";
   return value.toLocaleString(locale(), { minimumFractionDigits: 0, maximumFractionDigits: 1 });

@@ -192,6 +192,46 @@ export interface ItemSummary extends CardFields {
   updatedAt: string;
   /** The card's eBay listing, once one was attempted. */
   ebay: EbayListing | null;
+  /** What its active eBay listings ask, once they were searched. */
+  marketRange: PriceRange | null;
+}
+
+/** What a card's active eBay listings ask, over those that are the card. */
+export interface PriceRange {
+  min: number;
+  max: number;
+  average: number;
+  median: number;
+  count: number;
+  currency: string;
+}
+
+export interface MarketListing {
+  id: string;
+  title: string;
+  price: number;
+  currency: string;
+  url: string;
+  image: string | null;
+  condition: string;
+  buying: string[];
+  seller: string;
+  country: string;
+  /** It is the card: its price counts in the range. */
+  counted: boolean;
+}
+
+/** A card's active eBay listings, as last searched. */
+export interface EbayMarket {
+  query: string;
+  categoryId: string | null;
+  searchedAt: string;
+  /** How many listings eBay has for the query. */
+  total: number;
+  listings: MarketListing[];
+  /** Why only some listings count (an AI agent's note). */
+  note: string;
+  range: PriceRange | null;
 }
 
 /** A card on the Cards page: an identified card of any session. */
@@ -237,6 +277,8 @@ export interface ItemDetail extends ItemSummary {
   /** Its crop job's result and the cropped pictures saved. */
   crop: Json | null;
   cropImages: string[];
+  /** Its active eBay listings, once searched. */
+  market: EbayMarket | null;
 }
 
 export interface Settings {
@@ -516,6 +558,8 @@ export interface SettingsView extends Settings {
   ebayConnected: boolean;
   /** The ImgBB key that hosts pictures for the Whatnot export. */
   imgbbKeySet: boolean;
+  /** eBay listings can be searched (a keyset, or EBAY_APP_ID). */
+  ebaySearch: boolean;
 }
 
 export interface AppInfo {
@@ -631,6 +675,9 @@ export const api = {
   sessionFolder: (id: string) => invoke<string>("session_folder", { id }),
   /** A crop session's folder of cropped pictures (made if missing). */
   cropsFolder: (id: string) => invoke<string>("crops_folder", { id }),
+  /** Searches eBay for the card's active listings and keeps them on it. */
+  findEbayListings: (itemId: number, query?: string) =>
+    invoke<ItemDetail>("find_ebay_listings", { itemId, query: query ?? null }),
   exportCsv: (id: string, path: string) => invoke<number>("export_csv", { id, path }),
   previewCsv: (path: string) => invoke<CsvPreview>("preview_csv", { path }),
   /** A new session from a CSV; with `reanalyze`, identified rows with an image are analysed again. */

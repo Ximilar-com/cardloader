@@ -105,5 +105,17 @@ const messages: Messages<typeof en> = {
   },
   agentCertainty: "エージェントの確信度：{certainty}",
   agentNote: "AIエージェント：{note}",
+  market: {
+    title: "eBayの出品中",
+    search: "eBayで検索",
+    again: "再検索",
+    none: "このカードのeBayでの出品中リストと価格帯を検索します。",
+    summary: { other: "{count}件 · 平均 {average} · 中央値 {median}" },
+    noPrices: "このカードの出品はありません。",
+    auction: "オークション",
+    leftOut: "除外",
+    searched: "「{query}」、{date} · eBayに{total}件",
+    leftOutCount: { other: "{count}件を除外。" },
+  },
 };
 export default messages;

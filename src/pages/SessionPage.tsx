@@ -85,6 +85,14 @@ function SessionView({ id }: { id: string }) {
   const [items, setItems] = useState<ItemSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<ItemDetail | null>(null);
+  // eBay listings can be searched from a card (a keyset, or EBAY_APP_ID).
+  const [ebaySearch, setEbaySearch] = useState(false);
+  useEffect(() => {
+    api
+      .getSettings()
+      .then((s) => setEbaySearch(s.ebaySearch))
+      .catch(() => {});
+  }, []);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
   const [follow, setFollow] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -706,6 +714,11 @@ function SessionView({ id }: { id: string }) {
           onPrev={step(-1)}
           onNext={step(1)}
           cropping={cropping}
+          onFindListings={
+            ebaySearch && detail.idType && (detail.name || detail.fullName)
+              ? () => api.findEbayListings(detail.id).then(setDetail)
+              : undefined
+          }
           onAccept={identifies ? () => accept([detail.id]) : undefined}
           onUnaccept={identifies ? () => api.reviewItems(id, [detail.id], false).catch(toastError) : undefined}
           onEdit={cropOnly ? undefined : (edit) => api.updateItem(detail.id, edit).then(setDetail)}

@@ -199,6 +199,8 @@ const messages: Messages<typeof en> = {
       certId: "Cert ID (Client Secret)",
       certPlaceholder: "Incolla il Cert ID",
       certNote: "Conservato con il token API; cambiare le chiavi scollega eBay.",
+      search:
+        "Queste chiavi permettono anche a te e agli agenti IA di cercare le inserzioni attive di una carta su eBay per la sua fascia di prezzo: senza accedere a eBay.",
     },
     account: {
       title: "Account eBay",

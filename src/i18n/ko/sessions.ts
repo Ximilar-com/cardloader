@@ -78,6 +78,8 @@ const messages: Messages<typeof en> = {
     synced: "동기화됨",
     sort: "정렬",
     certificate: "인증서 {number}",
+    ebayRange: "eBay",
+    ebayRangeTitle: { other: "eBay에 {count}건 · 평균 {average} · 중앙값 {median}" },
   },
 };
 export default messages;

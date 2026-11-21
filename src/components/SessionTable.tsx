@@ -3,19 +3,32 @@ import clsx from "clsx";
 import { ArrowDown, ArrowUp, Cloud, ImageOff } from "lucide-react";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useT } from "../i18n";
-import type { SlabLabel } from "../lib/api";
+import type { PriceRange, SlabLabel } from "../lib/api";
 import type { Row, Sort, SortKey } from "../lib/cardview";
-import { grade, price } from "../lib/format";
+import { grade, price, shortPrice } from "../lib/format";
 import { EbayBadge } from "./Ebay";
 import StatusChip, { AcceptedMark, AgentMark, ConfidenceChip, EditedChip, PickedChip, ReviewMark } from "./StatusChip";
 
 /** Card and set take the spare width, unless conditions or slabs need it: they are words, not a number. */
-function gridColumns(showSlab: boolean, wordy: boolean, checks: boolean): string {
+function gridColumns(showSlab: boolean, wordy: boolean, checks: boolean, showMarket: boolean): string {
   const [card, set, grade] = wordy
     ? ["minmax(110px,1.2fr)", "minmax(100px,1fr)", "minmax(68px,0.6fr)"]
     : ["minmax(130px,1.5fr)", "minmax(110px,1.2fr)", "52px"];
   const slab = showSlab ? ["minmax(72px,0.7fr)"] : [];
-  return [...(checks ? ["16px"] : []), "44px", "32px", card, set, "76px", "84px", grade, ...slab, "136px"].join(" ");
+  const market = showMarket ? ["124px"] : [];
+  return [
+    ...(checks ? ["16px"] : []),
+    "44px",
+    "32px",
+    card,
+    set,
+    "76px",
+    "84px",
+    ...market,
+    grade,
+    ...slab,
+    "136px",
+  ].join(" ");
 }
 const ROW_HEIGHT = 56;
 
@@ -57,7 +70,9 @@ export default function SessionTable({
   const t = useT();
   const wordy = useMemo(() => showSlab || rows.some((r) => r.grade == null && r.condition), [showSlab, rows]);
   const checks = !!onCheck;
-  const columns = { gridTemplateColumns: gridColumns(showSlab, wordy, checks) };
+  // The eBay range has a column once any card has one.
+  const showMarket = useMemo(() => rows.some((r) => r.marketRange), [rows]);
+  const columns = { gridTemplateColumns: gridColumns(showSlab, wordy, checks, showMarket) };
   const allChecked = !!checked && rows.length > 0 && rows.every((r) => checked.has(r.key));
   const parent = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -120,6 +135,7 @@ export default function SessionTable({
         <Header k="price" sort={sort} onSort={onSort} right>
           {t("sessions.table.price")}
         </Header>
+        {showMarket && <span className="text-right">{t("sessions.table.ebayRange")}</span>}
         <Header k="grade" sort={sort} onSort={onSort} right>
           {t("sessions.table.grade")}
         </Header>
@@ -216,6 +232,7 @@ export default function SessionTable({
                   {r.byAgent ? <AgentMark note={r.reviewNote} /> : r.accepted && <AcceptedMark />}
                 </span>
                 <span className="text-right tabular-nums">{price(r.price)}</span>
+                {showMarket && <MarketCell range={r.marketRange} />}
                 <span className="text-right tabular-nums" title={r.condition ?? undefined}>
                   {r.grade != null ? (
                     grade(r.grade)
@@ -301,4 +318,22 @@ function Thumb({ src }: { src?: string }) {
       </span>
     );
   return <img src={src} alt="" loading="lazy" className="h-11 w-auto max-w-[40px] rounded object-contain shadow-xs" />;
+}
+
+/** Min–max of a card's active eBay listings, with the median and their count on hover. */
+function MarketCell({ range }: { range?: PriceRange | null }) {
+  const t = useT();
+  if (!range) return <span className="text-right text-slate-400">—</span>;
+  return (
+    <span
+      className="text-right text-xs whitespace-nowrap tabular-nums"
+      title={t("sessions.table.ebayRangeTitle", {
+        count: range.count,
+        average: price(range.average),
+        median: price(range.median),
+      })}
+    >
+      {range.min === range.max ? shortPrice(range.min) : `${shortPrice(range.min)}–${shortPrice(range.max)}`}
+    </span>
+  );
 }

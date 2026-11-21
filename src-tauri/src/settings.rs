@@ -227,6 +227,8 @@ pub struct SettingsView {
     pub ebay_cert_set: bool,
     pub ebay_connected: bool,
     pub imgbb_key_set: bool,
+    /// eBay listings can be searched: a keyset (App ID and Cert ID) or `EBAY_APP_ID`.
+    pub ebay_search: bool,
 }
 
 pub struct SettingsStore {
@@ -292,6 +294,7 @@ impl SettingsStore {
             ebay_cert_set: self.secret(Secret::EbayCert).is_some(),
             ebay_connected: self.secret(Secret::EbayRefresh).is_some(),
             imgbb_key_set: self.secret(Secret::ImgbbKey).is_some(),
+            ebay_search: crate::ebay::browse::available(self),
         }
     }
 

@@ -13,14 +13,15 @@ import {
   Pencil,
   RotateCcw,
   RotateCw,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { t, useT, type Key } from "../i18n";
-import { errorText, type ItemEdit, type Json } from "../lib/api";
+import { errorText, type EbayMarket, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
-import { basename, decimal, grade, parseAmount, price } from "../lib/format";
+import { basename, dateTime, decimal, grade, parseAmount, price } from "../lib/format";
 import { ErrorNote } from "./Modal";
 import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
@@ -40,6 +41,7 @@ export default function DetailPanel({
   ebay,
   extra,
   cropping,
+  onFindListings,
 }: {
   view: CardView;
   onClose: () => void;
@@ -65,6 +67,8 @@ export default function DetailPanel({
   extra?: ReactNode;
   /** The card is a crop session's. */
   cropping?: boolean;
+  /** Searches eBay for the card's active listings; without it, only listings an agent found show. */
+  onFindListings?: () => Promise<unknown>;
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
@@ -366,6 +370,8 @@ export default function DetailPanel({
           </Section>
         )}
 
+        <Market market={view.market} onFind={onFindListings} />
+
         <Files images={view.images} />
 
         <Crops images={view.cropImages} />
@@ -587,6 +593,106 @@ function Grading({ view }: { view: CardView }) {
               <img src={g.src} alt={g.label} className="h-32 w-full bg-slate-100 object-contain dark:bg-slate-900" />
             </button>
           ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+/** The card's active eBay listings: the price range of those that are the card, and the listings. */
+function Market({ market, onFind }: { market?: EbayMarket | null; onFind?: () => Promise<unknown> }) {
+  const t = useT();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!market && !onFind) return null;
+  const find = () => {
+    if (!onFind) return;
+    setBusy(true);
+    setError(null);
+    onFind()
+      .catch((e) => setError(errorText(e)))
+      .finally(() => setBusy(false));
+  };
+  const range = market?.range;
+  // The listings that are the card first, then those left out.
+  const listings = market ? [...market.listings].sort((a, b) => Number(b.counted) - Number(a.counted)) : [];
+  const leftOut = listings.filter((l) => !l.counted).length;
+  return (
+    <Section
+      title={t("detail.market.title")}
+      action={
+        onFind && (
+          <button className="btn px-2 py-0.5 text-xs" onClick={find} disabled={busy}>
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}{" "}
+            {market ? t("detail.market.again") : t("detail.market.search")}
+          </button>
+        )
+      }
+    >
+      <ErrorNote>{error}</ErrorNote>
+      {!market ? (
+        <p className="text-sm text-slate-500">{t("detail.market.none")}</p>
+      ) : (
+        <div className="space-y-2">
+          {range ? (
+            <div>
+              <div className="text-lg font-semibold tabular-nums">
+                {range.min === range.max ? price(range.min) : `${price(range.min)} – ${price(range.max)}`}
+              </div>
+              <div className="text-xs text-slate-500">
+                {t("detail.market.summary", {
+                  count: range.count,
+                  average: price(range.average),
+                  median: price(range.median),
+                })}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">{t("detail.market.noPrices")}</p>
+          )}
+          {market.note && (
+            <p className="flex items-start gap-1.5 text-xs text-slate-600 dark:text-slate-300">
+              <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-500" /> {market.note}
+            </p>
+          )}
+          {listings.length > 0 && (
+            <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-800">
+              <table className="w-full table-fixed text-xs">
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {listings.map((l) => (
+                    <tr key={l.id} className={clsx(!l.counted && "opacity-45")}>
+                      <td className="px-2 py-1.5">
+                        <button
+                          className="block w-full truncate text-left hover:text-accent hover:underline"
+                          onClick={() => l.url && openUrl(l.url)}
+                          title={l.title}
+                        >
+                          {l.title}
+                        </button>
+                        <span className="text-[10px] text-slate-400">
+                          {[l.condition, l.buying.includes("AUCTION") ? t("detail.market.auction") : null, l.country]
+                            .filter(Boolean)
+                            .join(" · ")}
+                          {!l.counted && ` · ${t("detail.market.leftOut")}`}
+                        </span>
+                      </td>
+                      <td className="w-24 px-2 py-1.5 text-right align-top whitespace-nowrap tabular-nums">
+                        {l.currency === "USD" ? price(l.price) : `${l.price.toFixed(2)} ${l.currency}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="text-[11px] text-slate-400">
+            {t("detail.market.searched", {
+              query: market.query,
+              date: dateTime(market.searchedAt),
+              total: market.total,
+            })}
+            {leftOut > 0 && ` · ${t("detail.market.leftOutCount", { count: leftOut })}`}
+          </p>
         </div>
       )}
     </Section>

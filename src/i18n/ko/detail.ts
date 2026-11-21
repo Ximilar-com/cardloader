@@ -104,5 +104,17 @@ const messages: Messages<typeof en> = {
   },
   agentCertainty: "에이전트 확신도: {certainty}",
   agentNote: "AI 에이전트: {note}",
+  market: {
+    title: "eBay 판매 중",
+    search: "eBay 검색",
+    again: "다시 검색",
+    none: "이 카드의 eBay 판매 중 목록과 가격대를 검색합니다.",
+    summary: { other: "{count}건 · 평균 {average} · 중앙값 {median}" },
+    noPrices: "이 카드인 판매 목록이 없습니다.",
+    auction: "경매",
+    leftOut: "제외",
+    searched: "“{query}”, {date} · eBay에 {total}건",
+    leftOutCount: { other: "{count}건 제외." },
+  },
 };
 export default messages;
