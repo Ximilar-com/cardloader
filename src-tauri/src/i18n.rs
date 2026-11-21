@@ -1,7 +1,7 @@
 //! The few texts the backend shows the user itself: the OS notification when a run ends. Everything else the UI
 //! translates (`src/i18n`); error messages stay English.
 
-use crate::model::{Session, SessionStatus};
+use crate::model::{Money, Session, SessionStatus, USD};
 
 struct Texts {
     done: &'static str,
@@ -103,8 +103,26 @@ pub fn finished_text(session: &Session, language: &str) -> String {
         t.done,
         cards.replace("{n}", &c.done.to_string())
     );
-    if c.total_price > 0.0 {
-        text += &format!(", ${:.2}", c.total_price);
+    let values = if c.values.is_empty() && c.total_price > 0.0 {
+        vec![Money {
+            currency: USD.into(),
+            total: c.total_price,
+        }]
+    } else {
+        c.values.clone()
+    };
+    let amounts: Vec<String> = values
+        .iter()
+        .filter(|m| m.total > 0.0)
+        .map(|m| match m.currency.as_str() {
+            "USD" => format!("${:.2}", m.total),
+            "EUR" => format!("€{:.2}", m.total),
+            "GBP" => format!("£{:.2}", m.total),
+            code => format!("{:.2} {code}", m.total),
+        })
+        .collect();
+    if !amounts.is_empty() {
+        text += &format!(", {}", amounts.join(" + "));
     }
     if c.to_review > 0 {
         text += " · ";

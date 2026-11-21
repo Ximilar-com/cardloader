@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use super::*;
 use crate::db::Db;
-use crate::model::Reviewer;
+use crate::model::{Engine, GradingMode, Prices, Reviewer};
 use crate::runner::tests::{mock_ximilar, Recorder};
 use crate::runner::Runner;
 use crate::settings::{McpSettings, Settings, SettingsStore};
@@ -784,6 +784,268 @@ async fn agent_prices_a_session() {
         .await;
     assert!(failed);
     assert!(refusal.as_str().unwrap().contains("engine"), "{refusal}");
+}
+
+/// Prices and grading added to a finished session's cards: they go through those stages alone (no second
+/// identification, an accepted card stays accepted), the session keeps the tasks, and Ximilar's prices, which
+/// only come with its identification, are refused.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_adds_prices_and_grading_to_a_finished_session() {
+    use crate::runner::tests::mock_browse;
+    use crate::settings::Secret;
+    let server = mock_ximilar().await;
+    let listing = |id: &str, price: &str| {
+        json!({"itemId": id, "title": "Charizard ex 125/197", "price": {"value": price, "currency": "USD"},
+               "itemWebUrl": "https://www.ebay.com/itm/1", "condition": "Ungraded", "buyingOptions": ["FIXED_PRICE"]})
+    };
+    let ebay = mock_browse(
+        200,
+        json!({"total": 3, "itemSummaries": [listing("1", "10.00"), listing("2", "30.00"), listing("3", "14.00")]}),
+    )
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let cards = dir.path().join("cards");
+    std::fs::create_dir_all(&cards).unwrap();
+    for name in ["a", "b"] {
+        RgbImage::from_pixel(630, 880, Rgb([20, 90, 160]))
+            .save(cards.join(format!("{name}.png")))
+            .unwrap();
+    }
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), &server.uri(), McpSettings::default()).await;
+    let created = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "ximilar", "card_type": "tcg", "grading": "off"}),
+        )
+        .await;
+    let session = created["id"].as_str().unwrap().to_string();
+    let finished = |state: &AppState| !state.runner.is_running(&session);
+    let started = Instant::now();
+    while !finished(&state) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let ids: Vec<i64> = state
+        .db
+        .items(&session)
+        .unwrap()
+        .iter()
+        .map(|i| i.id)
+        .collect();
+    agent
+        .ok("accept_cards", json!({"item_ids": [ids[0]]}))
+        .await;
+    let identifications = |requests: &[wiremock::Request]| {
+        requests
+            .iter()
+            .filter(|r| r.url.path().starts_with("/collectibles/"))
+            .count()
+    };
+    let before = identifications(&server.received_requests().await.unwrap());
+
+    let (refusal, failed) = agent
+        .tool(
+            "add_to_cards",
+            json!({"session_id": session, "prices": "ximilar"}),
+        )
+        .await;
+    assert!(
+        failed
+            && refusal
+                .as_str()
+                .unwrap()
+                .contains("only with its identification"),
+        "{refusal}"
+    );
+    let (refusal, failed) = agent
+        .tool(
+            "add_to_cards",
+            json!({"session_id": session, "prices": "ebay"}),
+        )
+        .await;
+    assert!(
+        failed && refusal.as_str().unwrap().contains("eBay keyset"),
+        "{refusal}"
+    );
+
+    state
+        .settings
+        .update_ebay(|e| {
+            e.app_id = "Demo-App".into();
+            e.api_base = ebay.uri();
+        })
+        .unwrap();
+    state.settings.set_secret(Secret::EbayCert, "cert").unwrap();
+    crate::local::testing::install_fake(
+        &state.runner.local,
+        r#"{"corners": 9, "edges": 8.5, "surface": 7, "centering": 9}"#,
+    );
+    let added = agent
+        .ok(
+            "add_to_cards",
+            json!({"session_id": session, "prices": "ebay", "grading": "grade", "grade_engine": "local"}),
+        )
+        .await;
+    assert_eq!(added["cardsAdded"], 2, "{added}");
+    let started = Instant::now();
+    while !finished(&state) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    assert_eq!(
+        identifications(&server.received_requests().await.unwrap()),
+        before,
+        "no card is identified again"
+    );
+    let items = state.db.items(&session).unwrap();
+    for item in &items {
+        assert_eq!(item.status, crate::model::ItemStatus::Done, "{item:?}");
+        assert_eq!(item.card.name, "Charizard ex");
+        assert_eq!(item.price, Some(14.0), "the listings' median");
+        assert_eq!(item.grade, Some(8.0), "graded by the local model");
+    }
+    assert!(items[0].reviewed, "an accepted card stays accepted");
+    let options = state.db.session(&session).unwrap().options;
+    assert_eq!(
+        (options.prices(), options.grade_engine(), options.grading),
+        (Prices::Ebay, Engine::Local, GradingMode::Grade),
+        "the session's later cards get them too"
+    );
+}
+
+/// Prices from another eBay site: the search goes to that site with eBay's suggested category, is asked again
+/// without the condition when that leaves nothing, and the card's price keeps the site's currency, apart from
+/// US dollars (totals by currency; USD-only destinations don't take it).
+#[tokio::test(flavor = "multi_thread")]
+async fn prices_from_another_ebay_site() {
+    use crate::settings::Secret;
+    use wiremock::matchers::{header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let ebay = MockServer::start().await;
+    let ok = |body: Value| ResponseTemplate::new(200).set_body_json(body);
+    Mock::given(method("POST"))
+        .and(path("/identity/v1/oauth2/token"))
+        .respond_with(ok(json!({"access_token": "app", "expires_in": 7200})))
+        .mount(&ebay)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/commerce/taxonomy/v1/get_default_category_tree_id"))
+        .and(query_param("marketplace_id", "EBAY_DE"))
+        .respond_with(ok(json!({"categoryTreeId": "77"})))
+        .mount(&ebay)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(
+            "/commerce/taxonomy/v1/category_tree/77/get_category_suggestions",
+        ))
+        .respond_with(ok(json!({"categorySuggestions": [
+            {"category": {"categoryId": "2536", "categoryName": "Einzelkarten"}}]})))
+        .mount(&ebay)
+        .await;
+    let search = || {
+        Mock::given(method("GET"))
+            .and(path("/buy/browse/v1/item_summary/search"))
+            .and(header("X-EBAY-C-MARKETPLACE-ID", "EBAY_DE"))
+            .and(query_param("category_ids", "2536"))
+    };
+    search()
+        .and(query_param(
+            "filter",
+            "buyingOptions:{FIXED_PRICE},conditionIds:{4000}",
+        ))
+        .respond_with(ok(json!({"total": 0})))
+        .mount(&ebay)
+        .await;
+    let listing = |id: &str, price: &str| {
+        json!({"itemId": id, "title": "Glurak ex 125/197", "price": {"value": price, "currency": "EUR"},
+               "itemWebUrl": "https://www.ebay.de/itm/1", "buyingOptions": ["FIXED_PRICE"]})
+    };
+    search()
+        .and(query_param("filter", "buyingOptions:{FIXED_PRICE}"))
+        .respond_with(ok(json!({"total": 3, "itemSummaries": [
+            listing("1", "10.00"), listing("2", "30.00"), listing("3", "14.00")]})))
+        .mount(&ebay)
+        .await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), "http://127.0.0.1:9", McpSettings::default()).await;
+    let (session, ids) = identified_cards(&state.db, &["Charizard ex"]);
+    let card = ids[0];
+    state
+        .settings
+        .update_ebay(|e| {
+            e.app_id = "Demo-App".into();
+            e.api_base = ebay.uri();
+        })
+        .unwrap();
+    state.settings.set_secret(Secret::EbayCert, "cert").unwrap();
+
+    let found = agent
+        .ok(
+            "find_ebay_listings",
+            json!({"item_id": card, "marketplace": "EBAY_DE"}),
+        )
+        .await;
+    assert_eq!(found["marketplace"], "EBAY_DE");
+    assert_eq!(found["totalOnEbay"], 3, "asked again without the condition");
+    assert_eq!(found["range"]["currency"], "EUR");
+    assert_eq!(found["range"]["median"], 14.0);
+
+    // A session priced from eBay on the user's search site keeps the euro price apart from dollars.
+    state
+        .settings
+        .update_ebay(|e| e.search_marketplace = "EBAY_DE".into())
+        .unwrap();
+    let n = state
+        .add_to_cards(
+            &session,
+            None,
+            &crate::model::AddToCards {
+                prices: Some(Prices::Ebay),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert_eq!(n, 1);
+    let started = Instant::now();
+    while state.runner.is_running(&session) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let item = state.db.item_summary(card).unwrap();
+    assert_eq!(
+        (item.price, item.price_currency.as_str()),
+        (Some(14.0), "EUR")
+    );
+    assert_eq!(
+        item.usd_price(),
+        None,
+        "USD-only destinations don't take it"
+    );
+    let counts = state.db.session(&session).unwrap().counts;
+    assert_eq!(counts.total_price, 0.0, "no dollars");
+    assert_eq!(
+        counts.values,
+        vec![crate::model::Money {
+            currency: "EUR".into(),
+            total: 14.0
+        }]
+    );
+    let row = agent.ok("list_cards", json!({"session_id": session})).await;
+    assert_eq!(row["cards"][0]["priceCurrency"], "EUR");
 }
 
 /// The app with agents on (any port, allowed what `mcp` says), Ximilar at `api`, its data and config in `dir`.

@@ -96,7 +96,7 @@ const messages: Messages<typeof en> = {
     setCode: "Código del set",
     cardNumber: "Número",
     year: "Año",
-    price: "Precio $",
+    price: "Precio {currency}",
     location: "Ubicación",
     notes: "Notas",
     priceInvalid: "El precio debe ser un número positivo.",
@@ -110,6 +110,7 @@ const messages: Messages<typeof en> = {
   market: {
     title: "En venta en eBay",
     search: "Buscar en eBay",
+    site: "Sitio de eBay donde buscar",
     again: "Buscar de nuevo",
     none: "Busca en eBay los anuncios activos de esta carta y su rango de precios.",
     summary: {

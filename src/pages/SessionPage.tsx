@@ -1,4 +1,4 @@
-import { openPath } from "@tauri-apps/plugin-opener";
+import { openFile } from "../lib/open";
 import clsx from "clsx";
 import {
   ArrowLeft,
@@ -7,6 +7,7 @@ import {
   Check,
   Copy,
   ChevronDown,
+  ListPlus,
   Cloud,
   CloudUpload,
   FolderOpen,
@@ -29,6 +30,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import AddToCardsDialog from "../components/AddToCards";
 import DetailPanel from "../components/DetailPanel";
 import { EbaySection } from "../components/Ebay";
 import Menu from "../components/Menu";
@@ -69,7 +71,7 @@ import {
   gradeEngineOf,
   gradingOf,
   idModeLabels,
-  price,
+  amounts,
   pricesOf,
   sourceLabels,
   taskLabels,
@@ -91,10 +93,15 @@ function SessionView({ id }: { id: string }) {
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   // eBay listings can be searched from a card (a keyset, or EBAY_APP_ID).
   const [ebaySearch, setEbaySearch] = useState(false);
+  /** The eBay site a card's search starts on (Settings › Selling). */
+  const [ebaySite, setEbaySite] = useState("EBAY_US");
   useEffect(() => {
     api
       .getSettings()
-      .then((s) => setEbaySearch(s.ebaySearch))
+      .then((s) => {
+        setEbaySearch(s.ebaySearch);
+        setEbaySite(s.ebay.searchMarketplace || "EBAY_US");
+      })
       .catch(() => {});
   }, []);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
@@ -119,6 +126,8 @@ function SessionView({ id }: { id: string }) {
   const [deleting, setDeleting] = useState<number[] | null>(null);
   const [locating, setLocating] = useState<number[] | null>(null);
   const showHelp = useShortcuts((s) => s.showHelp);
+  /** The ticked cards prices or grading are being added to. */
+  const [adding, setAdding] = useState<number[] | null>(null);
   const samples = useRef<[number, number][]>([]);
   const selectedRef = useRef<string | null>(null);
   /** A card's detail that took a while to come (an eBay search): shown only if the card is still the open one. */
@@ -338,7 +347,7 @@ function SessionView({ id }: { id: string }) {
                 {session.sourceKind !== "scanner" ? (
                   <button
                     className="flex min-w-0 shrink items-center gap-1 hover:underline"
-                    onClick={() => openPath(session.sourceRef)}
+                    onClick={() => openFile(session.sourceRef)}
                     title={session.sourceRef}
                   >
                     <FolderOpen className="h-3 w-3 shrink-0" /> <span className="truncate">{session.sourceRef}</span>
@@ -357,7 +366,7 @@ function SessionView({ id }: { id: string }) {
                 {savesCrops && (
                   <button
                     className="flex shrink-0 items-center gap-1 hover:underline"
-                    onClick={() => api.cropsFolder(id).then(openPath).catch(toastError)}
+                    onClick={() => api.cropsFolder(id).then(openFile).catch(toastError)}
                     title={session.options.cropFolder || undefined}
                   >
                     <FolderOpen className="h-3 w-3" /> {t("session.actions.showCrops")}
@@ -479,8 +488,8 @@ function SessionView({ id }: { id: string }) {
               {running && secondsLeft != null && (
                 <span>{t("session.progress.left", { time: duration(secondsLeft) })}</span>
               )}
-              {counts.totalPrice > 0 && (
-                <span>{t("session.progress.totalValue", { price: price(counts.totalPrice) })}</span>
+              {counts.values.some((m) => m.total > 0) && (
+                <span>{t("session.progress.totalValue", { price: amounts(counts.values) })}</span>
               )}
               {counts.calls > 0 && (
                 <span title={t("session.progress.apiCallsTitle")}>
@@ -595,6 +604,16 @@ function SessionView({ id }: { id: string }) {
                   title={t("session.bulk.turnUprightTitle")}
                 >
                   <RotateCw className="h-3.5 w-3.5" /> {t("session.bulk.turnUpright")}
+                </button>
+              )}
+              {identifies && (
+                <button
+                  className="btn px-2 py-1 text-xs"
+                  disabled={active}
+                  title={active ? t("session.bulk.waitUntilFinished") : t("session.addTo.menuTitle")}
+                  onClick={() => setAdding(checkedIds)}
+                >
+                  <ListPlus className="h-3.5 w-3.5" /> {t("session.addTo.bulk")}
                 </button>
               )}
               <button
@@ -740,10 +759,11 @@ function SessionView({ id }: { id: string }) {
           cropping={cropping}
           onFindListings={
             ebaySearch && detail.idType && (detail.name || detail.fullName)
-              ? () => api.findEbayListings(detail.id).then(showDetail)
+              ? (site: string) => api.findEbayListings(detail.id, undefined, site).then(showDetail)
               : undefined
           }
           onKeepListings={detail.market ? (ids) => api.keepEbayListings(detail.id, ids).then(showDetail) : undefined}
+          ebaySite={ebaySite}
           onAccept={identifies ? () => accept([detail.id]) : undefined}
           onUnaccept={identifies ? () => api.reviewItems(id, [detail.id], false).catch(toastError) : undefined}
           onEdit={cropOnly ? undefined : (edit) => api.updateItem(detail.id, edit).then(setDetail)}
@@ -828,6 +848,7 @@ function SessionView({ id }: { id: string }) {
         />
       )}
 
+      {adding && <AddToCardsDialog session={session} itemIds={adding} onClose={() => setAdding(null)} />}
       {actions.node}
     </div>
   );

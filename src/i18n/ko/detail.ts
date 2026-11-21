@@ -95,7 +95,7 @@ const messages: Messages<typeof en> = {
     setCode: "세트 코드",
     cardNumber: "번호",
     year: "연도",
-    price: "가격 $",
+    price: "가격 {currency}",
     location: "위치",
     notes: "메모",
     priceInvalid: "가격은 양수여야 합니다.",
@@ -109,6 +109,7 @@ const messages: Messages<typeof en> = {
   market: {
     title: "eBay 판매 중",
     search: "eBay 검색",
+    site: "검색할 eBay 사이트",
     again: "다시 검색",
     none: "이 카드의 eBay 판매 중 목록과 가격대를 검색합니다.",
     summary: { other: "{count}건 · 평균 {average} · 중앙값 {median}" },

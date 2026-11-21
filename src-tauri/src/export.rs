@@ -21,7 +21,8 @@ const HEADER: &[&str] = &[
     "confidence",
     "distance",
     "picked",
-    "price_usd",
+    "price",
+    "currency",
     "grade",
     "condition",
     "slab_company",
@@ -72,6 +73,11 @@ pub fn csv(items: &[ItemSummary]) -> String {
             number(i.distance),
             if i.picked { "yes" } else { "" }.to_string(),
             number(i.price),
+            if i.price.is_some() {
+                i.price_currency.clone()
+            } else {
+                String::new()
+            },
             number(i.grade),
             i.condition.clone().unwrap_or_default(),
             slab.company,
@@ -120,6 +126,7 @@ mod tests {
             confidence: Some("high".into()),
             distance: Some(0.25),
             price: Some(12.5),
+            price_currency: "USD".into(),
             grade: None,
             condition: None,
             slab: Some(SlabLabel {
@@ -145,6 +152,6 @@ mod tests {
         assert!(lines.next().unwrap().starts_with("#,status,type,name"));
         let row = lines.next().unwrap();
         assert!(row.starts_with("3,done,tcg,\"Say \"\"hi\"\"\","));
-        assert!(row.contains(",high,0.25,yes,12.5,,,PSA,10,12345678,\"/cards/a, front.jpg\",,"));
+        assert!(row.contains(",high,0.25,yes,12.5,USD,,,PSA,10,12345678,\"/cards/a, front.jpg\",,"));
     }
 }

@@ -109,6 +109,7 @@ describe("review", () => {
     idType: "tcg",
     confidence: null,
     price: null,
+    priceCurrency: "USD",
     grade: null,
     condition: null,
     ...extra,

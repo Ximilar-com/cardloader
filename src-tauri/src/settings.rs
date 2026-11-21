@@ -114,7 +114,10 @@ pub struct EbaySettings {
     /// Replaces eBay's hosts (tests); empty = eBay.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub api_base: String,
+    /// The site cards are listed on (EBAY_US only, `listing::MARKETPLACES`).
     pub marketplace: String,
+    /// The site card prices are searched on (`browse::SEARCH_MARKETS`), unless a search names another.
+    pub search_marketplace: String,
     pub fulfillment_policy_id: String,
     pub payment_policy_id: String,
     pub return_policy_id: String,
@@ -132,6 +135,7 @@ impl Default for EbaySettings {
             ru_name: String::new(),
             api_base: String::new(),
             marketplace: "EBAY_US".into(),
+            search_marketplace: "EBAY_US".into(),
             fulfillment_policy_id: String::new(),
             payment_policy_id: String::new(),
             return_policy_id: String::new(),

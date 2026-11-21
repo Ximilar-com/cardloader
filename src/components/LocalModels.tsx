@@ -1,6 +1,6 @@
 // On-device models: the list with download progress, kept live from `model-updated` events.
 
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openLink } from "../lib/open";
 import clsx from "clsx";
 import { Cpu, Download, ExternalLink, Gauge, MonitorCog, Trash2, TriangleAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -142,7 +142,7 @@ function ModelCard({ model }: { model: ModelStatus }) {
           <p className="mt-0.5 text-sm text-slate-500">{model.description}</p>
           <button
             className="mt-1 inline-flex items-center gap-1 text-xs text-accent hover:underline"
-            onClick={() => openUrl(model.homepage)}
+            onClick={() => openLink(model.homepage)}
           >
             {t("models.card.modelPage")} <ExternalLink className="h-3 w-3" />
           </button>
@@ -200,7 +200,7 @@ function ModelCard({ model }: { model: ModelStatus }) {
                     className="text-accent hover:underline"
                     onClick={(e) => {
                       e.preventDefault();
-                      void openUrl(model.licenseUrl);
+                      void openLink(model.licenseUrl);
                     }}
                   >
                     {s}

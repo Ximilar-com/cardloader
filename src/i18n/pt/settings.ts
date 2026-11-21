@@ -231,6 +231,9 @@ const messages: Messages<typeof en> = {
       certNote: "Guardado junto com o token de API; mudar as chaves desconecta o eBay.",
       search:
         "Essas chaves também permitem que você e os agentes de IA busquem os anúncios ativos de uma carta no eBay para ver a faixa de preço: sem precisar entrar no eBay.",
+      searchSite: "Pesquisar preços em",
+      searchSiteHint:
+        "O site do eBay onde os preços das cartas são pesquisados, na moeda dele. O painel de uma carta pode pesquisar em outro.",
     },
     account: {
       title: "Conta do eBay",

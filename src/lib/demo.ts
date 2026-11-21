@@ -18,6 +18,8 @@ import type {
   SettingsView,
 } from "./api";
 import { matchOf, needsReview, representativePrice, rotationOf, tier } from "./cardview";
+import { EBAY_SITES } from "./ebaySites";
+import { addMoney } from "./format";
 
 const CARDS = [
   ["Charizard ex", "Obsidian Flames", "OBF", "125", "2023", "Pokemon", 0.12, 24.99, 9.0, "Mint", "#f97316"],
@@ -93,6 +95,7 @@ const settings: SettingsView = {
     appId: "Demo-Cardload-SBX-0a1b2c3d4-5e6f7a8b",
     ruName: "Demo-Demo-Cardload-abcdef",
     marketplace: "EBAY_US",
+    searchMarketplace: "EBAY_US",
     fulfillmentPolicyId: "ship-1",
     paymentPolicyId: "pay-1",
     returnPolicyId: "return-1",
@@ -168,7 +171,8 @@ function counts(id: string) {
     inProgress: n("recognizing"),
     grading: n("grading"),
     synced: list.filter((i) => i.synced).length,
-    totalPrice: list.reduce((a, i) => a + (i.price ?? 0), 0),
+    totalPrice: list.reduce((a, i) => a + (i.priceCurrency === "USD" ? (i.price ?? 0) : 0), 0),
+    values: addMoney(list.map((i) => (i.price ? [{ currency: i.priceCurrency, total: i.price }] : []))),
     ebayDrafts: list.filter((i) => i.ebay?.status === "draft").length,
     ebayListed: list.filter((i) => i.ebay?.status === "listed").length,
     ebaySold: list.filter((i) => i.ebay?.status === "sold").length,
@@ -365,6 +369,7 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     market: null,
     marketRange: null,
     priceNote: null,
+    priceCurrency: "USD",
     calls: grade == null ? 2 : 3,
     analyzedAt: now(),
   };
@@ -431,13 +436,20 @@ function rangeOf(listings: MarketListing[]): PriceRange | null {
     average: Math.round((counted.reduce((x, y) => x + y, 0) / counted.length) * 100) / 100,
     median: counted.length % 2 ? counted[mid] : (counted[mid - 1] + counted[mid]) / 2,
     count: counted.length,
-    currency: "USD",
+    currency: listings[0]?.currency ?? "USD",
   };
 }
 
 /** Active eBay listings of a card around its price, as `find_ebay_listings` keeps them; with a `note`, an agent kept
  * only the ones that are the card (the last two are a lot and a graded copy). */
-function withMarket(item: ItemDetail, note: string, query?: string): Pick<ItemDetail, "market" | "marketRange"> {
+function withMarket(
+  item: ItemDetail,
+  note: string,
+  query?: string,
+  site = "EBAY_US",
+): Pick<ItemDetail, "market" | "marketRange"> {
+  // Another site's listings are in its currency.
+  const currency = EBAY_SITES.find((s) => s.id === site)?.currency ?? "USD";
   const base = item.price ?? 12;
   const title = `${item.name} ${item.setName} #${item.cardNumber}`;
   const prices = [0.82, 0.9, 0.97, 1.0, 1.04, 1.12, 1.25, 4.6, 7.9];
@@ -450,7 +462,7 @@ function withMarket(item: ItemDetail, note: string, query?: string): Pick<ItemDe
           ? `${title} PSA 10`
           : `${title} ${["NM", "LP", "Near Mint"][i % 3]}`,
     price: Math.round(base * f * 100) / 100,
-    currency: "USD",
+    currency,
     url: "https://www.ebay.com/",
     image: null,
     condition: "Ungraded",
@@ -463,6 +475,7 @@ function withMarket(item: ItemDetail, note: string, query?: string): Pick<ItemDe
   return {
     market: {
       query: query ?? title,
+      marketplace: site,
       categoryId: "183454",
       searchedAt: now(),
       total: 43,
@@ -782,7 +795,8 @@ function seed() {
   );
   items.set(
     "demo-3",
-    Array.from({ length: 7 }, (_, i) => makeItem("demo-3", i + 1)),
+    // Priced from ebay.de's listings: euros, kept apart from dollars.
+    Array.from({ length: 7 }, (_, i) => ({ ...makeItem("demo-3", i + 1), priceCurrency: i < 4 ? "EUR" : "USD" })),
   );
 }
 
@@ -1429,7 +1443,10 @@ export function installDemo() {
           return "/Users/demo/Cards/Cropped";
         case "find_ebay_listings": {
           const item = [...items.values()].flat().find((i) => i.id === a.itemId)!;
-          Object.assign(item, withMarket(item, "", a.query ?? undefined));
+          Object.assign(
+            item,
+            withMarket(item, "", a.query ?? undefined, a.marketplace ?? settings.ebay.searchMarketplace),
+          );
           void emit("item-updated", summary(item));
           return { ...item };
         }
@@ -1454,6 +1471,21 @@ export function installDemo() {
           return { session: { ...remote, id: a.id }, summary: null };
         case "run_session":
           return simulate(a.id);
+        case "add_to_cards": {
+          // The finished identified cards get a price or a grade, as a run of only those stages would give.
+          const add = a.add as { prices?: string | null; grading?: string | null };
+          const wanted = a.itemIds as number[] | null;
+          const list = (items.get(a.id) ?? []).filter(
+            (i) => i.idType && (i.status === "done" || i.status === "error") && (!wanted || wanted.includes(i.id)),
+          );
+          for (const i of list) {
+            if (add.prices) i.price = i.price ?? 19.99;
+            if (add.grading && add.grading !== "off") i.grade = i.grade ?? 8.5;
+            void emit("item-updated", summary(i));
+          }
+          void emit("session-updated", session(a.id));
+          return list.length;
+        }
         case "pause_session":
         case "stop_session": {
           const s = sessions.find((x) => x.id === a.id)!;

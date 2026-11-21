@@ -27,6 +27,10 @@ pub struct EbayClient {
     hosts: Hosts,
     token: String,
     market: &'static Marketplace,
+    /// The site requests go to (`X-EBAY-C-MARKETPLACE-ID`) and its language: the selling marketplace, unless a
+    /// search names another (`on`).
+    site: &'static str,
+    language: &'static str,
 }
 
 impl EbayClient {
@@ -36,7 +40,18 @@ impl EbayClient {
             hosts: Hosts::of(cfg),
             token: token.to_string(),
             market: Marketplace::of(&cfg.marketplace),
+            site: Marketplace::of(&cfg.marketplace).id,
+            language: Marketplace::of(&cfg.marketplace).language,
         })
+    }
+
+    /// The same client for another eBay site (searches: `browse::SEARCH_MARKETS`).
+    pub fn on(&self, site: &'static str, language: &'static str) -> EbayClient {
+        EbayClient {
+            site,
+            language,
+            ..self.clone()
+        }
     }
 
     pub fn hosts(&self) -> &Hosts {
@@ -64,13 +79,11 @@ impl EbayClient {
             .http
             .request(method, url)
             .bearer_auth(&self.token)
-            .header("X-EBAY-C-MARKETPLACE-ID", self.market.id)
-            .header("Accept-Language", self.market.language)
+            .header("X-EBAY-C-MARKETPLACE-ID", self.site)
+            .header("Accept-Language", self.language)
             .query(query);
         if let Some(body) = body {
-            req = req
-                .header("Content-Language", self.market.language)
-                .json(body);
+            req = req.header("Content-Language", self.language).json(body);
         }
         read(req.send().await).await
     }

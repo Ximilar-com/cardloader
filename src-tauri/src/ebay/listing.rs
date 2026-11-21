@@ -545,7 +545,7 @@ pub fn preview(item: &ItemSummary) -> Preview {
         .ebay
         .as_ref()
         .and_then(|e| e.price)
-        .or(item.price)
+        .or(item.usd_price())
         .filter(|p| p.is_finite() && *p > 0.0)
         .map(|p| (p * 100.0).round() / 100.0);
     Preview {
@@ -595,6 +595,7 @@ mod tests {
             confidence: Some("high".into()),
             distance: Some(0.2),
             price: Some(12.499),
+            price_currency: "USD".into(),
             grade: Some(7.5),
             condition: None,
             slab: slab.map(|(company, grade, certificate)| SlabLabel {

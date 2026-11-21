@@ -229,6 +229,9 @@ const messages: Messages<typeof en> = {
       certNote: "Se guarda junto al token de API; cambiar las claves desconecta eBay.",
       search:
         "Estas claves también te permiten, a ti y a los agentes de IA, buscar los anuncios activos de una carta en eBay para su rango de precios: para eso no hace falta iniciar sesión en eBay.",
+      searchSite: "Buscar precios en",
+      searchSiteHint:
+        "El sitio de eBay donde se buscan los precios de las cartas, en su moneda. En el panel de una carta puedes buscar en otro.",
     },
     account: {
       title: "Cuenta de eBay",

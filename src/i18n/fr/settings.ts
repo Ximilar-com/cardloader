@@ -231,6 +231,9 @@ const messages: Messages<typeof en> = {
       certNote: "Conservé avec le jeton API ; changer les clés déconnecte eBay.",
       search:
         "Ces clés vous permettent aussi, à vous et aux agents IA, de chercher les annonces actives d’une carte sur eBay pour sa fourchette de prix : sans connexion à eBay.",
+      searchSite: "Chercher les prix sur",
+      searchSiteHint:
+        "Le site eBay sur lequel les prix des cartes sont cherchés, dans sa devise. Le panneau d’une carte peut en consulter un autre.",
     },
     account: {
       title: "Compte eBay",

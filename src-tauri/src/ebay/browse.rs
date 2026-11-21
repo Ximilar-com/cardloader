@@ -22,6 +22,65 @@ pub const APP_KEY_ENV: &str = "EBAY_APP_ID";
 /// eBay's condition ids for trading and sports card singles: in a slab, or not.
 const GRADED: &str = "2750";
 const UNGRADED: &str = "4000";
+/// An eBay site whose listings can be searched: its marketplace id, its domain, the currency its prices are in, and
+/// the language its listings are read in.
+#[derive(Debug, PartialEq, Eq)]
+pub struct SearchMarket {
+    pub id: &'static str,
+    pub site: &'static str,
+    pub currency: &'static str,
+    pub language: &'static str,
+}
+
+const fn site(
+    id: &'static str,
+    site: &'static str,
+    currency: &'static str,
+    language: &'static str,
+) -> SearchMarket {
+    SearchMarket {
+        id,
+        site,
+        currency,
+        language,
+    }
+}
+
+/// The sites the Browse API searches (eBay's "Buy API marketplace support"). Only EBAY_US's category and
+/// condition ids are known here; on the others the category comes from eBay's own suggestion (`category_on`).
+pub const SEARCH_MARKETS: &[SearchMarket] = &[
+    site("EBAY_US", "ebay.com", "USD", "en-US"),
+    site("EBAY_GB", "ebay.co.uk", "GBP", "en-GB"),
+    site("EBAY_DE", "ebay.de", "EUR", "de-DE"),
+    site("EBAY_FR", "ebay.fr", "EUR", "fr-FR"),
+    site("EBAY_IT", "ebay.it", "EUR", "it-IT"),
+    site("EBAY_ES", "ebay.es", "EUR", "es-ES"),
+    site("EBAY_NL", "ebay.nl", "EUR", "nl-NL"),
+    site("EBAY_BE", "ebay.be", "EUR", "nl-BE"),
+    site("EBAY_AT", "ebay.at", "EUR", "de-AT"),
+    site("EBAY_IE", "ebay.ie", "EUR", "en-IE"),
+    site("EBAY_CH", "ebay.ch", "CHF", "de-CH"),
+    site("EBAY_PL", "ebay.pl", "PLN", "pl-PL"),
+    site("EBAY_CA", "ebay.ca", "CAD", "en-CA"),
+    site("EBAY_AU", "ebay.com.au", "AUD", "en-AU"),
+    site("EBAY_HK", "ebay.com.hk", "HKD", "zh-HK"),
+    site("EBAY_SG", "ebay.com.sg", "SGD", "en-SG"),
+];
+
+/// The search site `id` names, else ebay.com.
+pub fn search_market(id: &str) -> &'static SearchMarket {
+    SEARCH_MARKETS
+        .iter()
+        .find(|m| m.id.eq_ignore_ascii_case(id.trim()))
+        .unwrap_or(&SEARCH_MARKETS[0])
+}
+
+impl SearchMarket {
+    fn is_us(&self) -> bool {
+        self.id == "EBAY_US"
+    }
+}
+
 /// Listings kept per search: enough for a range, few enough for an agent to read.
 pub const DEFAULT_LIMIT: u32 = 50;
 pub const MAX_LIMIT: u32 = 200;
@@ -119,7 +178,10 @@ impl AppToken {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Search {
     pub query: String,
-    pub category_id: Option<&'static str>,
+    /// The site searched.
+    pub market: &'static SearchMarket,
+    /// The card's category there: EBAY_US's known ids; on other sites eBay's suggestion, asked when searching.
+    pub category_id: Option<String>,
     /// `GRADED` or `UNGRADED` for card singles; none for comics.
     pub condition_id: Option<&'static str>,
     /// Auctions too: their current bid is rarely what the card sells for, so they are left out by default.
@@ -127,9 +189,10 @@ pub struct Search {
     pub limit: u32,
 }
 
-/// The search for an identified card: its name, set and number (and a sports card's year and parallel), in its
-/// eBay category; a card in a slab among graded listings with its grader and grade, any other among ungraded ones.
-pub fn search_for(item: &ItemSummary) -> Option<Search> {
+/// The search for an identified card on `market`: its name, set and number (and a sports card's year and parallel),
+/// in its eBay category; a card in a slab among graded listings with its grader and grade, any other among
+/// ungraded ones.
+pub fn search_for(item: &ItemSummary, market: &'static SearchMarket) -> Option<Search> {
     let c = &item.card;
     if c.name.trim().is_empty() && c.full_name.trim().is_empty() {
         return None;
@@ -163,7 +226,8 @@ pub fn search_for(item: &ItemSummary) -> Option<Search> {
     }
     Some(Search {
         query,
-        category_id: Some(what.category()),
+        market,
+        category_id: market.is_us().then(|| what.category().to_string()),
         // Comics have no graded/ungraded condition of the cards' kind.
         condition_id: (what != Collectible::Comic).then_some(if item.slab.is_some() {
             GRADED
@@ -184,8 +248,75 @@ fn join(words: &[&str]) -> String {
         .join(" ")
 }
 
-/// Searches eBay; returns how many listings it has, and the first `limit` of them.
+/// Searches eBay on the search's site; returns how many listings it has, and the first `limit` of them. Off ebay.com
+/// the category is eBay's suggestion for the query, and a search the condition leaves empty is asked again
+/// without it (another site may grade cards with other condition ids): `s` says what was searched in the end.
 pub async fn search(
+    client: &EbayClient,
+    s: &mut Search,
+) -> Result<(i64, Vec<MarketListing>), ApiError> {
+    let client = client.on(s.market.id, s.market.language);
+    if s.category_id.is_none() && !s.market.is_us() {
+        s.category_id = category_on(&client, s.market, &s.query).await;
+    }
+    let found = search_once(&client, s).await?;
+    if found.0 == 0 && !s.market.is_us() && s.condition_id.is_some() {
+        s.condition_id = None;
+        return search_once(&client, s).await;
+    }
+    Ok(found)
+}
+
+/// Category trees by site, asked once (`get_default_category_tree_id`).
+static TREES: std::sync::Mutex<Vec<(&'static str, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// The category eBay suggests on `market` for `query` (its Taxonomy API); none when it can't say, and the search
+/// then runs in every category.
+async fn category_on(
+    client: &EbayClient,
+    market: &'static SearchMarket,
+    query: &str,
+) -> Option<String> {
+    let known = TREES
+        .lock()
+        .unwrap()
+        .iter()
+        .find(|(id, _)| *id == market.id)
+        .map(|(_, tree)| tree.clone());
+    let tree = match known {
+        Some(tree) => tree,
+        None => {
+            let body = client
+                .request(
+                    reqwest::Method::GET,
+                    "commerce/taxonomy/v1/get_default_category_tree_id",
+                    &[("marketplace_id", market.id.to_string())],
+                    None,
+                )
+                .await
+                .map_err(|e| tracing::warn!("category tree of {}: {e}", market.id))
+                .ok()?;
+            let tree = body["categoryTreeId"].as_str()?.to_string();
+            TREES.lock().unwrap().push((market.id, tree.clone()));
+            tree
+        }
+    };
+    let body = client
+        .request(
+            reqwest::Method::GET,
+            &format!("commerce/taxonomy/v1/category_tree/{tree}/get_category_suggestions"),
+            &[("q", query.to_string())],
+            None,
+        )
+        .await
+        .map_err(|e| tracing::warn!("category of \"{query}\" on {}: {e}", market.id))
+        .ok()?;
+    body["categorySuggestions"][0]["category"]["categoryId"]
+        .as_str()
+        .map(str::to_string)
+}
+
+async fn search_once(
     client: &EbayClient,
     s: &Search,
 ) -> Result<(i64, Vec<MarketListing>), ApiError> {
@@ -202,8 +333,8 @@ pub async fn search(
         ("limit", s.limit.clamp(1, MAX_LIMIT).to_string()),
         ("filter", filters.join(",")),
     ];
-    if let Some(category) = s.category_id {
-        query.push(("category_ids", category.to_string()));
+    if let Some(category) = &s.category_id {
+        query.push(("category_ids", category.clone()));
     }
     let body = client
         .request(
@@ -267,7 +398,8 @@ fn listing(v: &Value) -> Option<MarketListing> {
 pub fn market(s: &Search, total: i64, listings: Vec<MarketListing>) -> EbayMarket {
     EbayMarket {
         query: s.query.clone(),
-        category_id: s.category_id.map(str::to_string),
+        marketplace: s.market.id.to_string(),
+        category_id: s.category_id.clone(),
         searched_at: crate::model::now(),
         total,
         range: PriceRange::of(&listings),
@@ -335,10 +467,10 @@ mod tests {
             },
             None,
         );
-        let s = search_for(&tcg).unwrap();
+        let s = search_for(&tcg, search_market("EBAY_US")).unwrap();
         assert_eq!(s.query, "Charizard ex OBF 125");
         assert_eq!(
-            (s.category_id, s.condition_id),
+            (s.category_id.as_deref(), s.condition_id),
             (Some("183454"), Some(UNGRADED))
         );
         let sport = item(
@@ -357,13 +489,13 @@ mod tests {
                 certificate: "1".into(),
             }),
         );
-        let s = search_for(&sport).unwrap();
+        let s = search_for(&sport, search_market("EBAY_US")).unwrap();
         assert_eq!(
             s.query,
             "2017 Panini Prizm Patrick Mahomes II Silver Prizm 269 PSA 10"
         );
         assert_eq!(
-            (s.category_id, s.condition_id),
+            (s.category_id.as_deref(), s.condition_id),
             (Some("261328"), Some(GRADED))
         );
         let comic = item(
@@ -375,8 +507,15 @@ mod tests {
             },
             None,
         );
-        let s = search_for(&comic).unwrap();
-        assert_eq!((s.category_id, s.condition_id), (Some("63"), None));
+        let s = search_for(&comic, search_market("EBAY_US")).unwrap();
+        assert_eq!(
+            (s.category_id.as_deref(), s.condition_id),
+            (Some("63"), None)
+        );
+        // Off ebay.com the category is eBay's own suggestion, asked when searching.
+        let de = search_for(&comic, search_market("ebay_de")).unwrap();
+        assert_eq!((de.market.currency, de.category_id), ("EUR", None));
+        assert_eq!(search_market("nowhere").id, "EBAY_US");
         // A slab is typed by its sport or game, as for listing it: a graded basketball card is a sports card.
         let slab = item(
             "slab",
@@ -394,13 +533,17 @@ mod tests {
                 certificate: "1".into(),
             }),
         );
-        let s = search_for(&slab).unwrap();
+        let s = search_for(&slab, search_market("EBAY_US")).unwrap();
         assert_eq!(s.query, "2003 Topps Chrome LeBron James 111 PSA 10");
         assert_eq!(
-            (s.category_id, s.condition_id),
+            (s.category_id.as_deref(), s.condition_id),
             (Some("261328"), Some(GRADED))
         );
-        assert!(search_for(&item("tcg", CardFields::default(), None)).is_none());
+        assert!(search_for(
+            &item("tcg", CardFields::default(), None),
+            search_market("EBAY_US")
+        )
+        .is_none());
     }
 
     #[test]
@@ -422,7 +565,8 @@ mod tests {
         assert_eq!(listings.len(), 3);
         let s = Search {
             query: "Charizard ex OBF 125".into(),
-            category_id: Some("183454"),
+            market: search_market("EBAY_US"),
+            category_id: Some("183454".into()),
             condition_id: Some(UNGRADED),
             auctions: false,
             limit: 50,
@@ -444,8 +588,9 @@ mod tests {
         assert!(keep(&mut m, &["v1|9|0".into()], "").is_err());
     }
 
-    /// Searches real eBay with `EBAY_APP_ID` (or `--ignored` fails): `CARDLOADER_REAL_EBAY=1 EBAY_APP_ID=…
-    /// cargo test -p cardloader real_ebay_search -- --ignored --nocapture`.
+    /// Searches real eBay with `EBAY_APP_ID` (or `--ignored` fails), on ebay.com or `CARDLOADER_EBAY_SITE` (e.g.
+    /// EBAY_DE): `CARDLOADER_REAL_EBAY=1 EBAY_APP_ID=… cargo test -p cardloader real_ebay_search -- --ignored
+    /// --nocapture`.
     #[tokio::test]
     #[ignore]
     async fn real_ebay_search() {
@@ -477,8 +622,9 @@ mod tests {
                 },
             ),
         ] {
-            let s = search_for(&item(kind, card, None)).unwrap();
-            let (total, listings) = search(&client, &s).await.unwrap();
+            let site = search_market(&std::env::var("CARDLOADER_EBAY_SITE").unwrap_or_default());
+            let mut s = search_for(&item(kind, card, None), site).unwrap();
+            let (total, listings) = search(&client, &mut s).await.unwrap();
             let m = market(&s, total, listings);
             println!(
                 "{} → {} on eBay, {} kept, range {:?}",

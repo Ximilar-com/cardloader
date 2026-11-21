@@ -201,6 +201,24 @@ const messages: Messages<typeof en> = {
         "„{name}“ und ihre {count} Karten samt Bildern werden für alle im Workspace aus Cards Cloud gelöscht. Eine lokale Sitzung, aus der sie hochgeladen wurde, behält ihre Karten; ein erneuter Upload legt dort eine neue Sitzung an.",
     },
   },
+  addTo: {
+    menu: "Preise oder Bewertung hinzufügen…",
+    menuTitle:
+      "Preise von eBay oder deinem KI-Agenten, eine Note oder den Zustand für bereits erkannte Karten – ohne sie erneut zu erkennen",
+    bulk: "Preise oder Bewertung hinzufügen…",
+    title: "Preise oder Bewertung hinzufügen",
+    introAll:
+      "Jede erkannte Karte dieser Sitzung bekommt, was du wählst. Die Karten behalten ihre Erkennung und deine Prüfung, und nur das Hinzugefügte wird ausgeführt. Die Sitzung behält es für später hinzukommende Karten.",
+    intro: {
+      one: "Die ausgewählte Karte bekommt, was du wählst. Sie behält ihre Erkennung und deine Prüfung, und nur das Hinzugefügte wird ausgeführt. Die Sitzung behält es für später hinzukommende Karten.",
+      other:
+        "Die {count} ausgewählten Karten bekommen, was du wählst. Sie behalten ihre Erkennung und deine Prüfung, und nur das Hinzugefügte wird ausgeführt. Die Sitzung behält es für später hinzukommende Karten.",
+    },
+    ximilarNewOnly: "Nur für neue Sitzungen: Ximilars Preise kommen mit seiner Erkennung",
+    run: "Hinzufügen und ausführen",
+    started: { one: "Wird zu {count} Karte hinzugefügt…", other: "Wird zu {count} Karten hinzugefügt…" },
+    none: "Keine erkannte Karte zum Ergänzen: wartende, laufende oder nicht erkannte Karten werden ausgelassen.",
+  },
   agentPrompt: {
     identify: "Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.",
     price: "Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.",

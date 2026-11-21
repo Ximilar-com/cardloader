@@ -30,7 +30,7 @@ import {
   type SourceKind,
 } from "../lib/api";
 import { rich, useT } from "../i18n";
-import { basename, dateTime, price } from "../lib/format";
+import { amounts, basename, dateTime, price } from "../lib/format";
 import Select, { type SelectOption } from "../components/Select";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
@@ -263,7 +263,7 @@ function LocalSessions() {
                     {s.counts.done}
                     <span className="text-slate-400"> / {s.counts.total}</span>
                   </td>
-                  <td className="px-3 py-2.5 text-right tabular-nums">{price(s.counts.totalPrice || null)}</td>
+                  <td className="px-3 py-2.5 text-right tabular-nums">{amounts(s.counts.values)}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap text-slate-500">{dateTime(s.createdAt)}</td>
                   <td className="px-3 py-2.5 text-slate-500">
                     {s.remoteSessionId ? (

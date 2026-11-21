@@ -1,19 +1,33 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { locale, t } from "../i18n";
-import type { Engine, GradingMode, IdMode, Prices, SessionOptions, SourceKind, Stage, Task } from "./api";
+import type { Engine, GradingMode, IdMode, Money, Prices, SessionOptions, SourceKind, Stage, Task } from "./api";
 
-/** Ximilar's prices are in US dollars, written the way the app's language writes amounts. */
-export function price(value: number | null | undefined): string {
-  return value == null ? "—" : new Intl.NumberFormat(locale(), { style: "currency", currency: "USD" }).format(value);
+/** A price in its currency (US dollars unless said: Ximilar's are), written the way the app's language writes
+ * amounts. */
+export function price(value: number | null | undefined, currency = "USD"): string {
+  return value == null ? "—" : new Intl.NumberFormat(locale(), { style: "currency", currency }).format(value);
 }
 
-/** A price without cents from $100 up: short enough for a range in a table cell. */
-export function shortPrice(value: number): string {
+/** A price without cents from 100 up: short enough for a range in a table cell. */
+export function shortPrice(value: number, currency = "USD"): string {
   return new Intl.NumberFormat(locale(), {
     style: "currency",
-    currency: "USD",
+    currency,
     maximumFractionDigits: value >= 100 ? 0 : 2,
   }).format(value);
+}
+
+/** Totals by currency, the largest first ("$1,234.00 · €56.00"); "—" when there are none. */
+export function amounts(values: Money[] | null | undefined): string {
+  const shown = (values ?? []).filter((m) => m.total > 0);
+  return shown.length ? shown.map((m) => price(m.total, m.currency)).join(" · ") : "—";
+}
+
+/** Totals by currency added up (sessions' values on the Dashboard), the largest first. */
+export function addMoney(lists: Money[][]): Money[] {
+  const totals = new Map<string, number>();
+  for (const m of lists.flat()) totals.set(m.currency, (totals.get(m.currency) ?? 0) + m.total);
+  return [...totals].map(([currency, total]) => ({ currency, total })).sort((a, b) => b.total - a.total);
 }
 
 export function grade(value: number | null | undefined): string {

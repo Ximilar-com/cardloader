@@ -390,15 +390,17 @@ pub fn session_folder(state: S, id: String) -> Result<String> {
     })
 }
 
-/// Searches eBay for the card's active listings (and their price range) and keeps them on the card.
+/// Searches eBay for the card's active listings (and their price range) and keeps them on the card: on
+/// `marketplace` (EBAY_DE, …), else on Settings' search site.
 #[tauri::command]
 pub async fn find_ebay_listings(
     state: S<'_>,
     item_id: i64,
     query: Option<String>,
+    marketplace: Option<String>,
 ) -> Result<ItemDetail> {
     state
-        .find_ebay_listings(item_id, query, false, None)
+        .find_ebay_listings(item_id, query, false, None, marketplace)
         .await?;
     state.db.item(item_id)
 }
@@ -419,9 +421,10 @@ impl AppState {
         query: Option<String>,
         auctions: bool,
         limit: Option<u32>,
+        marketplace: Option<String>,
     ) -> Result<EbayMarket> {
         self.runner
-            .find_ebay_listings(item_id, query, auctions, limit)
+            .find_ebay_listings(item_id, query, auctions, limit, marketplace)
             .await
     }
 
@@ -546,6 +549,97 @@ impl AppState {
         let n = self.db.requeue(id, item_ids)?;
         self.runner.emit_session(id);
         Ok(n)
+    }
+}
+
+/// Adds prices or grading to the session's identified cards (`item_ids`, else all), without identifying them
+/// again: how many go through it.
+#[tauri::command]
+pub fn add_to_cards(
+    state: S,
+    id: String,
+    item_ids: Option<Vec<i64>>,
+    add: AddToCards,
+) -> Result<usize> {
+    state.add_to_cards(&id, item_ids.as_deref(), &add)
+}
+
+impl AppState {
+    /// The session takes the tasks on with the chosen engines (its later cards get them too), and its finished
+    /// identified cards go through just those stages: a run of the queue only, nothing read from the source.
+    pub fn add_to_cards(
+        &self,
+        id: &str,
+        item_ids: Option<&[i64]>,
+        add: &AddToCards,
+    ) -> Result<usize> {
+        if self.runner.is_running(id) {
+            return Err(Error::msg(
+                "the session is running: wait until it finishes (or stop it), then add to its cards",
+            ));
+        }
+        let session = self.db.session(id)?;
+        if !session.options.identifies() {
+            return Err(Error::msg(
+                "only identified cards can get prices or grading added; this session doesn't identify its cards",
+            ));
+        }
+        let mut options = session.options.clone();
+        let mut stages = Vec::new();
+        match add.prices {
+            Some(Prices::Ximilar) => {
+                return Err(Error::msg(
+                    "Ximilar's prices come only with its identification: price from eBay's listings or by an AI agent",
+                ))
+            }
+            Some(Prices::Off) | None => {}
+            Some(prices) => {
+                options.prices = Some(prices);
+                options.price_stats = false;
+                stages.push(Stage::Price);
+            }
+        }
+        match add.grading {
+            Some(GradingMode::Off) | None => {}
+            Some(mode) => {
+                let engine = add.grade_engine.unwrap_or(options.grade_engine());
+                if engine == Engine::Agent {
+                    return Err(Error::msg(
+                        "an AI agent doesn't grade cards: grade with Ximilar or the local model",
+                    ));
+                }
+                options.grading = mode;
+                options.grade_engine = Some(engine);
+                if let Some(model) = add.local_model.as_deref().filter(|m| !m.is_empty()) {
+                    options.local_model = model.to_string();
+                }
+                if let Some(scale) = add.condition_mode.as_deref().map(str::trim) {
+                    if !scale.is_empty() {
+                        options.condition_mode = scale.to_string();
+                    }
+                }
+                stages.push(Stage::Grade);
+            }
+        }
+        if stages.is_empty() {
+            return Err(Error::msg("choose prices or grading to add"));
+        }
+        // Whatever the run would refuse is refused before any card is touched.
+        self.runner.can_run(&options)?;
+        if options.uses_api() {
+            self.runner.client()?;
+        }
+        self.db
+            .update_session_meta(id, &session.name, session.id_mode, &options)?;
+        let ids = self.db.add_stages(id, item_ids, &stages)?;
+        for item in &ids {
+            self.runner.emit_item(*item);
+        }
+        self.runner.emit_session(id);
+        if !ids.is_empty() {
+            self.runner.analyse_queued(id)?;
+        }
+        Ok(ids.len())
     }
 }
 
@@ -1593,6 +1687,7 @@ mod tests {
                 None,
                 None,
                 Some(2.0),
+                None,
                 None,
                 Some("Light Played"),
                 Some(&grading),

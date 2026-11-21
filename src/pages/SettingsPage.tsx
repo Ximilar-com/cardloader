@@ -1,5 +1,5 @@
 import { open } from "@tauri-apps/plugin-dialog";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openFile, openLink } from "../lib/open";
 import clsx from "clsx";
 import {
   Bot,
@@ -44,6 +44,7 @@ import {
 } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import { ShortcutsList } from "../components/Shortcuts";
+import { ebaySiteOptions } from "../lib/ebaySites";
 import { IS_MAC } from "../lib/shortcuts";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
 import { languageOf, rich, t, useI18n, useT, type Language } from "../i18n";
@@ -304,7 +305,7 @@ export default function SettingsPage() {
                   done={view.tokenSet}
                   text={rich(t("settings.ximilar.text"), {
                     link: (s) => (
-                      <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
+                      <button className="text-accent underline" onClick={() => openLink("https://app.ximilar.com")}>
                         {s}
                       </button>
                     ),
@@ -1043,7 +1044,7 @@ function About() {
         link: (s) => (
           <button
             className="text-accent underline"
-            onClick={() => openUrl("https://github.com/Ximilar-com/cardloader/releases")}
+            onClick={() => openLink("https://github.com/Ximilar-com/cardloader/releases")}
           >
             {s}
           </button>
@@ -1074,7 +1075,7 @@ function About() {
             <span className="selectable truncate font-mono text-xs" title={info.dataDir}>
               {info.dataDir}
             </span>
-            <button className="btn px-2 py-0.5 text-xs" onClick={() => openPath(info.dataDir)}>
+            <button className="btn px-2 py-0.5 text-xs" onClick={() => openFile(info.dataDir)}>
               <FolderOpen className="h-3.5 w-3.5" /> {t("common.open")}
             </button>
           </dd>
@@ -1103,7 +1104,7 @@ function UpdateNotice() {
             link: (s) => (
               <button
                 className="text-accent underline"
-                onClick={() => openUrl(`https://github.com/Ximilar-com/cardloader/releases/tag/v${info.version}`)}
+                onClick={() => openLink(`https://github.com/Ximilar-com/cardloader/releases/tag/v${info.version}`)}
               >
                 {s}
               </button>
@@ -1284,7 +1285,7 @@ function EbayTab({
         done={keysReady}
         text={rich(t("settings.ebay.keys.text"), {
           link: (s) => (
-            <button className="text-accent underline" onClick={() => openUrl("https://developer.ebay.com/my/keys")}>
+            <button className="text-accent underline" onClick={() => openLink("https://developer.ebay.com/my/keys")}>
               {s}
             </button>
           ),
@@ -1293,6 +1294,13 @@ function EbayTab({
       >
         <p className="-mt-1 text-xs text-slate-500">{t("settings.ebay.keys.search")}</p>
         <div className="grid grid-cols-2 gap-4">
+          <Field
+            label={t("settings.ebay.keys.searchSite")}
+            value={ebay.searchMarketplace || "EBAY_US"}
+            options={ebaySiteOptions()}
+            onChange={(v) => setEbay({ searchMarketplace: v })}
+          />
+          <p className="self-end pb-2 text-xs text-slate-500">{t("settings.ebay.keys.searchSiteHint")}</p>
           <Field
             label={t("settings.ebay.keys.environment")}
             value={ebay.sandbox ? "sandbox" : "production"}
@@ -1533,7 +1541,7 @@ function EbayTab({
         done={view.imgbbKeySet}
         text={rich(t("settings.ebay.hosting.text"), {
           link: (s) => (
-            <button className="text-accent underline" onClick={() => openUrl("https://api.imgbb.com/")}>
+            <button className="text-accent underline" onClick={() => openLink("https://api.imgbb.com/")}>
               {s}
             </button>
           ),

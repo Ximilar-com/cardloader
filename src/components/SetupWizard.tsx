@@ -1,7 +1,7 @@
 // The first-run setup: the app's language, what to do with the cards (identify, only grade or only crop), then the
 // questions that task needs; the answers become the defaults of new sessions (lib/setup.ts).
 
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openLink } from "../lib/open";
 import clsx from "clsx";
 import {
   ArrowLeft,
@@ -119,7 +119,7 @@ export default function SetupWizard({ settings }: { settings: SettingsView }) {
       <p className="mt-1.5 text-xs text-slate-500">
         {rich(t("wizard.engine.tokenHelp"), {
           link: (text) => (
-            <button className="text-accent underline" onClick={() => openUrl("https://app.ximilar.com")}>
+            <button className="text-accent underline" onClick={() => openLink("https://app.ximilar.com")}>
               {text}
             </button>
           ),

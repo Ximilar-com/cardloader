@@ -184,7 +184,7 @@ pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
         category,
         condition,
         price: item
-            .price
+            .usd_price()
             .filter(|p| p.is_finite() && *p > 0.0)
             .map(|p| whole_dollars(p) as f64),
         ebay: None,

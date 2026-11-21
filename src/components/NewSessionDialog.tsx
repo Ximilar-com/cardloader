@@ -1340,7 +1340,7 @@ export function priceOptions(ximilarIdentifies: boolean): SelectOption<Prices>[]
 }
 
 /** What the Grade tab grades: a full grade, centering only, or the condition. */
-function gradeModeOptions(): SelectOption<Exclude<GradingMode, "off">>[] {
+export function gradeModeOptions(): SelectOption<Exclude<GradingMode, "off">>[] {
   const labels = gradingLabels();
   return (["grade", "centering", "condition"] as const).map((value) => ({ value, label: labels[value] }));
 }

@@ -94,6 +94,17 @@ export interface SessionOptions {
   localModel: string;
 }
 
+/** Prices or grading added to a finished session's identified cards, and what does it. */
+export interface AddToCards {
+  /** "ebay" or "agent": Ximilar's prices come only with its identification. */
+  prices?: Prices | null;
+  grading?: GradingMode | null;
+  gradeEngine?: Engine | null;
+  conditionMode?: string | null;
+  /** The local model that grades; default: the session's. */
+  localModel?: string | null;
+}
+
 export interface SessionCounts {
   total: number;
   done: number;
@@ -102,7 +113,10 @@ export interface SessionCounts {
   inProgress: number;
   grading: number;
   synced: number;
+  /** The cards' prices in US dollars (`values` has every currency). */
   totalPrice: number;
+  /** The cards' prices by currency, the largest first. */
+  values: Money[];
   ebayDrafts: number;
   ebayListed: number;
   ebaySold: number;
@@ -182,6 +196,8 @@ export interface ItemSummary extends CardFields {
   confidence: string | null;
   distance: number | null;
   price: number | null;
+  /** The price's currency (ISO 4217): USD unless it came from another eBay site, or an agent or CSV said so. */
+  priceCurrency: string;
   grade: number | null;
   condition: string | null;
   /** What the graded slab's label says, when the card is in one. */
@@ -236,6 +252,8 @@ export interface MarketListing {
 /** A card's active eBay listings, as last searched. */
 export interface EbayMarket {
   query: string;
+  /** The eBay site searched (EBAY_DE, …). */
+  marketplace: string;
   categoryId: string | null;
   searchedAt: string;
   /** How many listings eBay has for the query. */
@@ -259,7 +277,16 @@ export type CardFilter = "all" | "review" | "graded" | "duplicates" | "agent";
 export interface CardSearch {
   cards: CardRow[];
   total: number;
+  /** The matches' prices in US dollars (`values` has every currency). */
   value: number;
+  /** The matches' prices by currency, the largest first. */
+  values: Money[];
+}
+
+/** An amount in one currency (ISO 4217): totals of prices in different currencies are kept apart. */
+export interface Money {
+  currency: string;
+  total: number;
 }
 
 /** What the user can change on a card by hand. */
@@ -378,6 +405,8 @@ export interface EbaySettings {
   ruName: string;
   apiBase?: string;
   marketplace: string;
+  /** The eBay site card prices are searched on (`EBAY_SITES`), unless a search names another. */
+  searchMarketplace: string;
   fulfillmentPolicyId: string;
   paymentPolicyId: string;
   returnPolicyId: string;
@@ -704,8 +733,8 @@ export const api = {
   /** A crop session's folder of cropped pictures (made if missing). */
   cropsFolder: (id: string) => invoke<string>("crops_folder", { id }),
   /** Searches eBay for the card's active listings and keeps them on it. */
-  findEbayListings: (itemId: number, query?: string) =>
-    invoke<ItemDetail>("find_ebay_listings", { itemId, query: query ?? null }),
+  findEbayListings: (itemId: number, query?: string, marketplace?: string) =>
+    invoke<ItemDetail>("find_ebay_listings", { itemId, query: query ?? null, marketplace: marketplace ?? null }),
   /** Only these listings of the card's last eBay search are the card: its price range counts them alone. */
   keepEbayListings: (itemId: number, listingIds: string[]) =>
     invoke<ItemDetail>("keep_ebay_listings", { itemId, listingIds }),
@@ -718,6 +747,9 @@ export const api = {
   pauseSession: (id: string) => invoke<void>("pause_session", { id }),
   stopSession: (id: string) => invoke<void>("stop_session", { id }),
   retryItems: (id: string, itemIds?: number[]) => invoke<number>("retry_items", { id, itemIds }),
+  /** Adds prices or grading to the session's identified cards (`itemIds`, else all) and runs them: how many. */
+  addToCards: (id: string, itemIds: number[] | null, add: AddToCards) =>
+    invoke<number>("add_to_cards", { id, itemIds, add }),
   syncSession: (id: string) => invoke<void>("sync_session", { id }),
   listItems: (sessionId: string) => invoke<ItemSummary[]>("list_items", { sessionId }),
   getItem: (id: number) => invoke<ItemDetail>("get_item", { id }),

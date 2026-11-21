@@ -95,7 +95,7 @@ const messages: Messages<typeof en> = {
     setCode: "Código da coleção",
     cardNumber: "Número",
     year: "Ano",
-    price: "Preço $",
+    price: "Preço {currency}",
     location: "Local",
     notes: "Notas",
     priceInvalid: "O preço deve ser um número positivo.",
@@ -109,6 +109,7 @@ const messages: Messages<typeof en> = {
   market: {
     title: "À venda no eBay",
     search: "Buscar no eBay",
+    site: "Site do eBay a pesquisar",
     again: "Buscar de novo",
     none: "Busca no eBay os anúncios ativos desta carta e a faixa de preço.",
     summary: {

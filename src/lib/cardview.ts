@@ -28,6 +28,8 @@ export interface Row {
   idType: string | null;
   confidence: string | null;
   price: number | null;
+  /** The price's currency (ISO 4217). */
+  priceCurrency: string;
   grade: number | null;
   condition: string | null;
   slab?: SlabLabel | null;
@@ -81,6 +83,8 @@ export interface CardView {
   confidence: string | null;
   distance: number | null;
   price: number | null;
+  /** The price's currency (ISO 4217). */
+  priceCurrency: string;
   priceStats: Json[];
   links: Record<string, string>;
   alternatives: Candidate[];
@@ -219,6 +223,7 @@ export function rowFromItem(i: ItemSummary): Row {
     idType: i.idType,
     confidence: i.confidence,
     price: i.price,
+    priceCurrency: i.priceCurrency,
     grade: i.grade,
     condition: i.condition,
     slab: i.slab,
@@ -304,6 +309,7 @@ export function rowFromRemote(r: RemoteItem, seq: number): Row {
     idType: r.id_type,
     confidence: r.confidence,
     price: r.price,
+    priceCurrency: "USD",
     grade: r.grade ?? null,
     condition: r.grading?.grades?.condition ?? null,
   };
@@ -413,6 +419,7 @@ export function viewFromItem(i: ItemDetail): CardView {
     confidence: i.confidence,
     distance: i.distance,
     price: i.price,
+    priceCurrency: i.priceCurrency,
     priceStats: best.price_stats ?? [],
     links: best.links ?? {},
     alternatives: candidates(ident?.alternatives, ident?.distances),
@@ -481,6 +488,7 @@ export function viewFromRemote(r: RemoteItem): CardView {
     confidence: r.confidence,
     distance: r.distance,
     price: r.price,
+    priceCurrency: "USD",
     priceStats: r.price_stats ?? [],
     links: r.links ?? {},
     alternatives: candidates(r.alternatives),

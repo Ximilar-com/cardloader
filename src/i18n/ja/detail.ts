@@ -96,7 +96,7 @@ const messages: Messages<typeof en> = {
     setCode: "セットコード",
     cardNumber: "番号",
     year: "年",
-    price: "価格 $",
+    price: "価格 {currency}",
     location: "保管場所",
     notes: "メモ",
     priceInvalid: "価格は正の数で入力してください。",
@@ -110,6 +110,7 @@ const messages: Messages<typeof en> = {
   market: {
     title: "eBayの出品中",
     search: "eBayで検索",
+    site: "検索するeBayサイト",
     again: "再検索",
     none: "このカードのeBayでの出品中リストと価格帯を検索します。",
     summary: { other: "{count}件 · 平均 {average} · 中央値 {median}" },

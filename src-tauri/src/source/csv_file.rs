@@ -29,6 +29,7 @@ enum Column {
     Category,
     IdType,
     Price,
+    Currency,
     Grade,
     Condition,
     Distance,
@@ -113,6 +114,7 @@ const ALIASES: &[(Column, &[&str])] = &[
             "median_price",
         ],
     ),
+    (Column::Currency, &["currency", "price_currency"]),
     (Column::Grade, &["grade", "final_grade"]),
     (Column::Condition, &["condition"]),
     (Column::Distance, &["distance"]),
@@ -128,6 +130,8 @@ pub struct CsvRow {
     pub card: CardFields,
     pub id_type: Option<String>,
     pub price: Option<f64>,
+    /// The price's currency (ISO 4217): its column, else a € or £ written with the price; none is US dollars.
+    pub currency: Option<String>,
     pub grade: Option<f64>,
     pub condition: Option<String>,
     pub distance: Option<f64>,
@@ -182,6 +186,7 @@ fn field_name(c: Column) -> &'static str {
         Column::Category => "category",
         Column::IdType => "type",
         Column::Price => "price",
+        Column::Currency => "currency",
         Column::Grade => "grade",
         Column::Condition => "condition",
         Column::Distance => "distance",
@@ -210,6 +215,17 @@ fn sniff_delimiter(text: &str) -> u8 {
         .copied()
         .max_by_key(|d| header.bytes().filter(|b| b == d).count())
         .unwrap_or(b',')
+}
+
+/// The currency a price is written with, when its sign says it unambiguously.
+fn currency_sign(value: &str) -> Option<&'static str> {
+    if value.contains('€') {
+        Some("EUR")
+    } else if value.contains('£') {
+        Some("GBP")
+    } else {
+        None
+    }
 }
 
 /// "$1,234.50", "1.234,50", "12,5", "€ 3" → a number. With both separators the last one is the decimal point.
@@ -319,7 +335,16 @@ pub fn parse(text: &str, base: &Path) -> Result<CsvFile> {
                     }
                 }
                 Column::Price => {
-                    row.price = parse_number(value, decimal_comma).filter(|p| *p >= 0.0)
+                    row.price = parse_number(value, decimal_comma).filter(|p| *p >= 0.0);
+                    if row.currency.is_none() {
+                        row.currency = currency_sign(value).map(str::to_string);
+                    }
+                }
+                Column::Currency => {
+                    let code = text.trim().to_ascii_uppercase();
+                    if code.len() == 3 && code.chars().all(|c| c.is_ascii_alphabetic()) {
+                        row.currency = Some(code);
+                    }
                 }
                 Column::Grade => {
                     row.grade =

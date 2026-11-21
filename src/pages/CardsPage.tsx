@@ -21,7 +21,7 @@ import {
 } from "../lib/api";
 import { rowFromItem, sortRows, viewFromItem, type Sort, type SortKey } from "../lib/cardview";
 import { rich, useT } from "../i18n";
-import { price } from "../lib/format";
+import { amounts } from "../lib/format";
 import { SEARCH_FIELD } from "../lib/shortcuts";
 
 const FILTERS: CardFilter[] = ["all", "review", "graded", "duplicates", "agent"];
@@ -132,10 +132,10 @@ export default function CardsPage() {
                 {rich(t("cards.total", { count: result.total }), {
                   b: (s) => <b className="text-slate-800 tabular-nums dark:text-slate-100">{s}</b>,
                 })}
-                {result.value > 0 && (
+                {result.values.some((m) => m.total > 0) && (
                   <>
                     {" · "}
-                    <b className="text-slate-800 tabular-nums dark:text-slate-100">{price(result.value)}</b>
+                    <b className="text-slate-800 tabular-nums dark:text-slate-100">{amounts(result.values)}</b>
                   </>
                 )}
               </span>

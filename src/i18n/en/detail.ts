@@ -97,7 +97,7 @@ export default {
     setCode: "Set code",
     cardNumber: "Number",
     year: "Year",
-    price: "Price $",
+    price: "Price {currency}",
     location: "Location",
     notes: "Notes",
     priceInvalid: "The price must be a positive number.",
@@ -108,6 +108,7 @@ export default {
   market: {
     title: "Active on eBay",
     search: "Search eBay",
+    site: "eBay site to search",
     again: "Search again",
     none: "Search eBay for this card's active listings and their price range.",
     summary: {

@@ -232,6 +232,9 @@ const messages: Messages<typeof en> = {
       certNote: "Wird beim API-Token aufbewahrt; eine Änderung der Schlüssel trennt eBay.",
       search:
         "Mit diesen Schlüsseln können du und KI-Agenten auch die aktiven eBay-Angebote einer Karte nach ihrer Preisspanne durchsuchen – dafür ist keine eBay-Anmeldung nötig.",
+      searchSite: "Preise suchen auf",
+      searchSiteHint:
+        "Die eBay-Seite, auf der Kartenpreise gesucht werden, in ihrer Währung. Im Kartenbereich kannst du eine andere wählen.",
     },
     account: {
       title: "eBay-Konto",

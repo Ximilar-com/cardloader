@@ -260,6 +260,24 @@ struct NextCards {
 }
 
 #[derive(Deserialize, JsonSchema)]
+struct AddToCardsArgs {
+    /// The session: its id, its name, or "latest".
+    session_id: String,
+    /// Only these cards (item ids); default: every identified card that is finished.
+    item_ids: Option<Vec<i64>>,
+    /// ebay: the median of each card's active eBay listings (needs the user's eBay keyset); agent: you price
+    /// each card (next_cards_to_price, then price_cards). Ximilar's prices come only with its identification.
+    prices: Option<Prices>,
+    /// grade (a full grade), centering, or condition (e.g. Near Mint).
+    grading: Option<GradingMode>,
+    /// What grades: ximilar or local (the model on this computer). Default: the session's.
+    grade_engine: Option<Engine>,
+    /// For condition: tcgplayer, cardmarket, ebay_tcg, ebay_sport, or ximilar (Ximilar only). Default: the
+    /// session's.
+    condition_scale: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 struct PriceCards {
     cards: Vec<CardPrice>,
 }
@@ -267,8 +285,10 @@ struct PriceCards {
 #[derive(Deserialize, JsonSchema)]
 struct CardPrice {
     item_id: i64,
-    /// What the card sells for now, in US dollars (as is: raw, or the slab's grade). Leave out with unpriced.
+    /// What the card sells for now (as is: raw, or the slab's grade), in `currency`. Leave out with unpriced.
     price: Option<f64>,
+    /// The price's currency (ISO 4217, e.g. EUR for prices from ebay.de). Default: USD.
+    currency: Option<String>,
     /// How you got it, in a few words (shown to the user), e.g. "median of 6 sold listings, no lots".
     note: Option<String>,
     /// You found no price: only the card's price fails, with your note.
@@ -318,6 +338,10 @@ struct FindEbayListings {
     include_auctions: Option<bool>,
     /// Listings to return (default 50, at most 200).
     limit: Option<u32>,
+    /// The eBay site: EBAY_US (ebay.com), EBAY_GB, EBAY_DE, EBAY_FR, EBAY_IT, EBAY_ES, EBAY_NL, EBAY_BE, EBAY_AT,
+    /// EBAY_IE, EBAY_CH, EBAY_PL, EBAY_CA, EBAY_AU, EBAY_HK or EBAY_SG. Prices are in its currency. Default: the
+    /// user's (get_settings).
+    marketplace: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -568,8 +592,9 @@ fn specs() -> Vec<Spec> {
         spec::<SessionArg>(Run, "stop_session", "Stop a session", "Stops a running session."),
         spec::<NextCards>(Run, "next_cards_to_identify", "Cards to identify", "Cards of sessions with engine agent that wait for you to identify them, each with its front (and back) picture. Waits while the next cards are scanned; says finished when no more can come. Answer with identify_cards."),
         spec::<IdentifyCards>(Run, "identify_cards", "Identify cards", "Your identification of cards from next_cards_to_identify: name, set, number, year, variant, game. The session then goes on with them (grading, crops, Cards Cloud) and the user reviews them."),
+        spec::<AddToCardsArgs>(Run, "add_to_cards", "Add prices or grading", "Adds prices (from eBay's listings, or priced by you) or grading (a grade, centering or the condition, by Ximilar or the local model) to a finished session's identified cards, without identifying them again, and runs them. The session keeps the task for cards it gets later."),
         spec::<NextCards>(Run, "next_cards_to_price", "Cards to price", "Identified cards of sessions with prices agent that wait for you to price them: their name, set, number, year, variant, game, slab grade, any eBay range already found, and their front (and back) picture. Waits while the next cards are identified; says finished when no more can come. Answer with price_cards."),
-        spec::<PriceCards>(Run, "price_cards", "Price cards", "Your price of cards from next_cards_to_price, in US dollars, with a note on how you got it. find_ebay_listings and keep_ebay_listings can help when the user has an eBay keyset."),
+        spec::<PriceCards>(Run, "price_cards", "Price cards", "Your price of cards from next_cards_to_price (in US dollars unless you give each one's currency), with a note on how you got it. find_ebay_listings and keep_ebay_listings can help when the user has an eBay keyset."),
         spec::<FindEbayListings>(Run, "find_ebay_listings", "Find eBay listings", "Searches eBay for an identified card's active fixed-price listings (by its name, set and number, or your query) and keeps them on the card with their price range: min, max, average and median. Then call keep_ebay_listings with the listings that are this card. Needs the user's eBay keyset."),
         spec::<KeepEbayListings>(Run, "keep_ebay_listings", "Keep eBay listings", "Of a card's last eBay search, only the listings that are this card count in its price range (the user sees the others left out, with your note)."),
         spec::<WaitForSession>(Run, "wait_for_session", "Wait for a session", "Waits until the session's run ends or the timeout passes, and returns its progress. Call it again while it still runs."),
@@ -780,6 +805,28 @@ impl Handler {
             "identify_cards" => self.identify_cards(args(a)?),
             "next_cards_to_price" => self.next_cards(args(a)?, AgentTask::Price).await,
             "price_cards" => self.price_cards(args(a)?),
+            "add_to_cards" => {
+                let a: AddToCardsArgs = args(a)?;
+                let id = self.session_id(&a.session_id)?;
+                let add = AddToCards {
+                    prices: a.prices,
+                    grading: a.grading,
+                    grade_engine: a.grade_engine,
+                    condition_mode: a.condition_scale,
+                    local_model: None,
+                };
+                let n = self.state.add_to_cards(&id, a.item_ids.as_deref(), &add)?;
+                let mut v = self.session_json(&self.state.db.session(&id)?, false);
+                v["cardsAdded"] = json!(n);
+                v["next"] = json!(if n == 0 {
+                    "no finished identified card to add to"
+                } else if a.prices == Some(Prices::Agent) {
+                    "call next_cards_to_price and price the cards with price_cards until it says finished"
+                } else {
+                    "call wait_for_session until it finishes"
+                });
+                out(v)
+            }
             "find_ebay_listings" => self.find_ebay_listings(args(a)?).await,
             "keep_ebay_listings" => self.keep_ebay_listings(args(a)?),
             "accept_cards" => self.accept(args(a)?),
@@ -875,7 +922,7 @@ impl Handler {
                     None => self
                         .identified(&id)?
                         .filter_map(|i| {
-                            i.price.filter(|p| *p > 0.0).map(|price| DraftItem {
+                            i.usd_price().filter(|p| *p > 0.0).map(|price| DraftItem {
                                 item_id: i.id,
                                 price,
                             })
@@ -1023,6 +1070,7 @@ impl Handler {
                 "grading": c.grading,
                 "synced": c.synced,
                 "value": (c.total_price * 100.0).round() / 100.0,
+                "values": c.values,
                 "apiCalls": c.calls,
             },
         });
@@ -1275,13 +1323,14 @@ impl Handler {
                         note
                     },
                 }),
-                (_, Some(price)) if price.is_finite() && price >= 0.0 => Ok(AgentAnswer::Priced {
-                    price: (price * 100.0).round() / 100.0,
-                    note,
-                }),
-                (_, Some(_)) => Err(Error::msg(
-                    "the price must be a number of dollars, 0 or more",
-                )),
+                (_, Some(price)) if price.is_finite() && price >= 0.0 => {
+                    currency_code(card.currency.as_deref()).map(|currency| AgentAnswer::Priced {
+                        price: (price * 100.0).round() / 100.0,
+                        currency,
+                        note,
+                    })
+                }
+                (_, Some(_)) => Err(Error::msg("the price must be a number, 0 or more")),
                 (_, None) => Err(Error::msg("give the card's price, or unpriced with a note")),
             };
             let result = answer.and_then(|answer| self.state.runner.answer_agent(item_id, answer));
@@ -1304,6 +1353,7 @@ impl Handler {
                 a.query,
                 a.include_auctions.unwrap_or(false),
                 a.limit,
+                a.marketplace,
             )
             .await?;
         // Titles and prices are what tells the card's listings from others: no pictures (tokens).
@@ -1318,6 +1368,7 @@ impl Handler {
         out(json!({
             "itemId": a.item_id,
             "query": market.query,
+            "marketplace": market.marketplace,
             "totalOnEbay": market.total,
             "range": market.range,
             "listings": listings,
@@ -1452,7 +1503,9 @@ impl Handler {
                 v
             })
             .collect();
-        out(json!({"matching": found.total, "value": found.value, "cards": cards}))
+        out(
+            json!({"matching": found.total, "value": found.value, "values": found.values, "cards": cards}),
+        )
     }
 
     async fn inspect(&self, a: PathArg) -> Result<Vec<ContentBlock>> {
@@ -1742,7 +1795,7 @@ impl Handler {
                 .identified(session_id)?
                 .map(|i| PricedItem {
                     item_id: i.id,
-                    price: i.price.unwrap_or(0.0),
+                    price: i.usd_price().unwrap_or(0.0),
                 })
                 .collect()),
         }
@@ -1869,6 +1922,7 @@ fn card_row(i: &ItemSummary) -> Value {
         "confidence": i.confidence,
         "distance": i.distance,
         "price": i.price,
+        "priceCurrency": i.price_currency,
         "grade": i.grade,
         "condition": i.condition,
         "slab": i.slab,
@@ -1894,6 +1948,7 @@ fn defaults(s: &Settings) -> Value {
         "conditionScale": s.default_condition_mode,
         "storeInCardsCloud": s.sync_by_default,
         "priceStats": s.price_stats,
+        "ebaySearchSite": s.ebay.search_marketplace,
         "concurrency": s.concurrency,
         "engine": s.engine,
         "folder": s.default_folder,
@@ -1909,6 +1964,22 @@ fn allowed(mcp: &McpSettings) -> Value {
         "settings": mcp.allow_settings,
         "webSearch": mcp.allow_web,
     })
+}
+
+/// A currency an agent named (ISO 4217, any case); none is US dollars.
+fn currency_code(given: Option<&str>) -> Result<String> {
+    let code = given
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .unwrap_or(USD)
+        .to_ascii_uppercase();
+    if code.len() == 3 && code.chars().all(|c| c.is_ascii_alphabetic()) {
+        Ok(code)
+    } else {
+        Err(Error::msg(format!(
+            "\"{code}\" isn't a currency code: give one like USD, EUR or GBP"
+        )))
+    }
 }
 
 /// The first UUID written in `text` (sessions' ids are UUIDs).

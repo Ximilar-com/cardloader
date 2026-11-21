@@ -1,7 +1,7 @@
 // Selling on eBay: the table badge, the detail panel section and the "List on eBay" dialog. Cards become
 // unpublished offers (drafts) first; the session page publishes them.
 
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openLink } from "../lib/open";
 import clsx from "clsx";
 import { ExternalLink, Send, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -99,7 +99,7 @@ export function EbaySection({
           {link && (
             <button
               className="flex items-center gap-1 text-xs text-accent hover:underline"
-              onClick={() => openUrl(link)}
+              onClick={() => openLink(link)}
             >
               {t("ebay.section.listing", { id: id ?? "" })} <ExternalLink className="h-3 w-3" />
             </button>

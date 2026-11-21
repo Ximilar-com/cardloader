@@ -191,6 +191,22 @@ const messages: Messages<typeof en> = {
         "“{name}”과(와) 카드 {count}장, 그 이미지가 워크스페이스의 모든 사용자에게서 Cards Cloud에서 삭제됩니다. 업로드한 원래 로컬 세션의 카드는 그대로 남으며, 다시 업로드하면 Cards Cloud에 새 세션이 만들어집니다.",
     },
   },
+  addTo: {
+    menu: "가격 또는 그레이딩 추가…",
+    menuTitle: "이미 식별된 카드에 eBay나 AI 에이전트의 가격, 등급 또는 상태를 추가합니다(다시 식별하지 않음)",
+    bulk: "가격 또는 그레이딩 추가…",
+    title: "가격 또는 그레이딩 추가",
+    introAll:
+      "이 세션의 식별된 모든 카드에 선택한 항목을 추가합니다. 카드의 식별과 검토는 그대로이며, 추가한 작업만 실행됩니다. 나중에 들어오는 카드에도 적용됩니다.",
+    intro: {
+      other:
+        "선택한 카드 {count}장에 선택한 항목을 추가합니다. 카드의 식별과 검토는 그대로이며, 추가한 작업만 실행됩니다. 나중에 들어오는 카드에도 적용됩니다.",
+    },
+    ximilarNewOnly: "새 세션 전용: Ximilar 가격은 식별과 함께 제공됩니다",
+    run: "추가하고 실행",
+    started: { other: "카드 {count}장에 추가하는 중…" },
+    none: "추가할 식별된 카드가 없습니다. 대기 중, 처리 중 또는 식별되지 않은 카드는 제외됩니다.",
+  },
   agentPrompt: {
     identify: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 식별해 줘",
     price: "MCP로 Cardloader 세션 {name}(ID {id})의 카드 가격을 매겨 줘",

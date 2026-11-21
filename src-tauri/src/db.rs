@@ -23,6 +23,8 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/009_market.sql"),
     include_str!("../migrations/010_jobs.sql"),
     include_str!("../migrations/011_price_note.sql"),
+    include_str!("../migrations/012_only_stages.sql"),
+    include_str!("../migrations/013_price_currency.sql"),
 ];
 
 #[derive(Clone)]
@@ -50,6 +52,7 @@ const ITEM_SUMMARY: &[&str] = &[
     "confidence",
     "distance",
     "price",
+    "price_currency",
     "grade",
     "condition",
     "error",
@@ -73,6 +76,18 @@ const ITEM_SUMMARY: &[&str] = &[
     "review_note",
     "market_range",
 ];
+
+/// Totals by currency, as a query's `json_group_array` gives them.
+fn money(json: Option<String>) -> Vec<Money> {
+    json.and_then(|j| serde_json::from_str(&j).ok())
+        .unwrap_or_default()
+}
+
+/// A price's currency as stored: NULL for US dollars, as every price was before currencies were kept.
+fn stored_currency(currency: &str) -> Option<String> {
+    let c = currency.trim().to_ascii_uppercase();
+    (!c.is_empty() && c != USD).then_some(c)
+}
 
 /// The place of `name` in `ITEM_SUMMARY`. A name that isn't there doesn't compile (`col!`).
 const fn item_column(name: &str) -> usize {
@@ -272,13 +287,16 @@ impl Db {
                     COALESCE(SUM(i.status = 'recognizing'), 0),
                     COALESCE(SUM(i.status = 'grading'), 0),
                     COALESCE(SUM(i.synced_rev > 0 AND i.synced_rev = i.rev), 0),
-                    COALESCE(SUM(i.price), 0),
+                    COALESCE(SUM(CASE WHEN i.price_currency IS NULL THEN i.price END), 0),
                     COALESCE(SUM(i.ebay_status = 'draft'), 0),
                     COALESCE(SUM(i.ebay_status = 'listed'), 0),
                     COALESCE(SUM(i.ebay_status = 'sold'), 0),
                     COALESCE(SUM({TO_REVIEW}), 0),
                     COALESCE(SUM(i.calls), 0),
-                    COALESCE(SUM(i.stage = 'price' AND i.status = 'grading'), 0)
+                    COALESCE(SUM(i.stage = 'price' AND i.status = 'grading'), 0),
+                    (SELECT json_group_array(json_object('currency', cur, 'total', total)) FROM (
+                        SELECT COALESCE(price_currency, 'USD') AS cur, SUM(price) AS total FROM items
+                        WHERE session_id = s.id AND price IS NOT NULL GROUP BY cur ORDER BY total DESC))
              FROM sessions s LEFT JOIN items i ON i.session_id = s.id
              {filter} GROUP BY s.id {order}"
         );
@@ -316,6 +334,7 @@ impl Db {
                         to_review: r.get(26)?,
                         calls: r.get(27)?,
                         pricing: r.get(28)?,
+                        values: money(r.get(29)?),
                     },
                 })
             })?;
@@ -485,6 +504,7 @@ impl Db {
         distance: Option<f64>,
         confidence: Option<&str>,
         price: Option<f64>,
+        price_currency: Option<&str>,
         grade: Option<f64>,
         condition: Option<&str>,
         grading: Option<&Value>,
@@ -497,10 +517,10 @@ impl Db {
                 "INSERT INTO items (session_id, seq, event_id, front_path, back_path, thumb_path, preview_path,
                     back_preview_path, status, id_type, name, full_name, set_name, set_code, card_number, series,
                     year, subcategory, confidence, distance, price, grade, condition, grading, rev,
-                    analyzed_at, created_at, updated_at, reviewed)
+                    analyzed_at, created_at, updated_at, reviewed, price_currency)
                  VALUES (?1, (SELECT COALESCE(MAX(seq), 0) + 1 FROM items WHERE session_id = ?1),
                     ?2, ?3, ?4, ?5, ?6, ?7, 'done', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, 1, ?23, ?23, ?23, 1)",
+                    ?20, ?21, ?22, 1, ?23, ?23, ?23, 1, ?24)",
                 params![
                     session_id,
                     event_id,
@@ -524,7 +544,8 @@ impl Db {
                     grade,
                     condition,
                     grading.map(|g| g.to_string()),
-                    ts
+                    ts,
+                    price_currency.and_then(stored_currency)
                 ],
             )?;
             Ok(c.last_insert_rowid())
@@ -572,7 +593,11 @@ impl Db {
                 WHERE {condition} AND (?1 = '' OR i.name LIKE ?1 OR i.full_name LIKE ?1 OR i.set_name LIKE ?1
                     OR i.card_number LIKE ?1 OR i.location LIKE ?1 OR i.notes LIKE ?1)
              )
-             SELECT {columns}, i.session_name, i.copies, COUNT(*) OVER (), COALESCE(SUM(i.price) OVER (), 0)
+             SELECT {columns}, i.session_name, i.copies, COUNT(*) OVER (),
+                COALESCE(SUM(CASE WHEN i.price_currency IS NULL THEN i.price END) OVER (), 0),
+                (SELECT json_group_array(json_object('currency', cur, 'total', total)) FROM (
+                    SELECT COALESCE(price_currency, 'USD') AS cur, SUM(price) AS total FROM found
+                    WHERE price IS NOT NULL GROUP BY cur ORDER BY total DESC))
              FROM found i ORDER BY i.analyzed_at DESC, i.id DESC LIMIT ?2"
         );
         let pattern = match query.trim() {
@@ -593,12 +618,14 @@ impl Db {
                     },
                     r.get::<_, i64>(MORE + 2)?,
                     r.get::<_, f64>(MORE + 3)?,
+                    r.get::<_, Option<String>>(MORE + 4)?,
                 ))
             })?;
             for row in rows {
-                let (card, total, value) = row?;
+                let (card, total, value, values) = row?;
                 search.total = total;
                 search.value = value;
+                search.values = money(values);
                 search.cards.push(card);
             }
             Ok(search)
@@ -649,7 +676,8 @@ impl Db {
         self.with(|c| {
             c.execute(
                 "UPDATE items SET status = ?2, error = ?3, updated_at = ?4,
-                    stage = CASE WHEN ?2 = 'error' THEN NULL ELSE stage END
+                    stage = CASE WHEN ?2 = 'error' THEN NULL ELSE stage END,
+                    only_stages = CASE WHEN ?2 = 'error' THEN NULL ELSE only_stages END
                  WHERE id = ?1",
                 params![id, status.as_str(), error, now()],
             )
@@ -660,7 +688,8 @@ impl Db {
     /// Re-queues failed items (and, with `all`, finished ones too) for a pass from the start: what their last
     /// pass still owed or had out is dropped.
     pub fn requeue(&self, session_id: &str, item_ids: Option<&[i64]>) -> Result<usize> {
-        const AGAIN: &str = "UPDATE items SET status = 'queued', error = NULL, stage = NULL";
+        const AGAIN: &str =
+            "UPDATE items SET status = 'queued', error = NULL, stage = NULL, only_stages = NULL";
         self.with(|c| {
             let n = match item_ids {
                 Some(ids) => {
@@ -709,7 +738,7 @@ impl Db {
                 &format!(
                 "UPDATE items SET id_type = ?2, name = ?3, full_name = ?4, set_name = ?5, set_code = ?6,
                     card_number = ?7, series = ?8, year = ?9, subcategory = ?10, confidence = ?11,
-                    distance = ?12, price = ?13, recognition = ?14, calls = calls + ?15, status = ?16,
+                    distance = ?12, price = ?13, price_currency = NULL, recognition = ?14, calls = calls + ?15, status = ?16,
                     error = NULL, analyzed_at = ?17, updated_at = ?17, rev = rev + 1, slab_company = ?18,
                     slab_grade = ?19, slab_certificate = ?20, reviewed = 0, edited = 0,
                     agent_reviewed = 0, review_note = NULL, {OTHER_CARD}
@@ -761,6 +790,7 @@ impl Db {
                 &format!(
                     "UPDATE items SET name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6,
                         series = ?7, year = ?8, subcategory = ?9, confidence = ?10, distance = ?11, price = ?12,
+                        price_currency = NULL,
                         recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14,
                         agent_reviewed = ?15, review_note = ?16, {OTHER_CARD}
                      WHERE id = ?1"
@@ -988,6 +1018,72 @@ impl Db {
         Ok(())
     }
 
+    /// The stages a card's pass is limited to (prices or grading added to it), if it is.
+    pub fn only_stages(&self, id: i64) -> Result<Option<Vec<Stage>>> {
+        let text: Option<String> = self.with(|c| {
+            c.query_row(
+                "SELECT only_stages FROM items WHERE id = ?1",
+                params![id],
+                |r| r.get(0),
+            )
+        })?;
+        Ok(text.map(|t| t.split(',').filter_map(Stage::find).collect()))
+    }
+
+    /// Queues a session's identified cards (`item_ids`, else all of them) for a pass of only `stages`, which they
+    /// owe from the first: they keep their identification, review and whatever else they have; what those stages
+    /// last failed with is dropped. Only finished cards: done, or failed after being identified. Their ids.
+    pub fn add_stages(
+        &self,
+        session_id: &str,
+        item_ids: Option<&[i64]>,
+        stages: &[Stage],
+    ) -> Result<Vec<i64>> {
+        let Some(first) = stages.first() else {
+            return Ok(Vec::new());
+        };
+        let only = stages
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
+        let kinds: Vec<&str> = stages
+            .iter()
+            .filter_map(|s| match s {
+                Stage::Price => Some(JobKind::Price.as_str()),
+                Stage::Grade => Some(JobKind::Grading.as_str()),
+                Stage::Crop => Some(JobKind::Crop.as_str()),
+                Stage::Identify => None,
+            })
+            .collect();
+        self.with(|c| {
+            let mut stmt = c.prepare(
+                "SELECT id FROM items WHERE session_id = ?1 AND id_type IS NOT NULL AND status IN ('done', 'error')",
+            )?;
+            let ids: Vec<i64> = stmt
+                .query_map(params![session_id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            let ids: Vec<i64> = ids
+                .into_iter()
+                .filter(|id| item_ids.is_none_or(|wanted| wanted.contains(id)))
+                .collect();
+            for id in &ids {
+                c.execute(
+                    "UPDATE items SET status = 'queued', error = NULL, stage = ?2, only_stages = ?3, updated_at = ?4
+                     WHERE id = ?1",
+                    params![id, first.as_str(), only, now()],
+                )?;
+                for kind in &kinds {
+                    c.execute(
+                        "DELETE FROM item_jobs WHERE item_id = ?1 AND kind = ?2 AND error IS NOT NULL",
+                        params![id, kind],
+                    )?;
+                }
+            }
+            Ok(ids)
+        })
+    }
+
     /// A pass from the start: nothing of an earlier one is out or failed any more.
     pub fn clear_jobs(&self, id: i64) -> Result<()> {
         self.with(|c| c.execute("DELETE FROM item_jobs WHERE item_id = ?1", params![id]))?;
@@ -998,7 +1094,9 @@ impl Db {
     pub fn finish_pass(&self, id: i64) -> Result<()> {
         self.with(|c| {
             c.execute(
-                &format!("UPDATE items SET stage = NULL, {SETTLED}, updated_at = ?2 WHERE id = ?1"),
+                &format!(
+                    "UPDATE items SET stage = NULL, only_stages = NULL, {SETTLED}, updated_at = ?2 WHERE id = ?1"
+                ),
                 params![id, now()],
             )
         })?;
@@ -1077,13 +1175,20 @@ impl Db {
         Ok(())
     }
 
-    /// A card's price from its price stage (eBay listings, an AI agent), with why when an agent set it. A result
-    /// change: Cards Cloud gets the price with the card.
-    pub fn save_price(&self, id: i64, price: f64, note: Option<&str>) -> Result<()> {
+    /// A card's price from its price stage (eBay listings, an AI agent) in `currency`, with why when an agent set
+    /// it. A result change: Cards Cloud gets the price with the card (when it is in US dollars).
+    pub fn save_price(
+        &self,
+        id: i64,
+        price: f64,
+        currency: &str,
+        note: Option<&str>,
+    ) -> Result<()> {
         self.with(|c| {
             c.execute(
-                "UPDATE items SET price = ?2, price_note = ?3, rev = rev + 1, updated_at = ?4 WHERE id = ?1",
-                params![id, price, note, now()],
+                "UPDATE items SET price = ?2, price_currency = ?3, price_note = ?4, rev = rev + 1, updated_at = ?5
+                 WHERE id = ?1",
+                params![id, price, stored_currency(currency), note, now()],
             )
         })?;
         Ok(())
@@ -1406,6 +1511,9 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         confidence: r.get(col!("confidence"))?,
         distance: r.get(col!("distance"))?,
         price: r.get(col!("price"))?,
+        price_currency: r
+            .get::<_, Option<String>>(col!("price_currency"))?
+            .unwrap_or_else(|| USD.into()),
         grade: r.get(col!("grade"))?,
         condition: r.get(col!("condition"))?,
         slab: slab_label(r)?,

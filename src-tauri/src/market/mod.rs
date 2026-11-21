@@ -159,6 +159,7 @@ pub fn test_item(id_type: &str, game: &str) -> ItemDetail {
             confidence: Some("high".into()),
             distance: Some(0.1),
             price: Some(0.234),
+            price_currency: "USD".into(),
             grade: None,
             condition: None,
             slab: None,

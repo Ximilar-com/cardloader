@@ -197,6 +197,24 @@ export default {
     },
   },
   /** What to ask the agent: the copy button of the agentPricing and agentWaiting banners. */
+  addTo: {
+    menu: "Add prices or grading…",
+    menuTitle:
+      "Prices from eBay or your AI agent, a grade or the condition, for cards identified already — without identifying them again",
+    bulk: "Add prices or grading…",
+    title: "Add prices or grading",
+    introAll:
+      "Every identified card of this session gets what you choose. Cards keep their identification and your review, and only what you add is run. The session keeps it for cards it gets later.",
+    intro: {
+      one: "The selected card gets what you choose. It keeps its identification and your review, and only what you add is run. The session keeps it for cards it gets later.",
+      other:
+        "The {count} selected cards get what you choose. They keep their identification and your review, and only what you add is run. The session keeps it for cards it gets later.",
+    },
+    ximilarNewOnly: "New sessions only: Ximilar’s prices come with its identification",
+    run: "Add and run",
+    started: { one: "Adding to {count} card…", other: "Adding to {count} cards…" },
+    none: "No identified card to add to: cards that are waiting, running or not identified are left out.",
+  },
   agentPrompt: {
     identify: "Identify the cards of the Cardloader session {name} (id {id}) via MCP.",
     price: "Price the cards of the Cardloader session {name} (id {id}) via MCP.",

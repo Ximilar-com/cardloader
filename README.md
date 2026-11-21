@@ -43,6 +43,10 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Grading.** [Card Grading](https://docs.ximilar.com/collectibles/card-grading) can grade each card in full
   (corners, edges, surface, centering, final grade) using both sides, check its condition, or measure centering
   only. The grading overlays are saved alongside the session.
+- **Add to finished sessions.** A session's ⋯ menu (or the selection bar, for ticked cards) adds prices or grading
+  to cards identified already, without identifying them again: prices from eBay's listings or checked by your AI
+  agent, a grade, centering or the condition by Ximilar or the local model. Ximilar's own prices come only with its
+  identification, so they're for new sessions.
 - **Cropped pictures.** Ximilar can cut each card out of its image, straighten it and even out its colours
   (`crop_level` of Card Grading); Cardloader saves the crops, front and back, named after the card's files in a
   folder you choose, as JPEG, PNG (lossless) or WebP (the file Ximilar sends, unchanged). Any session can **Also save cropped pictures**, next to identifying or grading the cards.
@@ -417,7 +421,11 @@ with **eBay listings**; each identified card's listings are searched and their m
 
 The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
 out greyed) with **Search eBay** to search again yourself; untick a listing that isn't your card, or tick one back,
-and the range follows. When the card is identified again, or you pick or type another card, its listings are dropped. The search uses your eBay keyset's App ID and Cert ID
+and the range follows. When the card is identified again, or you pick or type another card, its listings are dropped.
+Searches run on ebay.com unless you choose another of eBay's 16 sites (ebay.co.uk, ebay.de, ebay.fr, ebay.it, …) in
+**Settings → Selling**, or for one search in the card's panel. Prices from another site keep its currency (€, £, …):
+the card shows them so, totals are by currency, and exports and marketplaces that expect US dollars leave such a
+card's price for you to set. The search uses your eBay keyset's App ID and Cert ID
 (Settings → Selling; no eBay login needed for it), or `EBAY_APP_ID` in the environment: the base64 of
 `client_id:client_secret` of a production keyset. eBay allows 5,000 searches a day per keyset.
 

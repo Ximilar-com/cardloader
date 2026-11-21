@@ -104,7 +104,10 @@ state from them.
   Cards Cloud) are `AppState` methods in `commands.rs`, so the Tauri command and the MCP tool do the same thing; keep
   the `#[tauri::command]` fns thin. A new capability agents should have is a tool in `mcp/tools.rs` (`specs()` +
   `call()`) in the right `Group`; extend `mcp::tests::agent_runs_and_reviews_a_folder`.
-- New Tauri plugin APIs need a permission in `src-tauri/capabilities/default.json`.
+- New Tauri plugin APIs need a permission in `src-tauri/capabilities/default.json`. A permission that only enables a
+  command isn't enough where the plugin checks a scope: the opener refuses every URL and path without one
+  (`opener:allow-default-urls`, and the `allow-open-path` scope: `$HOME`, the app's folders, external drives). Open
+  links, files and folders through `src/lib/open.ts`, so a refusal shows as an error instead of a dead click.
 - Match the surrounding style: Rust via `cargo fmt`, frontend via Prettier (`.prettierrc.json`, width 120). Comments
   explain why, not what. User-facing text is plain and short.
 - **UI text is translated** (en, ja, es, ko, fr, pt, de, it; `settings.language`). Never write English into
@@ -188,6 +191,13 @@ state from them.
   (`comes_back`) leaves the card in the queue owing that stage (`items.stage`), and the next run goes on there
   (`Stage::resume`: at the next stage left, if the options dropped that one since) without identifying it again.
   `Db::requeue` (retry, Analyse again) is a pass from the start.
+- **Adding to finished cards** (`AppState::add_to_cards`, Tauri command and MCP tool `add_to_cards`; the dialog
+  `AddToCards.tsx` from the session's ⋯ menu or the selection bar): prices (eBay or an agent; Ximilar's come only
+  with its identification, so they're refused) or grading (Ximilar or local) for a session's identified, finished
+  cards. The session takes the task on with that engine (its later cards get it too), `Db::add_stages` queues the
+  cards owing the first stage with `items.only_stages` (migration 012) limiting the pass to those stages, and the
+  queue is run (`analyse_queued`): no identification again, review and everything else kept. `Runner::can_run`
+  (model, eBay keyset) and the token are checked before a card is touched.
 - **Async jobs** (`item_jobs`, migration 010: one row per card and `JobKind`, grading or crop): `Db::set_job` when
   submitted (one call), gone when stored (`save_grading`, `save_crop`), kept with why when failed (`fail_job`, or a
   result with an error). The card's status and error follow from its jobs (`SETTLED`: `grading` while one is out,
@@ -234,11 +244,22 @@ state from them.
   other kind): `next_cards_to_price` / `price_cards` (USD, a note kept in `items.price_note`, migration 011, cleared
   with `OTHER_CARD`; `unpriced` fails only the price), prompt `price_session`; `counts.pricing` is the session page's
   banner.
+- **Price currencies**: `items.price_currency` (migration 013; NULL = USD, every older price) read as
+  `ItemSummary.price_currency`. Ximilar's, picks and edits keep/write USD; the eBay price stage writes the range's
+  currency, an agent's `price_cards` its `currency`, a CSV its currency column (or €/£ in the price). Totals are by
+  currency (`SessionCounts.values`, `CardSearch.values`, `Money`; `total_price`/`value` are the USD part); the UI
+  formats with `price(value, currency)` / `amounts(values)`. What expects dollars (TCGplayer, Whatnot, Shopify, eBay
+  US drafts, Cards Cloud, agents' default export prices) reads `ItemSummary::usd_price()`, so another currency is
+  left for the user to set there. The CSV export has `price` and `currency` columns.
 - **eBay prices** (`ebay/browse.rs`): the Browse API's `item_summary/search` with an application token
   (client credentials: the Settings keyset's App ID + Cert ID, or `EBAY_APP_ID` = base64 `client_id:secret`, which
   tests ignore unless `CARDLOADER_REAL_EBAY=1`, and never with a mock `api_base`). `search_for` builds the query and
   category from the card (TCG 183454, sports singles 261328, comics 63; condition 2750 graded / 4000 ungraded),
-  fixed price unless asked for auctions. The card is typed as for listing it (`listing::Collectible::of`: its
+  fixed price unless asked for auctions. Searches go to one of 16 sites (`SEARCH_MARKETS`, mirrored by
+  `src/lib/ebaySites.ts`): `settings.ebay.search_marketplace` (Settings › Selling), else a site the card panel or
+  the MCP tool's `marketplace` names (`EbayClient::on` sets the marketplace header). Only EBAY_US's category and
+  condition ids are known: elsewhere the category is the Taxonomy API's first suggestion for the query (tree ids
+  cached per site), and a search the condition leaves empty is asked again without it. The card is typed as for listing it (`listing::Collectible::of`: its
   `id_type`, else its game or sport, which is what a slab has). `AppState::find_ebay_listings` /
   `keep_ebay_listings` (Tauri commands and MCP tools; the panel's ticks are the user's `keep`, which drops the
   agent's note) store `items.market` (all listings, `counted` flags, the agent's note) and `items.market_range`

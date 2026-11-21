@@ -416,6 +416,31 @@ impl SessionOptions {
     }
 }
 
+/// An amount in one currency (ISO 4217): totals of prices in different currencies are kept apart.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Money {
+    pub currency: String,
+    pub total: f64,
+}
+
+/// Prices or grading added to a session's identified cards after its run (`AppState::add_to_cards`): what to add,
+/// and by what.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AddToCards {
+    /// From eBay's listings or by an AI agent (Ximilar's come only with its identification).
+    pub prices: Option<Prices>,
+    /// A full grade, centering, or the condition.
+    pub grading: Option<GradingMode>,
+    /// Ximilar or the local model; default: the session's.
+    pub grade_engine: Option<Engine>,
+    /// The condition scale (`tcgplayer`, `cardmarket`, `ebay_tcg`, …); default: the session's.
+    pub condition_mode: Option<String>,
+    /// The local model that grades; default: the session's.
+    pub local_model: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionCounts {
@@ -426,7 +451,10 @@ pub struct SessionCounts {
     pub in_progress: i64,
     pub grading: i64,
     pub synced: i64,
+    /// The cards' prices in US dollars (`values` has every currency).
     pub total_price: f64,
+    /// The cards' prices by currency, the largest first.
+    pub values: Vec<Money>,
     pub ebay_drafts: i64,
     pub ebay_listed: i64,
     pub ebay_sold: i64,
@@ -537,6 +565,9 @@ pub struct ItemSummary {
     pub confidence: Option<String>,
     pub distance: Option<f64>,
     pub price: Option<f64>,
+    /// The price's currency (ISO 4217): USD unless it came from another eBay site, or an agent or CSV said so.
+    #[serde(default = "usd")]
+    pub price_currency: String,
     pub grade: Option<f64>,
     pub condition: Option<String>,
     pub slab: Option<SlabLabel>,
@@ -560,6 +591,14 @@ pub struct ItemSummary {
     pub ebay: Option<EbayListing>,
     /// What its active eBay listings ask, once they were searched.
     pub market_range: Option<PriceRange>,
+}
+
+impl ItemSummary {
+    /// The card's price when it is in US dollars: what TCGplayer, Whatnot, Shopify, eBay US and Cards Cloud are
+    /// given. A price in another currency (another eBay site's) is left for the user to set there.
+    pub fn usd_price(&self) -> Option<f64> {
+        self.price.filter(|_| self.price_currency == USD)
+    }
 }
 
 /// What active eBay listings of a card ask, over those that are the card (see [`EbayMarket`]).
@@ -638,6 +677,9 @@ pub struct MarketListing {
 #[serde(rename_all = "camelCase")]
 pub struct EbayMarket {
     pub query: String,
+    /// The eBay site searched (`EBAY_DE`, …).
+    #[serde(default = "us_site")]
+    pub marketplace: String,
     pub category_id: Option<String>,
     pub searched_at: String,
     /// How many listings eBay has for the query: more than are kept here.
@@ -686,7 +728,10 @@ pub struct CardRow {
 pub struct CardSearch {
     pub cards: Vec<CardRow>,
     pub total: i64,
+    /// The matches' prices in US dollars (`values` has every currency).
     pub value: f64,
+    /// The matches' prices by currency, the largest first.
+    pub values: Vec<Money>,
 }
 
 /// What the user can change on a card by hand.
@@ -749,6 +794,17 @@ pub struct DayCount {
     pub cards: u32,
     /// Paid Ximilar API calls of the cards analysed that day.
     pub calls: u32,
+}
+
+/// The currency prices are in unless they say otherwise: Ximilar's, and every price before currencies were kept.
+pub const USD: &str = "USD";
+
+fn usd() -> String {
+    USD.into()
+}
+
+fn us_site() -> String {
+    "EBAY_US".into()
 }
 
 pub fn now() -> String {

@@ -231,7 +231,7 @@ export default function SessionTable({
                   {r.toReview && <ReviewMark />}
                   {r.byAgent ? <AgentMark note={r.reviewNote} /> : r.accepted && <AcceptedMark />}
                 </span>
-                <span className="text-right tabular-nums">{price(r.price)}</span>
+                <span className="text-right tabular-nums">{price(r.price, r.priceCurrency)}</span>
                 {showMarket && <MarketCell range={r.marketRange} />}
                 <span className="text-right tabular-nums" title={r.condition ?? undefined}>
                   {r.grade != null ? (
@@ -329,11 +329,13 @@ function MarketCell({ range }: { range?: PriceRange | null }) {
       className="text-right text-xs whitespace-nowrap tabular-nums"
       title={t("sessions.table.ebayRangeTitle", {
         count: range.count,
-        average: price(range.average),
-        median: price(range.median),
+        average: price(range.average, range.currency),
+        median: price(range.median, range.currency),
       })}
     >
-      {range.min === range.max ? shortPrice(range.min) : `${shortPrice(range.min)}–${shortPrice(range.max)}`}
+      {range.min === range.max
+        ? shortPrice(range.min, range.currency)
+        : `${shortPrice(range.min, range.currency)}–${shortPrice(range.max, range.currency)}`}
     </span>
   );
 }

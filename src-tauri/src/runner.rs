@@ -137,8 +137,12 @@ pub enum AgentAnswer {
     },
     /// It couldn't tell: the card fails with the note, and Retry offers it again.
     Unidentified { note: String },
-    /// The card's price, in US dollars as Ximilar's are, and why.
-    Priced { price: f64, note: String },
+    /// The card's price in `currency` (ISO 4217; US dollars unless the agent says), and why.
+    Priced {
+        price: f64,
+        currency: String,
+        note: String,
+    },
     /// It found no price: only the card's price fails, with the note.
     Unpriced { note: String },
 }
@@ -495,6 +499,21 @@ impl Runner {
         self.start_run(id, true)
     }
 
+    /// What a run with these options needs and doesn't have: the local model downloaded, the eBay keyset.
+    pub fn can_run(&self, options: &SessionOptions) -> Result<()> {
+        if options.uses_local() && !self.local.is_ready(&options.local_model) {
+            return Err(Error::msg(
+                "the local model isn't downloaded — download it in Settings, or use Ximilar",
+            ));
+        }
+        if options.uses_ebay() && !crate::ebay::browse::available(&self.settings) {
+            return Err(Error::msg(
+                "eBay prices need your eBay keyset — add it in Settings → Selling, or price the cards another way",
+            ));
+        }
+        Ok(())
+    }
+
     /// Analyses the session's queued cards (e.g. ones to analyse again) without reading its source: no new
     /// scan, no new files from the folder.
     pub fn analyse_queued(self: &Arc<Self>, id: &str) -> Result<()> {
@@ -519,16 +538,7 @@ impl Runner {
                 session.options = options;
             }
         }
-        if session.options.uses_local() && !self.local.is_ready(&session.options.local_model) {
-            return Err(Error::msg(
-                "the local model isn't downloaded — download it in Settings, or use Ximilar",
-            ));
-        }
-        if session.options.uses_ebay() && !crate::ebay::browse::available(&self.settings) {
-            return Err(Error::msg(
-                "eBay prices need your eBay keyset — add it in Settings → Selling, or price the cards another way",
-            ));
-        }
+        self.can_run(&session.options)?;
         // A local or agent session may need no Ximilar API at all (unless jobs started earlier are still out).
         let needs_api = session.options.uses_api() || !self.db.jobs(id)?.is_empty();
         let client = match self.client() {
@@ -1010,6 +1020,7 @@ impl Runner {
                 row.distance,
                 row.distance.map(recognition::tier),
                 row.price,
+                row.currency.as_deref(),
                 row.grade,
                 row.condition.as_deref(),
                 grading.as_ref(),
@@ -1114,7 +1125,14 @@ impl Runner {
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item = self.db.item(item_id)?;
-        let stages = session.options.stages();
+        // A card prices or grading were added to goes through those stages alone (`Db::add_stages`).
+        let only = self.db.only_stages(item_id)?;
+        let stages: Vec<Stage> = session
+            .options
+            .stages()
+            .into_iter()
+            .filter(|s| only.as_ref().is_none_or(|only| only.contains(s)))
+            .collect();
         let owed = self.db.stage(item_id)?;
         let from = match owed {
             Some(owed) => Stage::resume(&stages, owed),
@@ -1336,10 +1354,18 @@ impl Runner {
             .wait_for_agent(session, item_id, AgentTask::Price, cancel)
             .await?
         {
-            AgentAnswer::Priced { price, note } => {
+            AgentAnswer::Priced {
+                price,
+                currency,
+                note,
+            } => {
                 let note = note.trim();
-                self.db
-                    .save_price(item_id, price, Some(note).filter(|n| !n.is_empty()))?;
+                self.db.save_price(
+                    item_id,
+                    price,
+                    &currency,
+                    Some(note).filter(|n| !n.is_empty()),
+                )?;
                 self.emit_item(item_id);
                 Ok(())
             }
@@ -1353,28 +1379,34 @@ impl Runner {
     async fn price_on_ebay(&self, item: &ItemDetail, cancel: &CancellationToken) -> Result<()> {
         let item_id = item.summary.id;
         let market = tokio::select! {
-            market = self.find_ebay_listings(item_id, None, false, None) => market?,
+            market = self.find_ebay_listings(item_id, None, false, None, None) => market?,
             _ = cancel.cancelled() => return Err(ApiError::Cancelled.into()),
         };
         if let Some(range) = market.range {
-            self.db.save_price(item_id, range.median, None)?;
+            self.db
+                .save_price(item_id, range.median, &range.currency, None)?;
             self.emit_item(item_id);
         }
         Ok(())
     }
 
-    /// Searches eBay for an identified card's active listings, by its fields or `query`, and keeps them and their
-    /// price range on the card.
+    /// Searches eBay for an identified card's active listings, by its fields or `query`, on `marketplace` (an eBay
+    /// site id, e.g. EBAY_DE; default: Settings' search site), and keeps them and their price range on the card.
     pub async fn find_ebay_listings(
         &self,
         item_id: i64,
         query: Option<String>,
         auctions: bool,
         limit: Option<u32>,
+        marketplace: Option<String>,
     ) -> Result<EbayMarket> {
         let item = self.db.item_summary(item_id)?;
-        let mut search = crate::ebay::browse::search_for(&item)
-            .ok_or_else(|| Error::msg("the card isn't identified yet: identify it first"))?;
+        let site = marketplace
+            .filter(|m| !m.trim().is_empty())
+            .unwrap_or_else(|| self.settings.get().ebay.search_marketplace);
+        let mut search =
+            crate::ebay::browse::search_for(&item, crate::ebay::browse::search_market(&site))
+                .ok_or_else(|| Error::msg("the card isn't identified yet: identify it first"))?;
         if let Some(q) = query
             .map(|q| q.trim().to_string())
             .filter(|q| !q.is_empty())
@@ -1386,7 +1418,7 @@ impl Runner {
             search.limit = limit.clamp(1, crate::ebay::browse::MAX_LIMIT);
         }
         let client = self.ebay.app.client(&self.settings).await?;
-        let (total, listings) = crate::ebay::browse::search(&client, &search).await?;
+        let (total, listings) = crate::ebay::browse::search(&client, &mut search).await?;
         // The card may have become another one meanwhile (a pick, an edit, a new recognition), which drops its
         // listings: these are of the card it was.
         let now = self.db.item_summary(item_id)?;
@@ -4257,7 +4289,7 @@ pub(crate) mod tests {
     }
 
     /// An eBay keyset's mock: the application token, and the Browse search answering `search` (status, body).
-    async fn mock_browse(status: u16, search: Value) -> MockServer {
+    pub(crate) async fn mock_browse(status: u16, search: Value) -> MockServer {
         let ebay = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/identity/v1/oauth2/token"))

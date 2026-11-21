@@ -227,6 +227,8 @@ export default {
       certNote: "Kept with the API token; changing the keys disconnects eBay.",
       search:
         "These keys also let you, and AI agents, search a card's active eBay listings for its price range: no eBay login needed for that.",
+      searchSite: "Search prices on",
+      searchSiteHint: "The eBay site card prices are searched on, in its currency. A card’s panel can search another.",
     },
     account: {
       title: "eBay account",

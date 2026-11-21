@@ -1,4 +1,4 @@
-import { openPath, openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+import { openFile, openLink, reveal } from "../lib/open";
 import clsx from "clsx";
 import {
   Bot,
@@ -22,7 +22,9 @@ import { t, useT, type Key } from "../i18n";
 import { errorText, type EbayMarket, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, dateTime, decimal, grade, parseAmount, price } from "../lib/format";
+import { ebaySite, ebaySiteOptions } from "../lib/ebaySites";
 import { ErrorNote, useBackdropClose } from "./Modal";
+import Select from "./Select";
 import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
 
 export default function DetailPanel({
@@ -42,6 +44,7 @@ export default function DetailPanel({
   extra,
   cropping,
   onFindListings,
+  ebaySite,
   onKeepListings,
 }: {
   view: CardView;
@@ -69,7 +72,9 @@ export default function DetailPanel({
   /** The card is a crop session's. */
   cropping?: boolean;
   /** Searches eBay for the card's active listings; without it, only listings an agent found show. */
-  onFindListings?: () => Promise<unknown>;
+  onFindListings?: (marketplace: string) => Promise<unknown>;
+  /** The eBay site a search starts on (Settings' search site). */
+  ebaySite?: string;
   /** Only the listings with these ids are the card: with it, each listing has a tick. */
   onKeepListings?: (ids: string[]) => Promise<unknown>;
 }) {
@@ -312,7 +317,7 @@ export default function DetailPanel({
 
         {(view.price != null || view.grade != null || view.condition) && (
           <div className="grid grid-cols-2 gap-2">
-            <Stat label={t("detail.marketPrice")} value={price(view.price)} />
+            <Stat label={t("detail.marketPrice")} value={price(view.price, view.priceCurrency)} />
             <Stat
               label={
                 view.gradingEndpoint === "centering"
@@ -336,6 +341,7 @@ export default function DetailPanel({
         {editing && view.edit && onEdit ? (
           <EditForm
             initial={view.edit}
+            currency={view.priceCurrency}
             identified={view.status === "done" || view.status === "grading"}
             onCancel={() => setEditing(false)}
             onSave={(edit) => onEdit(edit).then(() => setEditing(false))}
@@ -382,7 +388,7 @@ export default function DetailPanel({
           </Section>
         )}
 
-        <Market market={view.market} onFind={onFindListings} onKeep={onKeepListings} />
+        <Market market={view.market} onFind={onFindListings} onKeep={onKeepListings} defaultSite={ebaySite} />
 
         <Files images={view.images} />
 
@@ -424,7 +430,7 @@ export default function DetailPanel({
           <Section title={t("detail.links")}>
             <div className="flex flex-wrap gap-1.5">
               {Object.entries(view.links).map(([name, url]) => (
-                <button key={name} className="btn px-2 py-1 text-xs" onClick={() => openUrl(url)}>
+                <button key={name} className="btn px-2 py-1 text-xs" onClick={() => openLink(url)}>
                   {name} <ExternalLink className="h-3 w-3" />
                 </button>
               ))}
@@ -551,7 +557,7 @@ function Lightbox({
       if (e.key === "Escape" || e.key === " ") onClose();
       else if ((e.key === "ArrowLeft" || e.key === "ArrowRight") && images.length > 1)
         onActive((index + (e.key === "ArrowRight" ? 1 : images.length - 1)) % images.length);
-      else if (e.key === "o" && img?.path) void openPath(img.path);
+      else if (e.key === "o" && img?.path) void openFile(img.path);
       else return;
       // The panel and the table behind it don't get the key.
       e.preventDefault();
@@ -575,7 +581,7 @@ function Lightbox({
         {img.path && (
           <button
             className="flex items-center gap-1.5 rounded px-2 py-1 text-sm text-slate-200 hover:bg-white/10"
-            onClick={() => void openPath(img.path!)}
+            onClick={() => void openFile(img.path!)}
           >
             <ExternalLink className="h-4 w-4" /> {t("detail.images.original")}
           </button>
@@ -614,7 +620,7 @@ function Files({ images }: { images: CardView["images"] }) {
             </dd>
             <button
               className="btn btn-ghost px-1.5 py-0.5"
-              onClick={() => revealItemInDir(path!)}
+              onClick={() => reveal(path!)}
               title={t("detail.files.showInFolder")}
               aria-label={t("detail.files.showLabel", { label })}
             >
@@ -701,7 +707,7 @@ function Grading({ view }: { view: CardView }) {
           {view.gradingImages.map((g) => (
             <button
               key={g.path ?? g.src}
-              onClick={() => g.path && openPath(g.path)}
+              onClick={() => g.path && openFile(g.path)}
               className="overflow-hidden rounded border border-slate-200 dark:border-slate-800"
               title={t("detail.grading.openImage", { label: g.label })}
             >
@@ -719,12 +725,17 @@ function Market({
   market,
   onFind,
   onKeep,
+  defaultSite,
 }: {
   market?: EbayMarket | null;
-  onFind?: () => Promise<unknown>;
+  onFind?: (marketplace: string) => Promise<unknown>;
   onKeep?: (ids: string[]) => Promise<unknown>;
+  defaultSite?: string;
 }) {
   const t = useT();
+  // The site chosen here, else the one last searched, else Settings'.
+  const [site, setSite] = useState<string | null>(null);
+  const searchOn = site ?? market?.marketplace ?? defaultSite ?? "EBAY_US";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!market && !onFind) return null;
@@ -733,7 +744,7 @@ function Market({
     setError(null);
     work.catch((e) => setError(errorText(e))).finally(() => setBusy(false));
   };
-  const find = () => onFind && run(onFind());
+  const find = () => onFind && run(onFind(searchOn));
   // The listing counts, or stops counting; the others stay as they are.
   const toggle = (id: string) =>
     market &&
@@ -748,10 +759,21 @@ function Market({
       title={t("detail.market.title")}
       action={
         onFind && (
-          <button className="btn px-2 py-0.5 text-xs" onClick={find} disabled={busy}>
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}{" "}
-            {market ? t("detail.market.again") : t("detail.market.search")}
-          </button>
+          <div className="flex items-center gap-1.5">
+            <div className="w-36">
+              <Select
+                value={searchOn}
+                onChange={setSite}
+                options={ebaySiteOptions()}
+                className="py-0.5 text-xs"
+                aria-label={t("detail.market.site")}
+              />
+            </div>
+            <button className="btn px-2 py-0.5 text-xs" onClick={find} disabled={busy}>
+              {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}{" "}
+              {market ? t("detail.market.again") : t("detail.market.search")}
+            </button>
+          </div>
         )
       }
     >
@@ -763,13 +785,15 @@ function Market({
           {range ? (
             <div>
               <div className="text-lg font-semibold tabular-nums">
-                {range.min === range.max ? price(range.min) : `${price(range.min)} – ${price(range.max)}`}
+                {range.min === range.max
+                  ? price(range.min, range.currency)
+                  : `${price(range.min, range.currency)} – ${price(range.max, range.currency)}`}
               </div>
               <div className="text-xs text-slate-500">
                 {t("detail.market.summary", {
                   count: range.count,
-                  average: price(range.average),
-                  median: price(range.median),
+                  average: price(range.average, range.currency),
+                  median: price(range.median, range.currency),
                 })}
               </div>
             </div>
@@ -803,7 +827,7 @@ function Market({
                       <td className="px-2 py-1.5">
                         <button
                           className="block w-full truncate text-left hover:text-accent hover:underline"
-                          onClick={() => l.url && openUrl(l.url)}
+                          onClick={() => l.url && openLink(l.url)}
                           title={l.title}
                         >
                           {l.title}
@@ -816,7 +840,7 @@ function Market({
                         </span>
                       </td>
                       <td className="w-24 px-2 py-1.5 text-right align-top whitespace-nowrap tabular-nums">
-                        {l.currency === "USD" ? price(l.price) : `${l.price.toFixed(2)} ${l.currency}`}
+                        {price(l.price, l.currency || "USD")}
                       </td>
                     </tr>
                   ))}
@@ -830,6 +854,7 @@ function Market({
               date: dateTime(market.searchedAt),
               total: market.total,
             })}
+            {` · ${ebaySite(market.marketplace)}`}
             {leftOut > 0 && ` · ${t("detail.market.leftOutCount", { count: leftOut })}`}
           </p>
         </div>
@@ -848,7 +873,7 @@ function Crops({ images }: { images: CardView["cropImages"] }) {
         {images.map((g) => (
           <div key={g.path ?? g.src} className="space-y-1">
             <button
-              onClick={() => g.path && openPath(g.path)}
+              onClick={() => g.path && openFile(g.path)}
               className="block w-full overflow-hidden rounded border border-slate-200 dark:border-slate-800"
               title={t("detail.grading.openImage", { label: g.label })}
             >
@@ -856,7 +881,7 @@ function Crops({ images }: { images: CardView["cropImages"] }) {
             </button>
             <button
               className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-              onClick={() => g.path && revealItemInDir(g.path)}
+              onClick={() => g.path && reveal(g.path)}
               title={t("detail.files.showLabel", { label: g.label })}
             >
               <FolderOpen className="h-3 w-3" /> {g.label}
@@ -944,11 +969,14 @@ function editFields(): [keyof ItemEdit, string][] {
 /** The card's fields, price, location and notes as a form; Enter saves, Escape cancels. */
 function EditForm({
   initial,
+  currency,
   identified,
   onSave,
   onCancel,
 }: {
   initial: ItemEdit;
+  /** The price's currency: an edit keeps it. */
+  currency: string;
   /** Card fields and price can be typed only once the card is identified. */
   identified: boolean;
   onSave: (edit: ItemEdit) => Promise<unknown>;
@@ -1005,7 +1033,7 @@ function EditForm({
         {editFields().map(([k, label], i) =>
           input(label, String(edit[k] ?? ""), (v) => set(k, v), !identified, identified && i === 0),
         )}
-        {input(t("detail.edit.price"), priceText, setPriceText, !identified)}
+        {input(t("detail.edit.price", { currency }), priceText, setPriceText, !identified)}
         {input(t("detail.edit.location"), edit.location, (v) => set("location", v), false, !identified)}
         <label className="contents">
           <span className="pt-1.5 text-slate-500">{t("detail.edit.notes")}</span>

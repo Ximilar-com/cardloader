@@ -201,6 +201,24 @@ const messages: Messages<typeof en> = {
         "«{name}» y sus {count} cartas, con sus imágenes, se eliminan de Cards Cloud para todos en el espacio de trabajo. Una sesión local desde la que se subió conserva sus cartas; subirla de nuevo crea allí una sesión nueva.",
     },
   },
+  addTo: {
+    menu: "Añadir precios o gradación…",
+    menuTitle:
+      "Precios de eBay o de tu agente de IA, una nota o el estado, para cartas ya identificadas, sin volver a identificarlas",
+    bulk: "Añadir precios o gradación…",
+    title: "Añadir precios o gradación",
+    introAll:
+      "Cada carta identificada de esta sesión recibe lo que elijas. Las cartas conservan su identificación y tu revisión, y solo se ejecuta lo que añades. La sesión lo mantiene para las cartas que reciba después.",
+    intro: {
+      one: "La carta seleccionada recibe lo que elijas. Conserva su identificación y tu revisión, y solo se ejecuta lo que añades. La sesión lo mantiene para las cartas que reciba después.",
+      other:
+        "Las {count} cartas seleccionadas reciben lo que elijas. Conservan su identificación y tu revisión, y solo se ejecuta lo que añades. La sesión lo mantiene para las cartas que reciba después.",
+    },
+    ximilarNewOnly: "Solo sesiones nuevas: los precios de Ximilar llegan con su identificación",
+    run: "Añadir y ejecutar",
+    started: { one: "Añadiendo a {count} carta…", other: "Añadiendo a {count} cartas…" },
+    none: "No hay cartas identificadas a las que añadir: se omiten las que esperan, se están procesando o no están identificadas.",
+  },
   agentPrompt: {
     identify: "Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",
     price: "Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",

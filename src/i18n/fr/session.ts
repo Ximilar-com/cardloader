@@ -202,6 +202,24 @@ const messages: Messages<typeof en> = {
         "« {name} » et ses {count} cartes, avec leurs images, sont supprimées de Cards Cloud pour tout le monde dans l’espace de travail. Une session locale d’où elle a été envoyée garde ses cartes ; l’envoyer à nouveau crée une nouvelle session là-bas.",
     },
   },
+  addTo: {
+    menu: "Ajouter des prix ou une évaluation…",
+    menuTitle:
+      "Des prix d’eBay ou de votre agent IA, une note ou l’état, pour des cartes déjà identifiées — sans les identifier à nouveau",
+    bulk: "Ajouter des prix ou une évaluation…",
+    title: "Ajouter des prix ou une évaluation",
+    introAll:
+      "Chaque carte identifiée de cette session reçoit ce que vous choisissez. Les cartes gardent leur identification et votre vérification, et seul ce que vous ajoutez est exécuté. La session le garde pour les cartes qu’elle recevra ensuite.",
+    intro: {
+      one: "La carte sélectionnée reçoit ce que vous choisissez. Elle garde son identification et votre vérification, et seul ce que vous ajoutez est exécuté. La session le garde pour les cartes qu’elle recevra ensuite.",
+      other:
+        "Les {count} cartes sélectionnées reçoivent ce que vous choisissez. Elles gardent leur identification et votre vérification, et seul ce que vous ajoutez est exécuté. La session le garde pour les cartes qu’elle recevra ensuite.",
+    },
+    ximilarNewOnly: "Nouvelles sessions seulement : les prix de Ximilar viennent avec son identification",
+    run: "Ajouter et exécuter",
+    started: { one: "Ajout à {count} carte…", other: "Ajout à {count} cartes…" },
+    none: "Aucune carte identifiée à compléter : celles en attente, en cours ou non identifiées sont laissées de côté.",
+  },
   agentPrompt: {
     identify: "Identifie les cartes de la session Cardloader {name} (id {id}) via MCP.",
     price: "Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP.",

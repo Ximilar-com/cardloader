@@ -230,6 +230,9 @@ const messages: Messages<typeof en> = {
       certNote: "APIトークンと一緒に保存されます。キーを変更するとeBayとの接続が解除されます。",
       search:
         "このキーで、あなたやAIエージェントがカードのeBay出品中リストを検索して価格帯を調べることもできます（eBayへのログインは不要）。",
+      searchSite: "価格を検索するサイト",
+      searchSiteHint:
+        "カードの価格を検索するeBayサイト（そのサイトの通貨で表示）。カードのパネルから別のサイトも検索できます。",
     },
     account: {
       title: "eBayアカウント",

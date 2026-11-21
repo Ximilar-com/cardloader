@@ -168,10 +168,13 @@ pub fn pick_patch(item: &ItemDetail) -> Value {
     for ((key, limit), value) in TEXT_LIMITS.iter().zip(fields) {
         out.insert((*key).into(), json!(clip(value, *limit)));
     }
-    out.insert(
-        "price".into(),
-        json!(item.summary.price.filter(|p| p.is_finite() && *p >= 0.0)),
-    );
+    // Cards Cloud keeps prices in US dollars: one in another currency stays local.
+    if item.summary.price_currency == crate::model::USD {
+        out.insert(
+            "price".into(),
+            json!(item.summary.price.filter(|p| p.is_finite() && *p >= 0.0)),
+        );
+    }
     Value::Object(out)
 }
 
@@ -463,6 +466,7 @@ mod tests {
                 confidence: Some("certain".into()),
                 distance: Some(f64::NAN),
                 price: None,
+                price_currency: "USD".into(),
                 grade: Some(7.5),
                 condition: Some("Near Mint".into()),
                 slab: None,

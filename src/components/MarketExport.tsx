@@ -2,7 +2,7 @@
 // bulk listing CSV, with pictures uploaded to ImgBB).
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { reveal } from "../lib/open";
 import { FolderOpen } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { rich, t as translate, useT } from "../i18n";
@@ -393,7 +393,7 @@ function Result({ name, done, onClose }: { name: string; done: Done; onClose: ()
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={() => revealItemInDir(done.path)}>
+          <button className="btn" onClick={() => reveal(done.path)}>
             <FolderOpen className="h-4 w-4" /> {t("market.result.showFile")}
           </button>
           <button className="btn btn-primary" onClick={onClose}>

@@ -34,7 +34,8 @@ import {
   engineOf,
   gradingLabels,
   idModeLabels,
-  price,
+  addMoney,
+  amounts,
   sourceLabels,
   taskLabels,
 } from "../lib/format";
@@ -339,7 +340,11 @@ function Totals({ sessions, calls }: { sessions: Session[]; calls: number }) {
       sum((s) => s.counts.done).toLocaleString(locale()),
       t("dashboard.totals.inSessions", { count: sessions.length }),
     ],
-    [t("dashboard.totals.totalValue"), price(sum((s) => s.counts.totalPrice)), t("dashboard.totals.totalValueSub")],
+    [
+      t("dashboard.totals.totalValue"),
+      amounts(addMoney(sessions.map((s) => s.counts.values))),
+      t("dashboard.totals.totalValueSub"),
+    ],
     [
       t("dashboard.totals.toReview"),
       sum((s) => s.counts.toReview).toLocaleString(locale()),
@@ -525,7 +530,7 @@ function LastSessions({ sessions, onNew }: { sessions: Session[]; onNew: () => v
               <span className="text-sm text-slate-500 tabular-nums">
                 {t("dashboard.sessionCards", { done: s.counts.done, count: s.counts.total })}
               </span>
-              <span className="w-20 text-right text-sm font-medium tabular-nums">{price(s.counts.totalPrice)}</span>
+              <span className="w-20 text-right text-sm font-medium tabular-nums">{amounts(s.counts.values)}</span>
               <StatusChip status={s.status} />
             </Link>
           </li>

@@ -195,7 +195,7 @@ game, the slab's grade if the card is graded, an eBay range if one was found, an
 3. Work out what each card sells for now, as it is (raw, or in its slab's grade). If you may use them, \
 find_ebay_listings and keep_ebay_listings give its active eBay listings. Search the web only when \
 next_cards_to_price says webSearch is true.
-4. Send the prices with price_cards, in US dollars: several cards per call, each with a short note of how you got \
+4. Send the prices with price_cards (in US dollars, or give each price's currency, e.g. EUR for ebay.de): several cards per call, each with a short note of how you got \
 it (e.g. \"median of 6 listings, no lots\"). If you can't find a price, send the card with unpriced and say why: \
 never guess.
 5. Repeat from 2 until next_cards_to_price says finished.

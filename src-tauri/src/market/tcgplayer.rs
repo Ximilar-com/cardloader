@@ -92,7 +92,7 @@ pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
             None => "Ungraded".into(),
         }),
         price: item
-            .price
+            .usd_price()
             .filter(|p| p.is_finite() && *p > 0.0)
             .map(|p| ((p * 100.0).round() / 100.0).max(0.01)),
         ebay: None,

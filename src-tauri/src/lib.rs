@@ -104,6 +104,7 @@ pub fn run() {
             commands::pause_session,
             commands::stop_session,
             commands::retry_items,
+            commands::add_to_cards,
             commands::sync_session,
             commands::list_items,
             commands::get_item,

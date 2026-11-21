@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { Download, LayoutDashboard, Layers, Settings, WalletCards } from "lucide-react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openLink } from "../lib/open";
 import ximilarLogo from "../assets/ximilar.svg";
 import { useT, type Key } from "../i18n";
 import { useUpdate } from "../lib/update";
@@ -71,7 +71,7 @@ export default function Sidebar() {
         href="https://www.ximilar.com"
         onClick={(e) => {
           e.preventDefault();
-          void openUrl("https://www.ximilar.com");
+          void openLink("https://www.ximilar.com");
         }}
         className="mt-3 px-2 opacity-70 transition-opacity hover:opacity-100"
         title={t("sidebar.poweredBy")}

@@ -227,6 +227,9 @@ const messages: Messages<typeof en> = {
       certNote: "API 토큰과 함께 보관됩니다. 키를 바꾸면 eBay 연결이 해제됩니다.",
       search:
         "이 키로 나와 AI 에이전트가 카드의 eBay 판매 중 목록을 검색해 가격대를 알 수도 있습니다. eBay 로그인은 필요 없습니다.",
+      searchSite: "가격 검색 사이트",
+      searchSiteHint:
+        "카드 가격을 검색하는 eBay 사이트이며 해당 사이트의 통화로 표시됩니다. 카드 패널에서 다른 사이트를 검색할 수 있습니다.",
     },
     account: {
       title: "eBay 계정",

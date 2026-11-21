@@ -2,8 +2,20 @@
 // sessions list (row menu, bulk delete) and the session page (header menu).
 
 import { save } from "@tauri-apps/plugin-dialog";
-import { openPath } from "@tauri-apps/plugin-opener";
-import { Copy, Cpu, Crop, FileDown, FileSpreadsheet, FolderOpen, Pencil, Settings2, Store, Trash2 } from "lucide-react";
+import { openFile } from "../lib/open";
+import {
+  Copy,
+  Cpu,
+  Crop,
+  FileDown,
+  FileSpreadsheet,
+  FolderOpen,
+  ListPlus,
+  Pencil,
+  Settings2,
+  Store,
+  Trash2,
+} from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { api, errorText, type ExportFormat, type RemoteSession, type Session } from "../lib/api";
@@ -11,6 +23,7 @@ import { cropsOf } from "../lib/format";
 import type { MenuItem } from "./Menu";
 import Modal, { ErrorNote } from "./Modal";
 import { Check } from "./NewSessionDialog";
+import AddToCardsDialog from "./AddToCards";
 import CompareDialog from "./CompareDialog";
 import { EbayListDialog } from "./Ebay";
 import { MarketExportDialog } from "./MarketExport";
@@ -22,6 +35,7 @@ type Dialog =
   | { kind: "settings"; session: Session }
   | { kind: "duplicate"; session: Session }
   | { kind: "compare"; session: Session }
+  | { kind: "add"; session: Session }
   | { kind: "ebay"; session: Session }
   | { kind: "market"; session: Session; format: ExportFormat }
   | { kind: "delete"; sessions: Session[] };
@@ -36,7 +50,7 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
   const showFiles = (s: Session) =>
     api
       .sessionFolder(s.id)
-      .then((path) => openPath(path))
+      .then((path) => openFile(path))
       .catch(fail);
 
   const exportCsv = async (s: Session) => {
@@ -106,7 +120,15 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       cropsOf(s.options) && {
         label: t("session.actions.showCrops"),
         icon: Crop,
-        onClick: () => void api.cropsFolder(s.id).then(openPath).catch(fail),
+        onClick: () => void api.cropsFolder(s.id).then(openFile).catch(fail),
+      },
+      // Prices and grading for the cards identified already, without identifying them again.
+      s.options.task === "identify" && {
+        label: t("session.addTo.menu"),
+        icon: ListPlus,
+        onClick: () => setDialog({ kind: "add", session: s }),
+        disabled: isActive(s) || s.counts.done + s.counts.errors === 0,
+        title: isActive(s) ? t("session.actions.waitUntilFinished") : t("session.addTo.menuTitle"),
       },
       s.options.task === "identify" &&
         s.options.engine === "ximilar" && {
@@ -140,6 +162,7 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       {dialog?.kind === "settings" && <NewSessionDialog mode="edit" from={dialog.session} onClose={close} />}
       {dialog?.kind === "duplicate" && <NewSessionDialog mode="duplicate" from={dialog.session} onClose={close} />}
       {dialog?.kind === "compare" && <CompareDialog session={dialog.session} onClose={close} />}
+      {dialog?.kind === "add" && <AddToCardsDialog session={dialog.session} onClose={close} />}
       {dialog?.kind === "ebay" && <EbayListDialog session={dialog.session} onClose={close} />}
       {dialog?.kind === "market" && (
         <MarketExportDialog key={dialog.format} session={dialog.session} format={dialog.format} onClose={close} />
