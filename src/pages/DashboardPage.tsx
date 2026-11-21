@@ -438,7 +438,9 @@ function Defaults({ settings }: { settings: SettingsView }) {
     t("dashboard.defaults.cardsFrom"),
     settings.defaultSources.map((s) => sourceLabels()[s]).join(", ") || sourceLabels().folder,
   ];
-  const engine = settings.engine === "local" ? t("dashboard.defaults.localModel") : engineLabels().ximilar;
+  // Only identification can be an agent's: grading alone goes to Ximilar.
+  const engineOf = settings.engine === "agent" && task !== "identify" ? "ximilar" : settings.engine;
+  const engine = engineOf === "local" ? t("dashboard.defaults.localModel") : engineLabels()[engineOf];
   const crops: [string, string] = [
     t("dashboard.defaults.crops"),
     settings.defaultSaveCrops ? t("common.on") : t("common.off"),

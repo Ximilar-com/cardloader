@@ -26,6 +26,8 @@ const messages: Messages<typeof en> = {
     low: "Bassa",
     local: "Locale",
     localTitle: "Letta dal modello locale su questo computer: nessun punteggio di corrispondenza",
+    agent: "Agente IA",
+    agentTitle: "Identificata da un agente IA dalle immagini della carta: nessun punteggio di corrispondenza",
   },
   picked: "Scelta",
   pickedTitle: "Hai scelto questa corrispondenza tra i candidati",
@@ -43,6 +45,7 @@ const messages: Messages<typeof en> = {
   engine: {
     ximilar: "Ximilar API",
     local: "Modello locale",
+    agent: "Agente IA (MCP)",
   },
   idMode: {
     auto: "Rilevamento automatico",

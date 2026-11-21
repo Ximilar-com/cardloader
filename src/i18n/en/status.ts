@@ -37,6 +37,8 @@ export default {
     low: "Low",
     local: "Local",
     localTitle: "Read by the local model on this computer: no match score",
+    agent: "AI agent",
+    agentTitle: "Identified by an AI agent from the card's pictures: no match score",
   },
   picked: "Picked",
   pickedTitle: "You picked this match from the candidates",
@@ -54,6 +56,7 @@ export default {
   engine: {
     ximilar: "Ximilar API",
     local: "Local model",
+    agent: "AI agent (MCP)",
   },
   idMode: {
     auto: "Auto-detect",

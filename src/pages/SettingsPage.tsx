@@ -422,7 +422,7 @@ export default function SettingsPage() {
             {tab === "sessions" && (
               <>
                 <Section title={t("settings.sessions.identification")} text={t("settings.sessions.identificationText")}>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <EngineOption
                       active={draft.engine === "ximilar"}
                       onClick={() => set("engine", "ximilar")}
@@ -437,6 +437,13 @@ export default function SettingsPage() {
                       icon={<Cpu className="h-5 w-5" />}
                       title={t("settings.sessions.localTitle")}
                       text={t("settings.sessions.localText")}
+                    />
+                    <EngineOption
+                      active={draft.engine === "agent"}
+                      onClick={() => set("engine", "agent")}
+                      icon={<Bot className="h-5 w-5" />}
+                      title={t("settings.sessions.agentTitle")}
+                      text={t("settings.sessions.agentText")}
                     />
                   </div>
                   {draft.engine === "local" && (

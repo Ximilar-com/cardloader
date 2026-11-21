@@ -26,6 +26,8 @@ const messages: Messages<typeof en> = {
     low: "低",
     local: "ローカル",
     localTitle: "このパソコンのローカルモデルで読み取り：一致スコアなし",
+    agent: "AIエージェント",
+    agentTitle: "AIエージェントがカードの画像から識別：一致スコアなし",
   },
   picked: "選択済み",
   pickedTitle: "候補からこの一致を選択しました",
@@ -43,6 +45,7 @@ const messages: Messages<typeof en> = {
   engine: {
     ximilar: "Ximilar API",
     local: "ローカルモデル",
+    agent: "AIエージェント（MCP）",
   },
   idMode: {
     auto: "自動判別",

@@ -78,6 +78,9 @@ const messages: Messages<typeof en> = {
     runSetup: "Repetir la configuración",
     task: "Tarea",
     saveCrops: "Guardar también las cartas recortadas",
+    agentTitle: "Agente de IA",
+    agentText:
+      "Claude u otro agente conectado en Agentes de IA lee cada carta en sus imágenes. La gradación y los recortes siguen usando Ximilar.",
   },
   scanner: {
     title: "Escáner",

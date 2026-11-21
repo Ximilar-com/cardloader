@@ -370,6 +370,19 @@ Then ask, for example:
 
 - “Run a new Cardloader session on ~/Cards/pokemon-en: English Pokémon, fronts only, store it in Ximilar.”
 - “Review the latest Cardloader session: check each card against its picture and accept the right ones.”
+- “Identify the cards in ~/Cards/football yourself with Cardloader.”
+
+### Let your agent identify the cards
+
+With **Identify with: AI agent (MCP)** (in New session, or `engine: "agent"` when the agent creates the session),
+Cardloader does everything but the identification: it reads the folder, watches it or runs the scanner, pairs
+fronts and backs, and then hands each card to your agent with its pictures (`next_cards_to_identify`). The agent
+reads the name, set, number, year and variant and answers with `identify_cards`, or says it can't tell a card,
+which then fails with its note. The session then goes on as usual: grading and crops through Ximilar if the
+session asks for them, Cards Cloud, exports. Each card the agent identified shows **AI agent** as its confidence,
+with the agent's certainty and note, and waits for your review like any other. While cards wait, the session page
+says so; nothing is identified without the agent. The **Identify cards yourself** prompt (`identify_session`)
+walks an agent through it. An agent session needs no Ximilar token unless it grades, crops or syncs.
 
 Agents can always read sessions, cards and their pictures. Everything else needs a switch in Settings:
 

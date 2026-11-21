@@ -40,8 +40,9 @@ str_enum!(
 );
 
 str_enum!(
-    /// What identifies the cards: the Ximilar API, or a vision language model on this computer.
-    Engine { Ximilar = "ximilar", Local = "local" } default Ximilar
+    /// What identifies the cards: the Ximilar API, a vision language model on this computer, or an AI agent connected
+    /// over MCP that reads each card's pictures (`next_cards_to_identify` / `identify_cards`).
+    Engine { Ximilar = "ximilar", Local = "local", Agent = "agent" } default Ximilar
 );
 
 str_enum!(
@@ -281,6 +282,29 @@ impl SessionOptions {
     /// Identified or graded on this computer (cropping always calls Ximilar): a crop-only session never is.
     pub fn local(&self) -> bool {
         self.engine == Engine::Local && !self.crops_only()
+    }
+
+    /// Identified by an AI agent over MCP. Only identification is the agent's: a session that only grades or crops
+    /// with this engine uses the Ximilar API.
+    pub fn agent(&self) -> bool {
+        self.engine == Engine::Agent && self.identifies()
+    }
+
+    /// Calls the Ximilar API for something: identifying, grading, cropping or syncing. A local or agent session
+    /// that does none of that runs without a token.
+    pub fn uses_api(&self) -> bool {
+        if self.crops() || (self.identifies() && self.sync_remote) {
+            return true;
+        }
+        match self.task {
+            Task::Identify => match self.engine {
+                Engine::Ximilar => true,
+                Engine::Local => false,
+                Engine::Agent => self.grading_mode() != GradingMode::Off,
+            },
+            Task::Grade | Task::Condition => !self.local(),
+            Task::Crop => true,
+        }
     }
 }
 
@@ -571,5 +595,27 @@ mod tests {
             GradingMode::Condition
         );
         assert_eq!(with(Task::Crop, GradingMode::Grade), GradingMode::Off);
+    }
+
+    #[test]
+    fn what_needs_the_api() {
+        let with = |engine, grading, save_crops| SessionOptions {
+            engine,
+            grading,
+            save_crops,
+            ..SessionOptions::default()
+        };
+        assert!(with(Engine::Ximilar, GradingMode::Off, false).uses_api());
+        assert!(!with(Engine::Local, GradingMode::Grade, false).uses_api());
+        assert!(!with(Engine::Agent, GradingMode::Off, false).uses_api());
+        // The agent identifies; Ximilar grades and crops.
+        assert!(with(Engine::Agent, GradingMode::Grade, false).uses_api());
+        assert!(with(Engine::Agent, GradingMode::Off, true).uses_api());
+        let grade_only = SessionOptions {
+            task: Task::Grade,
+            ..with(Engine::Agent, GradingMode::Off, false)
+        };
+        assert!(!grade_only.agent());
+        assert!(grade_only.uses_api());
     }
 }

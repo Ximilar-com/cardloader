@@ -58,6 +58,7 @@ export default {
       one: "about {count} API call (Magic AI may add more)",
       other: "about {count} API calls (Magic AI may add more)",
     },
+    agent: "identified by your AI agent, no API calls",
   },
   scanner: {
     label: "Scanner",
@@ -192,4 +193,8 @@ export default {
     hintSkips:
       "Adds the cards to a session started earlier, e.g. on another computer; images it has already (matched by file name) are skipped.",
   },
+  needsAgents: "Turn on AI agents, with “Run & review”, in Settings so your agent can identify the cards.",
+  agentNote:
+    "Your AI agent reads each card from its pictures: ask it, e.g. in Claude, to identify the cards of this session in Cardloader. Grading and crops still use Ximilar.",
+  agentHint: "Claude or another agent connected over MCP",
 };

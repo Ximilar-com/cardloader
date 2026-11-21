@@ -30,6 +30,7 @@ const messages: Messages<typeof en> = {
     apiCalls: { one: "{count} API-Aufruf", other: "{count} API-Aufrufe" },
     apiCallsTitle: "Bezahlte Ximilar-API-Aufrufe für diese Karten",
     cropping: "{count} im Zuschnitt",
+    waitingForAgent: "{count} warten auf den KI-Agenten",
   },
   cloud: {
     notSynced: "Cards Cloud: nicht synchronisiert",
@@ -199,6 +200,11 @@ const messages: Messages<typeof en> = {
       other:
         "„{name}“ und ihre {count} Karten samt Bildern werden für alle im Workspace aus Cards Cloud gelöscht. Eine lokale Sitzung, aus der sie hochgeladen wurde, behält ihre Karten; ein erneuter Upload legt dort eine neue Sitzung an.",
     },
+  },
+  agentWaiting: {
+    one: "<b>{count} Karte</b> wartet auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „Erkenne die Karten der Cardloader-Sitzung {name}.“",
+    other:
+      "<b>{count} Karten</b> warten auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „Erkenne die Karten der Cardloader-Sitzung {name}.“",
   },
 };
 export default messages;

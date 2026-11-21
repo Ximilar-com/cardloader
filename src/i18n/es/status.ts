@@ -26,6 +26,8 @@ const messages: Messages<typeof en> = {
     low: "Baja",
     local: "Local",
     localTitle: "Leída por el modelo local en este ordenador: sin puntuación de coincidencia",
+    agent: "Agente de IA",
+    agentTitle: "Identificada por un agente de IA a partir de las imágenes: sin puntuación de coincidencia",
   },
   picked: "Elegida",
   pickedTitle: "Elegiste esta coincidencia entre los candidatos",
@@ -43,6 +45,7 @@ const messages: Messages<typeof en> = {
   engine: {
     ximilar: "API de Ximilar",
     local: "Modelo local",
+    agent: "Agente de IA (MCP)",
   },
   idMode: {
     auto: "Detección automática",

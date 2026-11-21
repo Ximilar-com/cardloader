@@ -112,7 +112,33 @@ pub struct Runner {
     pub ebay: EbayAuth,
     /// On-device models (downloads, the loaded model).
     pub local: Arc<LocalModels>,
+    /// Cards waiting for an AI agent's identification (agent sessions), by item id.
+    agent_waits: Mutex<HashMap<i64, AgentWait>>,
 }
+
+/// What an AI agent says about a card it was shown (MCP `identify_cards`).
+#[derive(Debug, Clone)]
+pub enum AgentAnswer {
+    Identified {
+        id_type: String,
+        card: Box<CardFields>,
+        /// The agent's own certainty: high, medium or low.
+        certainty: Option<String>,
+        note: String,
+    },
+    /// It couldn't tell: the card fails with the note, and Retry offers it again.
+    Unidentified { note: String },
+}
+
+struct AgentWait {
+    session_id: String,
+    answer: tokio::sync::oneshot::Sender<AgentAnswer>,
+}
+
+/// The confidence of a card an AI agent identified (it has no match distance).
+pub const AGENT_CONFIDENCE: &str = "agent";
+/// Cards of an agent session offered at once: the agent reads several per call.
+const AGENT_BATCH: usize = 10;
 
 impl Runner {
     pub fn new(
@@ -135,6 +161,7 @@ impl Runner {
             exports: Mutex::new(HashMap::new()),
             ebay: EbayAuth::default(),
             local,
+            agent_waits: Mutex::new(HashMap::new()),
             data_dir,
         })
     }
@@ -473,11 +500,8 @@ impl Runner {
                 "the local model isn't downloaded — download it in Settings, or identify with Ximilar",
             ));
         }
-        // A local session needs the Ximilar API only to crop or sync (or for jobs started earlier).
-        let needs_api = !local
-            || session.options.sync_remote
-            || session.options.crops()
-            || !self.db.jobs(id)?.is_empty();
+        // A local or agent session may need no Ximilar API at all (unless jobs started earlier are still out).
+        let needs_api = session.options.uses_api() || !self.db.jobs(id)?.is_empty();
         let client = match self.client() {
             Ok(client) => Some(client),
             Err(_) if !needs_api => None,
@@ -679,6 +703,8 @@ impl Runner {
         // The local model reads one card at a time.
         let concurrency = if session.options.local() {
             1
+        } else if session.options.agent() {
+            AGENT_BATCH
         } else {
             let max = crate::settings::MAX_CONCURRENCY;
             self.settings.get().concurrency.clamp(1, max) as usize
@@ -1069,6 +1095,11 @@ impl Runner {
                 self.submit_grading(session, client, &item, cancel).await?;
                 true
             }
+            (Task::Identify, _) if o.agent() => {
+                self.identify_by_agent(session, client, &item, cancel)
+                    .await?;
+                true
+            }
             (Task::Identify, true) => {
                 self.identify_locally(session, &item).await?;
                 true
@@ -1166,6 +1197,96 @@ impl Runner {
         }
         self.emit_item(item_id);
         self.submit_grading(session, client, item, cancel).await
+    }
+
+    /// Waits until an AI agent identifies the card over MCP (or the run stops: the card goes back to the queue), then
+    /// grades it through Ximilar if the session grades.
+    async fn identify_by_agent(
+        &self,
+        session: &Session,
+        client: Option<&XimilarClient>,
+        item: &ItemDetail,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let item_id = item.summary.id;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.agent_waits.lock().unwrap().insert(
+            item_id,
+            AgentWait {
+                session_id: session.id.clone(),
+                answer: tx,
+            },
+        );
+        self.emit_item(item_id);
+        let answer = tokio::select! {
+            answer = rx => answer.ok(),
+            _ = cancel.cancelled() => None,
+        };
+        self.agent_waits.lock().unwrap().remove(&item_id);
+        let (id_type, card, certainty, note) = match answer {
+            None => return Err(ApiError::Cancelled.into()),
+            Some(AgentAnswer::Unidentified { note }) => {
+                return Err(Error::msg(format!("AI agent: {}", note.trim())))
+            }
+            Some(AgentAnswer::Identified {
+                id_type,
+                card,
+                certainty,
+                note,
+            }) => (id_type, card, certainty, note),
+        };
+        let grading = session.options.grading_mode();
+        let raw =
+            json!({"endpoint": "agent", "certainty": certainty, "note": note, "response": card});
+        self.db.save_recognition(
+            item_id,
+            &id_type,
+            &card,
+            Some(AGENT_CONFIDENCE),
+            None,
+            None,
+            None,
+            &raw,
+            0,
+            if grading == GradingMode::Off {
+                ItemStatus::Done
+            } else {
+                ItemStatus::Grading
+            },
+        )?;
+        if grading == GradingMode::Off {
+            return Ok(());
+        }
+        self.emit_item(item_id);
+        let client = client.ok_or(ApiError::NoToken)?;
+        self.submit_grading(session, client, item, cancel).await
+    }
+
+    /// The cards waiting for an AI agent, oldest first: (session id, item id), of one session or of all.
+    pub fn agent_waiting(&self, session_id: Option<&str>) -> Vec<(String, i64)> {
+        let mut cards: Vec<(String, i64)> = self
+            .agent_waits
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, w)| session_id.is_none_or(|s| s == w.session_id))
+            .map(|(id, w)| (w.session_id.clone(), *id))
+            .collect();
+        cards.sort_by_key(|(_, id)| *id);
+        cards
+    }
+
+    /// Hands an AI agent's answer to the card waiting for it.
+    pub fn answer_agent(&self, item_id: i64, answer: AgentAnswer) -> Result<()> {
+        let wait = self
+            .agent_waits
+            .lock()
+            .unwrap()
+            .remove(&item_id)
+            .ok_or_else(|| Error::msg(format!("card {item_id} isn't waiting for an AI agent")))?;
+        wait.answer
+            .send(answer)
+            .map_err(|_| Error::msg(format!("card {item_id} isn't waiting for an AI agent")))
     }
 
     /// Sends the card to the session's card-grader endpoint; the poller stores the result. After an identification

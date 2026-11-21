@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "environ {count} appels API (Magic AI peut en ajouter)",
     },
     localGrade: "gradées sur cet ordinateur, sans appel API",
+    agent: "identifiées par votre agent IA, sans appel API",
   },
   scanner: {
     label: "Scanner",
@@ -203,5 +204,10 @@ const messages: Messages<typeof en> = {
     alsoHint:
       "Chaque carte détourée de son image et redressée, en fichiers JPEG dans un dossier. Un appel API de plus par carte.",
   },
+  needsAgents:
+    "Activez les agents IA, avec « Lancer et vérifier », dans les Réglages pour que votre agent puisse identifier les cartes.",
+  agentNote:
+    "Votre agent IA lit chaque carte d’après ses images : demandez-lui, p. ex. dans Claude, d’identifier les cartes de cette session dans Cardloader. La gradation et le détourage passent toujours par Ximilar.",
+  agentHint: "Claude ou un autre agent connecté par MCP",
 };
 export default messages;

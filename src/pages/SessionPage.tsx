@@ -63,6 +63,7 @@ import {
   duration,
   engineLabels,
   eta,
+  agentOf,
   cropsOf,
   gradingOf,
   idModeLabels,
@@ -293,6 +294,8 @@ function SessionView({ id }: { id: string }) {
   // Grade-only and crop-only sessions don't identify: no matches to review, sell or sync.
   const identifies = session.options.task === "identify";
   const cropOnly = session.options.task === "crop";
+  // Its cards wait for an AI agent connected over MCP.
+  const agent = agentOf(session.options);
   const savesCrops = cropsOf(session.options);
   // A card waiting only for its crop shows "Cropping", not "Grading".
   const cropping = savesCrops && gradingOf(session.options) === "off";
@@ -336,8 +339,8 @@ function SessionView({ id }: { id: string }) {
                 <span>
                   {!identifies
                     ? taskLabels()[session.options.task]
-                    : session.options.engine === "local"
-                      ? engineLabels().local
+                    : session.options.engine === "local" || session.options.engine === "agent"
+                      ? engineLabels()[session.options.engine]
                       : idModeLabels()[session.idMode]}
                 </span>
                 {savesCrops && (
@@ -429,7 +432,11 @@ function SessionView({ id }: { id: string }) {
                 })}
               </span>
               {counts.inProgress > 0 && (
-                <span className="text-accent">{t("session.progress.inProgress", { count: counts.inProgress })}</span>
+                <span className="text-accent">
+                  {agent
+                    ? t("session.progress.waitingForAgent", { count: counts.inProgress })
+                    : t("session.progress.inProgress", { count: counts.inProgress })}
+                </span>
               )}
               {counts.grading > 0 && (
                 <span className="text-violet-600">
@@ -485,6 +492,16 @@ function SessionView({ id }: { id: string }) {
               <div className="mt-2">
                 <ErrorNote>{session.error}</ErrorNote>
               </div>
+            )}
+            {agent && active && counts.inProgress > 0 && (
+              <p className="mt-2 flex items-start gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm text-slate-700 dark:bg-accent/10 dark:text-slate-200">
+                <Bot className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                <span>
+                  {rich(t("session.agentWaiting", { count: counts.inProgress, name: session.name }), {
+                    b: (s) => <b>{s}</b>,
+                  })}
+                </span>
+              </p>
             )}
             {session.syncError && !running && (
               <Warning

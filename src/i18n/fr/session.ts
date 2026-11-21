@@ -30,6 +30,7 @@ const messages: Messages<typeof en> = {
     apiCalls: { one: "{count} appel API", other: "{count} appels API" },
     apiCallsTitle: "Appels payants à l’API Ximilar utilisés par ces cartes",
     cropping: "{count} en recadrage",
+    waitingForAgent: "{count} en attente de l’agent IA",
   },
   cloud: {
     notSynced: "Cards Cloud : non synchronisée",
@@ -200,6 +201,11 @@ const messages: Messages<typeof en> = {
       other:
         "« {name} » et ses {count} cartes, avec leurs images, sont supprimées de Cards Cloud pour tout le monde dans l’espace de travail. Une session locale d’où elle a été envoyée garde ses cartes ; l’envoyer à nouveau crée une nouvelle session là-bas.",
     },
+  },
+  agentWaiting: {
+    one: "<b>{count} carte</b> attend votre agent IA. Demandez-lui, p. ex. dans Claude : « Identifie les cartes de la session Cardloader {name}. »",
+    other:
+      "<b>{count} cartes</b> attendent votre agent IA. Demandez-lui, p. ex. dans Claude : « Identifie les cartes de la session Cardloader {name}. »",
   },
 };
 export default messages;

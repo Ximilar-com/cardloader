@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "etwa {count} API-Aufrufe (Magic AI kann mehr verursachen)",
     },
     localGrade: "auf diesem Computer gegradet, keine API-Aufrufe",
+    agent: "von deinem KI-Agenten erkannt, keine API-Aufrufe",
   },
   scanner: {
     label: "Scanner",
@@ -203,5 +204,10 @@ const messages: Messages<typeof en> = {
     alsoHint:
       "Jede Karte aus ihrem Bild ausgeschnitten und gerade gerückt, als JPEG-Dateien in einem Ordner. Ein API-Aufruf mehr pro Karte.",
   },
+  needsAgents:
+    "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten erkennen kann.",
+  agentNote:
+    "Dein KI-Agent liest jede Karte anhand ihrer Bilder: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu erkennen. Grading und Zuschnitte laufen weiter über Ximilar.",
+  agentHint: "Claude oder ein anderer per MCP verbundener Agent",
 };
 export default messages;

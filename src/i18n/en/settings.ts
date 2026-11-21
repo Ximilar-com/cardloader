@@ -77,6 +77,9 @@ export default {
     priceStats: "Price statistics",
     syncByDefault: "Sync new sessions to Cards Cloud",
     runSetup: "Run setup again",
+    agentTitle: "AI agent",
+    agentText:
+      "Claude or another agent connected in AI agents reads each card from its pictures. Grading and crops still use Ximilar.",
   },
   scanner: {
     title: "Scanner",

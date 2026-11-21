@@ -186,6 +186,15 @@ state from them.
   clears both (`byAgent` in `cardview.ts`). What an agent names is checked where it is used: an export path must be a
   `.csv` outside the app's data and config folders and not a link (`tools::writable`), and an id put into a Cards
   Cloud path is one path segment (`cards_cloud::path_id`), or `..` would send the user's token to another endpoint.
+- **AI agent engine** (`Engine::Agent`, `SessionOptions::agent()`: identify task only, other tasks use Ximilar): the
+  worker that claimed a card registers a oneshot waiter (`Runner::agent_waits`, `identify_by_agent`) and waits; the
+  MCP tools `next_cards_to_identify` (long-polls `Runner::agent_waiting`, returns the cards with their pictures,
+  `pictures()` in `tools.rs`) and `identify_cards` (`Runner::answer_agent`) answer it. Then it is
+  `save_recognition` with confidence `agent` (`AGENT_CONFIDENCE`; raw `{"endpoint": "agent", certainty, note,
+  response}`), and grading through Ximilar as after any identification. `unidentified` fails the card with the note.
+  Stop cancels the waits (cards back to `queued`); up to `AGENT_BATCH` cards wait at once. `SessionOptions::uses_api`
+  (mirrored by `usesApi` in `format.ts`) says whether a session needs the token: an agent or local session that only
+  identifies doesn't. Prompt `identify_session` in `mcp/prompts.rs`.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail

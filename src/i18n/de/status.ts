@@ -26,6 +26,8 @@ const messages: Messages<typeof en> = {
     low: "Niedrig",
     local: "Lokal",
     localTitle: "Vom lokalen Modell auf diesem Computer gelesen: kein Trefferwert",
+    agent: "KI-Agent",
+    agentTitle: "Von einem KI-Agenten anhand der Kartenbilder erkannt: kein Übereinstimmungswert",
   },
   picked: "Gewählt",
   pickedTitle: "Du hast diesen Treffer aus den Kandidaten gewählt",
@@ -43,6 +45,7 @@ const messages: Messages<typeof en> = {
   engine: {
     ximilar: "Ximilar API",
     local: "Lokales Modell",
+    agent: "KI-Agent (MCP)",
   },
   idMode: {
     auto: "Automatisch",

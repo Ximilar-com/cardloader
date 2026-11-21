@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import clsx from "clsx";
 import {
   BadgeCheck,
+  Bot,
   ChevronRight,
   Cloud,
   Cpu,
@@ -39,11 +40,13 @@ import {
   defaultSessionName,
   engineLabels,
   gradingLabels,
+  agentOf,
   cropsOf,
   gradingOf,
   idModeLabels,
   sourceLabels,
   taskLabels,
+  usesApi,
 } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
@@ -104,6 +107,8 @@ export default function NewSessionDialog({
   );
   const [options, setOptions] = useState<SessionOptions | null>(from?.options ?? null);
   const [tokenSet, setTokenSet] = useState(true);
+  /** Whether agents can connect and run sessions (Settings → AI agents): an agent session needs both. */
+  const [agentsReady, setAgentsReady] = useState(true);
   const [remoteSession, setRemoteSession] = useState("");
   const models = useModels();
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +117,7 @@ export default function NewSessionDialog({
   useEffect(() => {
     api.getSettings().then((s) => {
       setTokenSet(s.tokenSet);
+      setAgentsReady(s.mcp.enabled && s.mcp.allowRun);
       // Scanner sessions always scan with the settings in Settings → Scanner (see `saveScan`).
       if (from?.sourceKind === "scanner") {
         setOptions((o) => o && { ...o, scan: s.scan, pairing: s.scan.duplex ? "front_back" : "single" });
@@ -238,6 +244,8 @@ export default function NewSessionDialog({
   const sourceMissing = needsFolder || needsCsv || needsCropFolder;
   // Cropping always runs on the Ximilar API.
   const local = options?.engine === "local" && !crops;
+  // An AI agent connected over MCP identifies the cards.
+  const agent = !!options && agentOf(options);
   // A local session holds one kind of cards (Auto and slabs are the API's).
   const sessionIdMode = local ? localKind(idMode) : idMode;
   // What "Images per card" goes back to when a local session stops reading backs.
@@ -251,7 +259,11 @@ export default function NewSessionDialog({
           ? withKindDefaults({ ...o, engine }, idMode, basePairing)
           : { ...o, engine }),
     );
-  const chooseTask = (next: Task) => setOptions((o) => o && { ...o, task: next });
+  // Only identification can be the agent's: other tasks go back to the API.
+  const chooseTask = (next: Task) =>
+    setOptions(
+      (o) => o && { ...o, task: next, engine: next !== "identify" && o.engine === "agent" ? "ximilar" : o.engine },
+    );
   const pickCropFolder = async () => {
     const picked = await open({ directory: true, defaultPath: options?.cropFolder || folder || undefined });
     if (typeof picked === "string") set("cropFolder", picked);
@@ -268,9 +280,9 @@ export default function NewSessionDialog({
   const picked = options && local && model ? { ...options, localModel: model.id } : options;
   // Only identified cards go to Cards Cloud.
   const chosen = picked && !identifies ? { ...picked, syncRemote: false } : picked;
-  // A local session needs Ximilar only to crop or sync.
-  const needsToken = !local || savesCrops || (identifies && !!options?.syncRemote);
-  const canRun = (!needsToken || tokenSet) && (!local || !!model);
+  // A local or agent session may need Ximilar only to grade, crop or sync.
+  const needsToken = !options || usesApi(options);
+  const canRun = (!needsToken || tokenSet) && (!local || !!model) && (!agent || agentsReady);
 
   // The scanner row edits Settings → Scanner, which every scanner run uses; the next crop session starts in this
   // one's folder.
@@ -402,6 +414,14 @@ export default function NewSessionDialog({
             <div className="flex items-center gap-3">
               <span className="flex-1">{t("newSession.needsToken")}</span>
               <OpenSettings section="ximilar" onOpen={onClose} />
+            </div>
+          </ErrorNote>
+        )}
+        {agent && !agentsReady && (
+          <ErrorNote>
+            <div className="flex items-center gap-3">
+              <span className="flex-1">{t("newSession.needsAgents")}</span>
+              <OpenSettings section="agents" onOpen={onClose} />
             </div>
           </ErrorNote>
         )}
@@ -619,7 +639,7 @@ export default function NewSessionDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">{identifies ? t("newSession.identifyWith") : t("newSession.gradeWith")}</label>
-              <Select value={options.engine} onChange={chooseEngine} options={engineOptions()} />
+              <Select value={options.engine} onChange={chooseEngine} options={engineOptions(identifies)} />
             </div>
             {local ? (
               <div>
@@ -641,6 +661,7 @@ export default function NewSessionDialog({
             {local && identifies && (
               <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>
             )}
+            {agent && <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.agentNote")}</p>}
             {identifies && (
               <div>
                 <label className="label">{t("newSession.identifyAs")}</label>
@@ -706,7 +727,7 @@ export default function NewSessionDialog({
                 <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.localBack.hint")}</p>
               </div>
             )}
-            {!local && identifies && (
+            {!local && !agent && identifies && (
               <>
                 <Check
                   label={t("newSession.priceStats")}
@@ -1026,6 +1047,10 @@ function costOf(o: SessionOptions, images: number): string {
     return t("newSession.cost.calls", { count: (local ? 0 : cards) + crops });
   }
   const sync = o.syncRemote ? cards + 1 : 0;
+  if (o.engine === "agent") {
+    const calls = (o.grading !== "off" ? cards : 0) + crops + sync;
+    return calls ? t("newSession.cost.calls", { count: calls }) : t("newSession.cost.agent");
+  }
   const calls = (local ? 0 : cards * (1 + (o.grading !== "off" ? 1 : 0))) + crops + sync;
   if (!calls) return t("newSession.cost.local");
   if (local) return t(crops ? "newSession.cost.calls" : "newSession.cost.callsCloud", { count: calls });
@@ -1120,11 +1145,15 @@ export function taskOptions(): SelectOption<Task>[] {
   }));
 }
 
-export function engineOptions(): SelectOption<Engine>[] {
+/** `identifies`: an AI agent only identifies, so it is offered for that task alone. */
+export function engineOptions(identifies = true): SelectOption<Engine>[] {
   const labels = engineLabels();
   return [
     { value: "ximilar", label: labels.ximilar, icon: Cloud },
     { value: "local", label: labels.local, icon: Cpu },
+    ...(identifies
+      ? [{ value: "agent" as const, label: labels.agent, icon: Bot, hint: t("newSession.agentHint") }]
+      : []),
   ];
 }
 

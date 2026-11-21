@@ -78,6 +78,9 @@ const messages: Messages<typeof en> = {
     runSetup: "Relancer la configuration",
     task: "Tâche",
     saveCrops: "Enregistrer aussi les cartes détourées",
+    agentTitle: "Agent IA",
+    agentText:
+      "Claude ou un autre agent connecté dans Agents IA lit chaque carte d’après ses images. La gradation et le détourage passent toujours par Ximilar.",
   },
   scanner: {
     title: "Scanner",

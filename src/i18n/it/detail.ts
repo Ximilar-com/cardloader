@@ -103,5 +103,7 @@ const messages: Messages<typeof en> = {
   crop: {
     title: "Carta ritagliata",
   },
+  agentCertainty: "Sicurezza dell’agente: {certainty}",
+  agentNote: "Agente IA: {note}",
 };
 export default messages;

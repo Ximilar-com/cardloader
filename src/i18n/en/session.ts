@@ -29,6 +29,7 @@ export default {
     totalValue: "Total value {price}",
     apiCalls: { one: "{count} API call", other: "{count} API calls" },
     apiCallsTitle: "Paid Ximilar API calls these cards took",
+    waitingForAgent: "{count} waiting for the AI agent",
   },
   cloud: {
     notSynced: "Cards Cloud: not synced",
@@ -194,5 +195,10 @@ export default {
       other:
         "“{name}” and its {count} cards with their images are deleted from Cards Cloud for everyone in the workspace. A local session it was uploaded from keeps its cards; uploading it again creates a new session there.",
     },
+  },
+  agentWaiting: {
+    one: "<b>{count} card</b> waits for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name}.”",
+    other:
+      "<b>{count} cards</b> wait for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name}.”",
   },
 };

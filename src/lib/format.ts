@@ -94,7 +94,7 @@ export function bytes(n: number): string {
 // Functions, not constants: the labels follow the app's language.
 
 export function engineLabels(): Record<Engine, string> {
-  return { ximilar: t("status.engine.ximilar"), local: t("status.engine.local") };
+  return { ximilar: t("status.engine.ximilar"), local: t("status.engine.local"), agent: t("status.engine.agent") };
 }
 
 export function idModeLabels(): Record<IdMode, string> {
@@ -114,6 +114,22 @@ export function taskLabels(): Record<Task, string> {
     condition: t("status.task.condition"),
     crop: t("status.task.crop"),
   };
+}
+
+/** Identified by an AI agent over MCP (`SessionOptions::agent`): other tasks use Ximilar whatever the engine. */
+export function agentOf(o: Pick<SessionOptions, "task" | "engine">): boolean {
+  return o.engine === "agent" && o.task === "identify";
+}
+
+/** Calls the Ximilar API for something (`SessionOptions::uses_api`): a local or agent session that only identifies
+ * runs without a token. */
+export function usesApi(o: SessionOptions): boolean {
+  if (cropsOf(o) || (o.task === "identify" && o.syncRemote)) return true;
+  if (o.task === "crop") return true;
+  if (o.task !== "identify") return o.engine !== "local";
+  if (o.engine === "ximilar") return true;
+  if (o.engine === "local") return false;
+  return gradingOf(o) !== "off";
 }
 
 /** The session saves cropped pictures of its cards (alone, or with what else it does). */

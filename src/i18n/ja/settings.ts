@@ -78,6 +78,9 @@ const messages: Messages<typeof en> = {
     runSetup: "セットアップをやり直す",
     task: "タスク",
     saveCrops: "切り抜いた画像も保存",
+    agentTitle: "AIエージェント",
+    agentText:
+      "「AIエージェント」で接続したClaudeなどが各カードを画像から読み取ります。グレーディングと切り抜きはXimilarを使います。",
   },
   scanner: {
     title: "スキャナー",

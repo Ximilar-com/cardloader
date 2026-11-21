@@ -25,6 +25,7 @@ use crate::error::{Error, Result};
 use crate::imaging;
 use crate::market::{shopify, whatnot, PricedItem};
 use crate::model::*;
+use crate::runner::AgentAnswer;
 use crate::settings::{McpSettings, Settings};
 use crate::source::{self, csv_file};
 use crate::ximilar::recognition::{self, ALPHABETS, SPORTS, TCG_GAMES};
@@ -35,7 +36,9 @@ API. A session is a folder of images (or a CSV) analysed card by card; each card
 candidates. Every identified card waits for review until it is accepted. Wherever a session id is asked for, \
 \"latest\" means the newest session. Typical work: inspect_folder → create_session → wait_for_session (repeat \
 until finished) → list_cards with filter to_review → get_card (look at the picture) → accept_cards or \
-select_candidate. Cards you accept are marked as accepted by AI in the app, with your note; the user sees \
+select_candidate. To identify the cards yourself instead, create the session with engine \"agent\": Cardloader \
+reads the images and hands you each card's pictures through next_cards_to_identify, and you answer with \
+identify_cards. Cards you accept are marked as accepted by AI in the app, with your note; the user sees \
 everything you do live. Tools you may not use are left out: the user allows them in Cardloader → Settings → AI \
 agents.";
 
@@ -179,6 +182,9 @@ struct CreateSession {
     source: Option<SourceKind>,
     /// Default: the folder's name and today's date.
     name: Option<String>,
+    /// What identifies the cards: ximilar (the API), local (the model on this computer), or agent: you do, from
+    /// their pictures (next_cards_to_identify, then identify_cards). Default: the user's default.
+    engine: Option<Engine>,
     /// identify: name, set, number, price (and grading if asked); grade: only grade each card (no identification);
     /// condition: only its condition (e.g. Near Mint); crop: only cut each card out of its image, straightened, into
     /// JPEGs in `crop_folder`. Default: the user's default.
@@ -228,6 +234,50 @@ struct RunSession {
     session_id: String,
     /// Only analyse the cards waiting in the queue: no new files, no scan (default false).
     only_queued: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct NextCards {
+    /// A session identified by an AI agent (its id, or "latest"); empty for any.
+    session_id: Option<String>,
+    /// Cards to return at most (default 3, at most 10): each comes with its pictures.
+    max: Option<usize>,
+    /// How long to wait for a card while the next ones are scanned (default 50, at most 120 seconds).
+    wait_seconds: Option<u64>,
+    /// The pictures' long edge in pixels (default 1024; up to 1600 to read small print).
+    long_edge: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct IdentifyCards {
+    cards: Vec<CardIdentity>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CardIdentity {
+    item_id: i64,
+    /// The name: the player, character or comic title. Leave out with unidentified.
+    name: Option<String>,
+    /// The set or product, e.g. "2023 Panini Prizm", "Obsidian Flames".
+    set_name: Option<String>,
+    set_code: Option<String>,
+    /// As printed, with its letters, e.g. "RC-12", "125/197".
+    card_number: Option<String>,
+    year: Option<String>,
+    /// The variant, parallel or insert, e.g. "Silver Prizm", "Reverse Holo".
+    variant: Option<String>,
+    /// The game or sport, e.g. Pokemon, Football, Soccer.
+    game: Option<String>,
+    /// tcg, sport or comics. Default: from the game, else the session's.
+    card_type: Option<String>,
+    /// Default: name, set and number.
+    full_name: Option<String>,
+    /// How sure you are: high, medium or low.
+    certainty: Option<String>,
+    /// What you read, in a few words (shown to the user).
+    note: Option<String>,
+    /// You can't tell this card: it fails with your note, and the user can offer it again.
+    unidentified: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -466,6 +516,8 @@ fn specs() -> Vec<Spec> {
         spec::<RunSession>(Run, "run_session", "Run a session", "Starts or resumes a session; with only_queued, analyses just the cards waiting in its queue."),
         spec::<SessionArg>(Run, "pause_session", "Pause a session", "Pauses a running session; run_session resumes it."),
         spec::<SessionArg>(Run, "stop_session", "Stop a session", "Stops a running session."),
+        spec::<NextCards>(Run, "next_cards_to_identify", "Cards to identify", "Cards of sessions with engine agent that wait for you to identify them, each with its front (and back) picture. Waits while the next cards are scanned; says finished when no more can come. Answer with identify_cards."),
+        spec::<IdentifyCards>(Run, "identify_cards", "Identify cards", "Your identification of cards from next_cards_to_identify: name, set, number, year, variant, game. The session then goes on with them (grading, crops, Cards Cloud) and the user reviews them."),
         spec::<WaitForSession>(Run, "wait_for_session", "Wait for a session", "Waits until the session's run ends or the timeout passes, and returns its progress. Call it again while it still runs."),
         spec::<AcceptCards>(Run, "accept_cards", "Accept cards", "Accepts the cards' matches (or takes that back with accepted false). They are marked as accepted by AI with your note. Cards the user accepted stay theirs."),
         spec::<SelectCandidate>(Run, "select_candidate", "Select a candidate", "Makes another candidate the card's match (get_card lists them by index); the card counts as accepted."),
@@ -670,6 +722,8 @@ impl Handler {
                 self.session_out(&id)
             }
             "wait_for_session" => self.wait(args(a)?).await,
+            "next_cards_to_identify" => self.next_cards(args(a)?).await,
+            "identify_cards" => self.identify_cards(args(a)?),
             "accept_cards" => self.accept(args(a)?),
             "select_candidate" => {
                 let a: SelectCandidate = args(a)?;
@@ -866,6 +920,7 @@ impl Handler {
             "source": s.source_kind,
             "path": s.source_ref,
             "task": s.options.task,
+            "engine": s.options.engine,
             "cardType": s.id_mode,
             "game": s.options.subcategory,
             "storeInCardsCloud": s.options.sync_remote,
@@ -885,6 +940,10 @@ impl Handler {
                 "apiCalls": c.calls,
             },
         });
+        if s.options.agent() {
+            v["counts"]["waitingForAgent"] =
+                json!(self.state.runner.agent_waiting(Some(&s.id)).len());
+        }
         if options {
             v["options"] = serde_json::to_value(&s.options).unwrap_or(Value::Null);
         }
@@ -910,6 +969,7 @@ impl Handler {
             "latestSession": sessions.first().map(|s| json!({"id": s.id, "name": s.name})),
             "running": running,
             "cardsToReview": sessions.iter().map(|s| s.counts.to_review).sum::<i64>(),
+            "cardsWaitingForAgent": self.state.runner.agent_waiting(None).len(),
             "defaults": defaults(&settings),
             "agentsMay": allowed(&settings.mcp),
         }))
@@ -974,38 +1034,176 @@ impl Handler {
         v["analyzedAt"] = json!(item.analyzed_at);
         let mut content = out(v)?;
         if images {
-            let s = &item.summary;
-            let sides = [
-                (
-                    "Front",
-                    item.preview_path.clone().or(Some(s.front_path.clone())),
-                ),
-                (
-                    "Back",
-                    item.back_preview_path.clone().or(s.back_path.clone()),
-                ),
-            ];
-            for (label, path) in sides {
-                let Some(path) = path.filter(|p| !p.is_empty()) else {
-                    continue;
-                };
-                let picture = tokio::task::spawn_blocking(move || {
-                    imaging::encode_for_upload(Path::new(&path), PICTURE_LONG_EDGE, 85)
-                })
-                .await
-                .map_err(|e| Error::msg(e.to_string()))?;
-                match picture {
-                    Ok(data) => {
-                        content.push(ContentBlock::text(format!("{label} of card {item_id}:")));
-                        content.push(ContentBlock::image(data, "image/jpeg"));
-                    }
-                    Err(e) => {
-                        content.push(ContentBlock::text(format!("{label}: no picture ({e})")))
-                    }
-                }
-            }
+            content.extend(pictures(&item, PICTURE_LONG_EDGE).await?);
         }
         Ok(content)
+    }
+
+    async fn next_cards(&self, a: NextCards) -> Result<Vec<ContentBlock>> {
+        let session = match a.session_id.as_deref().map(str::trim) {
+            Some(given) if !given.is_empty() => {
+                let id = self.session_id(given)?;
+                let s = self.state.db.session(&id)?;
+                if !s.options.agent() {
+                    return Err(Error::msg(format!(
+                        "session \"{}\" isn't identified by an AI agent (create one with engine \"agent\")",
+                        s.name
+                    )));
+                }
+                Some(id)
+            }
+            _ => None,
+        };
+        let timeout = Duration::from_secs(a.wait_seconds.unwrap_or(WAIT_DEFAULT).min(WAIT_MAX));
+        let started = Instant::now();
+        let runner = &self.state.runner;
+        let waiting = loop {
+            let waiting = runner.agent_waiting(session.as_deref());
+            if !waiting.is_empty() {
+                break waiting;
+            }
+            let running = match &session {
+                Some(id) => runner.is_running(id),
+                None => self
+                    .state
+                    .db
+                    .sessions()?
+                    .iter()
+                    .any(|s| s.options.agent() && runner.is_running(&s.id)),
+            };
+            if !running {
+                return out(json!({"cards": [], "finished": true,
+                    "next": "no session identified by an AI agent is running: nothing more will come"}));
+            }
+            if started.elapsed() >= timeout {
+                return out(json!({"cards": [], "finished": false,
+                    "next": "the session still runs (e.g. scanning): call next_cards_to_identify again"}));
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        };
+        let long_edge = a
+            .long_edge
+            .unwrap_or(PICTURE_LONG_EDGE)
+            .clamp(256, imaging::PREVIEW_LONG_EDGE);
+        let max = a.max.unwrap_or(3).clamp(1, 10);
+        let mut cards = Vec::new();
+        let mut pics = Vec::new();
+        for (session_id, item_id) in waiting.iter().take(max) {
+            let item = self.state.db.item(*item_id)?;
+            let s = self.state.db.session(session_id)?;
+            cards.push(json!({
+                "itemId": item_id,
+                "sessionId": s.id,
+                "session": s.name,
+                "cardType": s.id_mode,
+                "game": s.options.subcategory,
+                "files": {"front": item.summary.front_path, "back": item.summary.back_path},
+            }));
+            pics.extend(pictures(&item, long_edge).await?);
+        }
+        let mut content = out(json!({
+            "cards": cards,
+            "waiting": waiting.len(),
+            "next": "read each card's pictures below, then send them with identify_cards",
+        }))?;
+        content.extend(pics);
+        Ok(content)
+    }
+
+    fn identify_cards(&self, a: IdentifyCards) -> Result<Vec<ContentBlock>> {
+        let mut results = Vec::new();
+        for card in a.cards {
+            let item_id = card.item_id;
+            let result = self
+                .agent_answer(card)
+                .and_then(|answer| self.state.runner.answer_agent(item_id, answer));
+            results.push(match result {
+                Ok(()) => json!({"itemId": item_id, "ok": true}),
+                Err(e) => json!({"itemId": item_id, "ok": false, "error": e.to_string()}),
+            });
+        }
+        out(json!({
+            "results": results,
+            "stillWaiting": self.state.runner.agent_waiting(None).len(),
+        }))
+    }
+
+    /// Checks an agent's identification of a card and turns it into what the session stores.
+    fn agent_answer(&self, c: CardIdentity) -> Result<AgentAnswer> {
+        let text = |v: Option<String>| v.map(|t| t.trim().to_string()).unwrap_or_default();
+        let note = text(c.note);
+        if c.unidentified == Some(true) {
+            return Ok(AgentAnswer::Unidentified {
+                note: if note.is_empty() {
+                    "couldn't identify the card".into()
+                } else {
+                    note
+                },
+            });
+        }
+        let name = text(c.name);
+        if name.is_empty() {
+            return Err(Error::msg(
+                "give the card's name, or send it with unidentified and why",
+            ));
+        }
+        let subcategory = match c.game.as_deref().map(str::trim) {
+            Some(g) if !g.is_empty() => game(g).unwrap_or_else(|_| g.to_string()),
+            _ => String::new(),
+        };
+        let session_kind = self
+            .state
+            .db
+            .item_summary(c.item_id)
+            .and_then(|i| self.state.db.session(&i.session_id))
+            .map(|s| s.id_mode)?;
+        let id_type = match c
+            .card_type
+            .as_deref()
+            .map(|t| t.trim().to_ascii_lowercase())
+        {
+            Some(t) if ["tcg", "sport", "comics"].contains(&t.as_str()) => t,
+            Some(t) if !t.is_empty() => {
+                return Err(Error::msg(format!(
+                    "card_type is tcg, sport or comics, not \"{t}\""
+                )))
+            }
+            _ if SPORTS.contains(&subcategory.as_str()) => "sport".into(),
+            _ if TCG_GAMES.contains(&subcategory.as_str()) => "tcg".into(),
+            _ => match session_kind {
+                IdMode::Sport => "sport".into(),
+                IdMode::Comics => "comics".into(),
+                _ => "tcg".into(),
+            },
+        };
+        let certainty = match c
+            .certainty
+            .as_deref()
+            .map(|t| t.trim().to_ascii_lowercase())
+        {
+            Some(t) if ["high", "medium", "low"].contains(&t.as_str()) => Some(t),
+            Some(t) if !t.is_empty() => return Err(Error::msg("certainty is high, medium or low")),
+            _ => None,
+        };
+        let mut card = CardFields {
+            name,
+            full_name: text(c.full_name),
+            set_name: text(c.set_name),
+            set_code: text(c.set_code),
+            card_number: text(c.card_number),
+            series: text(c.variant),
+            year: text(c.year),
+            subcategory,
+        };
+        if card.full_name.is_empty() {
+            card.full_name = card.composed_full_name();
+        }
+        Ok(AgentAnswer::Identified {
+            id_type,
+            card: Box::new(card),
+            certainty,
+            note,
+        })
     }
 
     fn search_cards(&self, a: SearchCards) -> Result<Vec<ContentBlock>> {
@@ -1067,7 +1265,8 @@ impl Handler {
         }
         let id_mode = a.card_type.unwrap_or(settings.default_id_mode);
         // As the New session dialog does: a local session of sports cards reads both sides unless told not to.
-        let local_sport = settings.engine == Engine::Local && id_mode == IdMode::Sport;
+        let engine = a.engine.unwrap_or(settings.engine);
+        let local_sport = engine == Engine::Local && id_mode == IdMode::Sport;
         let read_backs = a.read_backs.unwrap_or(local_sport);
         let task = a.task.unwrap_or(settings.default_task);
         let save_crops = task != Task::Crop && a.save_crops.unwrap_or(settings.default_save_crops);
@@ -1104,7 +1303,7 @@ impl Handler {
             },
             scan: settings.scan.clone(),
             sync_remote: a.store_in_cards_cloud.unwrap_or(settings.sync_by_default),
-            engine: settings.engine,
+            engine,
             local_model: settings.local_model.clone(),
             ..SessionOptions::default()
         };
@@ -1139,7 +1338,11 @@ impl Handler {
             v["cropsFolder"] = json!(self.state.runner.crop_dir(&session));
         }
         if start {
-            v["next"] = json!("call wait_for_session until it finishes");
+            v["next"] = json!(if session.options.agent() {
+                "call next_cards_to_identify and identify the cards with identify_cards until it says finished"
+            } else {
+                "call wait_for_session until it finishes"
+            });
         }
         out(v)
     }
@@ -1344,6 +1547,41 @@ impl Handler {
     }
 }
 
+/// A card's front and back pictures for an agent, each after a line naming it.
+async fn pictures(item: &ItemDetail, long_edge: u32) -> Result<Vec<ContentBlock>> {
+    let item_id = item.summary.id;
+    let s = &item.summary;
+    let sides = [
+        (
+            "Front",
+            item.preview_path.clone().or(Some(s.front_path.clone())),
+        ),
+        (
+            "Back",
+            item.back_preview_path.clone().or(s.back_path.clone()),
+        ),
+    ];
+    let mut content = Vec::new();
+    for (label, path) in sides {
+        let Some(path) = path.filter(|p| !p.is_empty()) else {
+            continue;
+        };
+        let picture = tokio::task::spawn_blocking(move || {
+            imaging::encode_for_upload(Path::new(&path), long_edge, 85)
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))?;
+        match picture {
+            Ok(data) => {
+                content.push(ContentBlock::text(format!("{label} of card {item_id}:")));
+                content.push(ContentBlock::image(data, "image/jpeg"));
+            }
+            Err(e) => content.push(ContentBlock::text(format!("{label}: no picture ({e})"))),
+        }
+    }
+    Ok(content)
+}
+
 fn agent(note: Option<String>) -> Reviewer {
     Reviewer::Agent {
         note: note.unwrap_or_default(),
@@ -1354,7 +1592,8 @@ fn keeps(filter: CardFilter, i: &ItemSummary) -> bool {
     let identified = matches!(i.status, ItemStatus::Done | ItemStatus::Grading);
     match filter {
         CardFilter::All => true,
-        CardFilter::ToReview => identified && !i.reviewed,
+        // As the app counts them (`db::TO_REVIEW`): a card only graded or cropped has nothing to review.
+        CardFilter::ToReview => identified && !i.reviewed && i.id_type.is_some(),
         CardFilter::Uncertain => identified && i.confidence.as_deref() != Some("high"),
         CardFilter::AcceptedByAi => i.reviewed && i.agent_reviewed,
         CardFilter::Errors => i.status == ItemStatus::Error,

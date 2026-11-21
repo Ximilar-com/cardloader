@@ -102,5 +102,7 @@ const messages: Messages<typeof en> = {
   crop: {
     title: "Zugeschnittene Karte",
   },
+  agentCertainty: "Sicherheit des Agenten: {certainty}",
+  agentNote: "KI-Agent: {note}",
 };
 export default messages;

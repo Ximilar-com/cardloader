@@ -109,7 +109,7 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
         onClick: () => void api.cropsFolder(s.id).then(openPath).catch(fail),
       },
       s.options.task === "identify" &&
-        s.options.engine !== "local" && {
+        s.options.engine === "ximilar" && {
           label: t("session.actions.compare"),
           icon: Cpu,
           onClick: () => setDialog({ kind: "compare", session: s }),

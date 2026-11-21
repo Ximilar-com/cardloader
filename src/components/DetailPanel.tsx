@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import { t, useT } from "../i18n";
+import { t, useT, type Key } from "../i18n";
 import { errorText, type ItemEdit, type Json } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, decimal, grade, parseAmount, price } from "../lib/format";
@@ -141,7 +141,15 @@ export default function DetailPanel({
                 {view.local.seconds != null && ` · ${decimal(view.local.seconds, 1)} s`}
               </span>
             )}
+            {view.agent?.certainty && (
+              <span className="text-[11px] text-slate-400">
+                {t("detail.agentCertainty", { certainty: t(`status.confidence.${view.agent.certainty}` as Key) })}
+              </span>
+            )}
           </div>
+          {view.agent?.note && (
+            <p className="selectable mt-1 text-xs text-slate-500">{t("detail.agentNote", { note: view.agent.note })}</p>
+          )}
         </div>
         {(onPrev || onNext) && (
           <div className="flex items-center">

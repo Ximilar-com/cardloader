@@ -347,6 +347,180 @@ async fn agent_runs_and_reviews_a_folder() {
 }
 
 /// The app with agents on (any port, allowed what `mcp` says), Ximilar at `api`, its data and config in `dir`.
+/// The cards waiting for the agent, once `n` of them are (scanning the folder takes a moment).
+async fn waiting_cards(agent: &Agent, session: &str, n: usize) -> (Vec<Value>, Value) {
+    let started = Instant::now();
+    loop {
+        let result = agent
+            .rpc(
+                "tools/call",
+                json!({"name": "next_cards_to_identify",
+                       "arguments": {"session_id": session, "max": 10, "wait_seconds": 5}}),
+            )
+            .await;
+        assert!(result["isError"] != true, "{result}");
+        let text: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        let cards = text["cards"].as_array().cloned().unwrap_or_default();
+        if cards.len() >= n {
+            return (cards, result);
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "only {} card(s) came: {text}",
+            cards.len()
+        );
+    }
+}
+
+/// An agent identifies a session's cards itself: Cardloader reads the folder and hands each card over with its
+/// picture, the answers are stored for the user to review and graded through Ximilar, a card the agent can't tell
+/// fails with its note, and no card is identified twice. Stopping hands waiting cards back to the queue.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_identifies_a_session() {
+    let server = mock_ximilar().await;
+    let dir = tempfile::tempdir().unwrap();
+    let cards = dir.path().join("football");
+    std::fs::create_dir_all(&cards).unwrap();
+    for name in ["a", "b"] {
+        RgbImage::from_pixel(630, 880, Rgb([20, 90, 160]))
+            .save(cards.join(format!("{name}.png")))
+            .unwrap();
+    }
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), &server.uri(), McpSettings::default()).await;
+    let created = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "agent", "card_type": "sport", "grading": "grade"}),
+        )
+        .await;
+    assert_eq!(created["engine"], "agent");
+    assert!(created["next"]
+        .as_str()
+        .unwrap()
+        .contains("next_cards_to_identify"));
+    let session = created["id"].as_str().unwrap().to_string();
+
+    let (waiting, result) = waiting_cards(&agent, &session, 2).await;
+    let images = result["content"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["type"] == "image")
+        .count();
+    assert_eq!(images, 2, "a front picture per card");
+    let item_of = |file: &str| {
+        waiting
+            .iter()
+            .find(|c| c["files"]["front"].as_str().unwrap().ends_with(file))
+            .unwrap()["itemId"]
+            .as_i64()
+            .unwrap()
+    };
+    let (mahomes, blurry) = (item_of("a.png"), item_of("b.png"));
+    let answered = agent
+        .ok(
+            "identify_cards",
+            json!({"cards": [
+                {"item_id": mahomes, "name": "Patrick Mahomes II", "set_name": "2017 Panini Prizm",
+                 "card_number": "269", "year": "2017", "variant": "Silver Prizm", "game": "football",
+                 "certainty": "high", "note": "name, #269 and the silver refractor are clear"},
+                {"item_id": blurry, "unidentified": true, "note": "too blurry to read"},
+                {"item_id": 999_999, "name": "Nobody"}]}),
+        )
+        .await;
+    let results = answered["results"].as_array().unwrap();
+    assert_eq!(results[0]["ok"], true, "{answered}");
+    assert_eq!(results[1]["ok"], true, "{answered}");
+    assert_eq!(results[2]["ok"], false, "{answered}");
+    let again = agent
+        .ok(
+            "identify_cards",
+            json!({"cards": [{"item_id": mahomes, "name": "Someone else"}]}),
+        )
+        .await;
+    assert_eq!(
+        again["results"][0]["ok"], false,
+        "a card is identified once"
+    );
+
+    let started = Instant::now();
+    while state.runner.is_running(&session) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let requests = server.received_requests().await.unwrap();
+    assert!(
+        !requests
+            .iter()
+            .any(|r| r.url.path().starts_with("/collectibles/")),
+        "no Ximilar identification"
+    );
+    let card = state.db.item(mahomes).unwrap();
+    let s = &card.summary;
+    assert_eq!(s.status, crate::model::ItemStatus::Done);
+    assert_eq!(
+        (
+            s.card.name.as_str(),
+            s.card.series.as_str(),
+            s.card.subcategory.as_str()
+        ),
+        ("Patrick Mahomes II", "Silver Prizm", "Football")
+    );
+    assert_eq!(
+        s.card.full_name,
+        "Patrick Mahomes II 2017 Panini Prizm #269"
+    );
+    assert_eq!(
+        (s.id_type.as_deref(), s.confidence.as_deref()),
+        (Some("sport"), Some("agent"))
+    );
+    assert_eq!(s.grade, Some(7.5), "graded through Ximilar");
+    assert_eq!(card.recognition.unwrap()["certainty"], "high");
+    let failed = state.db.item_summary(blurry).unwrap();
+    assert_eq!(failed.status, crate::model::ItemStatus::Error);
+    assert!(failed.error.unwrap().contains("too blurry"));
+    assert_eq!(state.db.session(&session).unwrap().counts.to_review, 1);
+    let done = agent
+        .ok(
+            "next_cards_to_identify",
+            json!({"session_id": session, "wait_seconds": 1}),
+        )
+        .await;
+    assert_eq!(done["finished"], true);
+
+    // Stopping a session while cards wait for the agent puts them back in the queue.
+    let second = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "agent", "name": "Again"}),
+        )
+        .await;
+    let second = second["id"].as_str().unwrap().to_string();
+    waiting_cards(&agent, &second, 2).await;
+    agent
+        .ok("stop_session", json!({"session_id": second}))
+        .await;
+    let started = Instant::now();
+    while state.runner.is_running(&second) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "stop didn't end the run"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let items = state.db.items(&second).unwrap();
+    assert_eq!(items.len(), 2);
+    assert!(items
+        .iter()
+        .all(|i| i.status == crate::model::ItemStatus::Queued));
+    assert!(state.runner.agent_waiting(None).is_empty());
+}
+
 async fn app_with_agent(
     dir: &Path,
     api: &str,

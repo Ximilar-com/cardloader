@@ -103,5 +103,7 @@ const messages: Messages<typeof en> = {
   crop: {
     title: "切り抜いたカード",
   },
+  agentCertainty: "エージェントの確信度：{certainty}",
+  agentNote: "AIエージェント：{note}",
 };
 export default messages;

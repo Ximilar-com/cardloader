@@ -57,6 +57,7 @@ const messages: Messages<typeof en> = {
       other: "API呼び出し約{count}回（Magic AIで増える場合があります）",
     },
     localGrade: "このパソコン上でグレーディング、API呼び出しなし",
+    agent: "AIエージェントが識別、API呼び出しなし",
   },
   scanner: {
     label: "スキャナー",
@@ -194,5 +195,10 @@ const messages: Messages<typeof en> = {
     alsoHint:
       "各カードを画像から切り抜いてまっすぐにし、JPEGファイルとしてフォルダーに保存します。カード1枚につきAPI呼び出しが1回増えます。",
   },
+  needsAgents:
+    "エージェントがカードを識別できるよう、「設定」でAIエージェントを「実行とレビュー」付きでオンにしてください。",
+  agentNote:
+    "AIエージェントが各カードを画像から読み取ります。Claudeなどで「Cardloaderのこのセッションのカードを識別して」と頼んでください。グレーディングと切り抜きはXimilarを使います。",
+  agentHint: "MCPで接続したClaudeなどのエージェント",
 };
 export default messages;

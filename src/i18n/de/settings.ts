@@ -78,6 +78,9 @@ const messages: Messages<typeof en> = {
     runSetup: "Einrichtung wiederholen",
     task: "Aufgabe",
     saveCrops: "Zugeschnittene Karten auch speichern",
+    agentTitle: "KI-Agent",
+    agentText:
+      "Claude oder ein anderer unter KI-Agenten verbundener Agent liest jede Karte anhand ihrer Bilder. Grading und Zuschnitte laufen weiter über Ximilar.",
   },
   scanner: {
     title: "Scanner",

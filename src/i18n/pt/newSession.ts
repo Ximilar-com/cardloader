@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "cerca de {count} chamadas à API (o Magic AI pode somar mais)",
     },
     localGrade: "graduadas neste computador, sem chamadas à API",
+    agent: "identificadas pelo seu agente de IA, sem chamadas à API",
   },
   scanner: {
     label: "Scanner",
@@ -202,5 +203,10 @@ const messages: Messages<typeof en> = {
     alsoHint:
       "Cada carta recortada da imagem e endireitada, como arquivos JPEG em uma pasta. Uma chamada à API a mais por carta.",
   },
+  needsAgents:
+    "Ative os agentes de IA, com “Executar e revisar”, nas Configurações para que seu agente possa identificar as cartas.",
+  agentNote:
+    "Seu agente de IA lê cada carta pelas imagens: peça a ele, ex. no Claude, que identifique as cartas desta sessão no Cardloader. A graduação e os recortes continuam usando a Ximilar.",
+  agentHint: "Claude ou outro agente conectado por MCP",
 };
 export default messages;

@@ -57,6 +57,7 @@ const messages: Messages<typeof en> = {
       other: "API 호출 약 {count}회(Magic AI 사용 시 늘어날 수 있음)",
     },
     localGrade: "이 컴퓨터에서 그레이딩, API 호출 없음",
+    agent: "AI 에이전트가 식별, API 호출 없음",
   },
   scanner: {
     label: "스캐너",
@@ -192,5 +193,9 @@ const messages: Messages<typeof en> = {
     alsoHint:
       "카드마다 이미지에서 잘라내고 똑바로 맞춰 폴더에 JPEG 파일로 저장합니다. 카드당 API 호출이 1회 늘어납니다.",
   },
+  needsAgents: "에이전트가 카드를 식별할 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",
+  agentNote:
+    "AI 에이전트가 이미지로 카드를 하나씩 읽습니다. Claude 등에서 ‘Cardloader의 이 세션 카드를 식별해 줘’라고 요청하세요. 그레이딩과 자르기는 Ximilar를 사용합니다.",
+  agentHint: "MCP로 연결한 Claude 등의 에이전트",
 };
 export default messages;

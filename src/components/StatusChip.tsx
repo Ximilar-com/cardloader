@@ -79,13 +79,14 @@ export default function StatusChip({
 export function ConfidenceChip({ value }: { value: string | null }) {
   const t = useT();
   if (!value) return <span className="text-slate-400">—</span>;
-  if (value === "local")
+  // Neither has a match score: a neutral chip says who read the card.
+  if (value === "local" || value === "agent")
     return (
       <span
-        className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-        title={t("status.confidence.localTitle")}
+        className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+        title={t(value === "local" ? "status.confidence.localTitle" : "status.confidence.agentTitle")}
       >
-        {t("status.confidence.local")}
+        {t(value === "local" ? "status.confidence.local" : "status.confidence.agent")}
       </span>
     );
   const style =

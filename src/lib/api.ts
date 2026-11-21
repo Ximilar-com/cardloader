@@ -20,8 +20,9 @@ export interface CsvPreview {
   columns: string[];
 }
 export type IdMode = "auto" | "tcg" | "sport" | "comics" | "slab";
-/** What identifies the cards: the Ximilar API or a vision language model on this computer. */
-export type Engine = "ximilar" | "local";
+/** What identifies the cards: the Ximilar API, a vision language model on this computer, or an AI agent connected over
+ * MCP that reads the cards' pictures. */
+export type Engine = "ximilar" | "local" | "agent";
 export type GradingMode = "off" | "condition" | "grade" | "centering";
 /** What a session does with each card: identify it (and grade, price…), or only grade it, tell its condition or crop
  * it. */

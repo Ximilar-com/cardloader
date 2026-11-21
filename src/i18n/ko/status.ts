@@ -26,6 +26,8 @@ const messages: Messages<typeof en> = {
     low: "낮음",
     local: "로컬",
     localTitle: "이 컴퓨터의 로컬 모델이 읽음: 일치 점수 없음",
+    agent: "AI 에이전트",
+    agentTitle: "AI 에이전트가 카드 이미지로 식별: 일치 점수 없음",
   },
   picked: "선택함",
   pickedTitle: "후보 중에서 이 일치 항목을 선택했습니다",
@@ -43,6 +45,7 @@ const messages: Messages<typeof en> = {
   engine: {
     ximilar: "Ximilar API",
     local: "로컬 모델",
+    agent: "AI 에이전트(MCP)",
   },
   idMode: {
     auto: "자동 감지",

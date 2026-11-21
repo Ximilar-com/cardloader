@@ -102,5 +102,7 @@ const messages: Messages<typeof en> = {
   crop: {
     title: "잘라낸 카드",
   },
+  agentCertainty: "에이전트 확신도: {certainty}",
+  agentNote: "AI 에이전트: {note}",
 };
 export default messages;

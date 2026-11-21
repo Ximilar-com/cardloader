@@ -92,6 +92,8 @@ export interface CardView {
   raw: Json;
   /** Read by an on-device model: which one, and how long it took. */
   local?: { model: string; seconds: number | null };
+  /** Identified by an AI agent: how sure it was, and what it read. */
+  agent?: { certainty: string | null; note: string };
   /** How Ximilar read it, when not the usual way: "front + back", "Magic AI", a custom endpoint. */
   via?: string;
   /** Ximilar found the card turned in the image (its `Rotation` tag wasn't `rotation_ok`). */
@@ -233,7 +235,7 @@ export interface Sort {
   desc: boolean;
 }
 
-const CONFIDENCE_RANK: Record<string, number> = { high: 0, local: 1, medium: 2, low: 3 };
+const CONFIDENCE_RANK: Record<string, number> = { high: 0, local: 1, agent: 1, medium: 2, low: 3 };
 
 function sortValue(r: Row, key: SortKey): string | number | null {
   switch (key) {
@@ -419,6 +421,10 @@ export function viewFromItem(i: ItemDetail): CardView {
     local: String(i.recognition?.endpoint ?? "").startsWith("local/")
       ? { model: String(i.recognition.model ?? ""), seconds: i.recognition.seconds ?? null }
       : undefined,
+    agent:
+      i.recognition?.endpoint === "agent"
+        ? { certainty: i.recognition.certainty ?? null, note: String(i.recognition.note ?? "") }
+        : undefined,
   };
 }
 

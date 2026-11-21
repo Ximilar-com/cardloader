@@ -101,4 +101,6 @@ export default {
     priceInvalid: "The price must be a positive number.",
     notIdentified: "The card fields can be edited once it is identified.",
   },
+  agentCertainty: "Agent's certainty: {certainty}",
+  agentNote: "AI agent: {note}",
 };

@@ -78,6 +78,8 @@ const messages: Messages<typeof en> = {
     runSetup: "설정 마법사 다시 실행",
     task: "작업",
     saveCrops: "잘라낸 이미지도 저장",
+    agentTitle: "AI 에이전트",
+    agentText: "AI 에이전트에서 연결한 Claude 등이 이미지로 카드를 읽습니다. 그레이딩과 자르기는 Ximilar를 사용합니다.",
   },
   scanner: {
     title: "스캐너",
