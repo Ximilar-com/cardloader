@@ -122,7 +122,7 @@ export default {
     permissions: {
       run: "Run and review",
       runHint:
-        "create, run and stop sessions; accept, pick and edit cards; sync to Cards Cloud; CSV and TCGplayer exports",
+        "create, run and stop sessions; identify, accept, pick and edit cards; look up eBay prices; sync to Cards Cloud; CSV and TCGplayer exports",
       delete: "Delete",
       deleteHint: "cards and sessions, also in Cards Cloud",
       market: "Marketplaces",

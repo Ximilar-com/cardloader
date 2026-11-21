@@ -402,7 +402,8 @@ grades stop counting; its note says what it left out. The **Prices from eBay** p
 through a session.
 
 The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
-out greyed) with **Search eBay** to search again yourself. The search uses your eBay keyset's App ID and Cert ID
+out greyed) with **Search eBay** to search again yourself; untick a listing that isn't your card, or tick one back,
+and the range follows. When the card is identified again, or you pick or type another card, its listings are dropped. The search uses your eBay keyset's App ID and Cert ID
 (Settings → Selling; no eBay login needed for it), or `EBAY_APP_ID` in the environment: the base64 of
 `client_id:client_secret` of a production keyset. eBay allows 5,000 searches a day per keyset.
 

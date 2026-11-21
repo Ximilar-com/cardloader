@@ -125,9 +125,15 @@ export function taskLabels(): Record<Task, string> {
   };
 }
 
-/** Identified by an AI agent over MCP (`SessionOptions::agent`): other tasks use Ximilar whatever the engine. */
+/** What does the session's work. Only identification can be an AI agent's: its other tasks go to Ximilar, whatever
+ * the engine says (`SessionOptions::agent`). */
+export function engineOf(o: Pick<SessionOptions, "task" | "engine">): Engine {
+  return o.engine === "agent" && o.task !== "identify" ? "ximilar" : o.engine;
+}
+
+/** Identified by an AI agent over MCP. */
 export function agentOf(o: Pick<SessionOptions, "task" | "engine">): boolean {
-  return o.engine === "agent" && o.task === "identify";
+  return engineOf(o) === "agent";
 }
 
 /** Calls the Ximilar API for something (`SessionOptions::uses_api`): a local or agent session that only identifies

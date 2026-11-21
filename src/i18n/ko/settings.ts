@@ -121,7 +121,8 @@ const messages: Messages<typeof en> = {
     read: "세션, 카드, 사진 읽기(항상)",
     permissions: {
       run: "실행 및 검토",
-      runHint: "세션 만들기, 실행, 중지; 카드 승인, 선택, 편집; Cards Cloud 동기화; CSV 및 TCGplayer 내보내기",
+      runHint:
+        "세션 만들기, 실행, 중지; 카드 식별, 승인, 선택, 편집; eBay 가격 검색; Cards Cloud 동기화; CSV 및 TCGplayer 내보내기",
       delete: "삭제",
       deleteHint: "카드와 세션(Cards Cloud 포함)",
       market: "마켓플레이스",

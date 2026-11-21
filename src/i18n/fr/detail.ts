@@ -116,6 +116,7 @@ const messages: Messages<typeof en> = {
     noPrices: "Aucune annonce n’est cette carte.",
     auction: "Enchère",
     leftOut: "écartée",
+    counts: "Compter cette annonce dans la fourchette de prix",
     searched: "« {query} », {date} · {total} sur eBay",
     leftOutCount: { one: "{count} écartée.", other: "{count} écartées." },
   },

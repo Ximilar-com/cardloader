@@ -116,6 +116,7 @@ const messages: Messages<typeof en> = {
     noPrices: "Keines der Angebote ist diese Karte.",
     auction: "Auktion",
     leftOut: "ausgelassen",
+    counts: "Dieses Angebot in die Preisspanne einrechnen",
     searched: "„{query}“, {date} · {total} auf eBay",
     leftOutCount: { one: "{count} ausgelassen.", other: "{count} ausgelassen." },
   },

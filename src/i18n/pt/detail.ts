@@ -116,6 +116,7 @@ const messages: Messages<typeof en> = {
     noPrices: "Nenhum anúncio é desta carta.",
     auction: "Leilão",
     leftOut: "descartado",
+    counts: "Contar este anúncio na faixa de preço",
     searched: "“{query}”, {date} · {total} no eBay",
     leftOutCount: { one: "{count} descartado.", other: "{count} descartados." },
   },

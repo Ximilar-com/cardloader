@@ -2,7 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (p: string) => `asset://${p}` }));
 
-import { basename, defaultSessionName, duration, eta, grade, parseAmount, price } from "./format";
+import type { GradingMode, SessionOptions } from "./api";
+import {
+  agentOf,
+  basename,
+  cropsOf,
+  defaultSessionName,
+  duration,
+  engineOf,
+  eta,
+  grade,
+  gradingOf,
+  parseAmount,
+  price,
+  usesApi,
+} from "./format";
+import cases from "./session-options.cases.json";
 
 describe("format", () => {
   it("formats prices and grades", () => {
@@ -88,5 +103,21 @@ describe("format", () => {
 
   it("names sessions by time", () => {
     expect(defaultSessionName(new Date(2026, 9, 15, 8, 5))).toBe("Session 2026-10-15 08:05");
+  });
+
+  // What a session's options mean is written twice, here and in Rust (`SessionOptions` in `model.rs`). Both are
+  // checked against the same cases, so neither drifts from the other.
+  it("reads a session's options as the shared cases say", () => {
+    expect(cases.length).toBeGreaterThan(10);
+    for (const c of cases) {
+      const o = c.options as SessionOptions;
+      const what = JSON.stringify(c.options);
+      expect(gradingOf(o), what).toBe(c.gradingMode as GradingMode);
+      expect(usesApi(o), what).toBe(c.usesApi);
+      expect(agentOf(o), what).toBe(c.agent);
+      expect(cropsOf(o), what).toBe(c.crops);
+      // Only identifying can be an agent's.
+      expect(engineOf(o) === "agent", what).toBe(c.agent);
+    }
   });
 });

@@ -1074,6 +1074,8 @@ impl Runner {
         fatal
     }
 
+    /// Takes a claimed card through the stages its session has (`SessionOptions::stages`), from the stage it still
+    /// owes when an earlier pass was cut short.
     async fn recognize_item(
         &self,
         session: &Session,
@@ -1082,52 +1084,78 @@ impl Runner {
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item = self.db.item(item_id)?;
-        let o = &session.options;
-        // What the card is for first; its crop, if the session saves them, comes after.
-        let first = match (o.task, o.local()) {
-            (Task::Crop, _) => false,
-            (Task::Grade | Task::Condition, true) => {
-                self.grade_locally(session, &item).await?;
-                true
-            }
-            (Task::Grade | Task::Condition, false) => {
-                let client = client.ok_or(ApiError::NoToken)?;
-                self.submit_grading(session, client, &item, cancel).await?;
-                true
-            }
-            (Task::Identify, _) if o.agent() => {
-                self.identify_by_agent(session, client, &item, cancel)
-                    .await?;
-                true
-            }
-            (Task::Identify, true) => {
-                self.identify_locally(session, &item).await?;
-                true
-            }
-            (Task::Identify, false) => {
-                let client = client.ok_or(ApiError::NoToken)?;
-                self.identify(session, client, &item, cancel).await?;
-                true
+        let stages = session.options.stages();
+        let owed = self.db.stage(item_id)?;
+        let from = match owed {
+            Some(owed) => Stage::resume(&stages, owed),
+            // A pass from the start: nothing of an earlier one counts.
+            None => {
+                self.db.clear_jobs(item_id)?;
+                0
             }
         };
-        // A card whose grading already failed isn't cropped either: Analyse again redoes both.
-        if !o.crops() || self.db.item_summary(item_id)?.status == ItemStatus::Error {
-            return Ok(());
+        for (n, stage) in stages.iter().copied().enumerate().skip(from) {
+            if n > 0 {
+                // Owed from here on, whatever cuts the pass short: a stop, no connection, the app quitting.
+                self.db.set_stage(item_id, stage)?;
+                self.emit_item(item_id);
+            }
+            let more = n + 1 < stages.len();
+            let Err(e) = self
+                .run_stage(stage, session, client, &item, more, cancel)
+                .await
+            else {
+                continue;
+            };
+            // A pass failing at its first stage is the card failing, and a call that may pass on a later run leaves
+            // the card owing the stage: both are `process`'s to handle.
+            if (n == 0 && owed.is_none()) || comes_back(&e) {
+                return Err(e);
+            }
+            // A later stage that can't pass fails only that part of the card. What would follow isn't tried:
+            // Analyse again redoes the card.
+            let kind = match stage {
+                Stage::Crop => JobKind::Crop,
+                Stage::Identify | Stage::Grade => JobKind::Grading,
+            };
+            self.db
+                .fail_job(item_id, kind, &format!("{}: {e}", kind.as_str()))?;
+            break;
         }
-        let client = client.ok_or(ApiError::NoToken)?;
-        if first {
-            self.emit_item(item_id);
-        }
-        self.submit_crop(session, client, &item, first, cancel)
-            .await
+        self.db.finish_pass(item_id)
     }
 
-    /// Identifies the card with the Ximilar API, then submits its grading if the session grades.
+    /// One stage of a card's pass, by what the session's options say does it. `more`: other stages follow.
+    async fn run_stage(
+        &self,
+        stage: Stage,
+        session: &Session,
+        client: Option<&XimilarClient>,
+        item: &ItemDetail,
+        more: bool,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let o = &session.options;
+        let api = || client.ok_or(ApiError::NoToken);
+        match stage {
+            Stage::Identify if o.agent() => {
+                self.identify_by_agent(session, item, more, cancel).await
+            }
+            Stage::Identify if o.local() => self.identify_locally(session, item, more).await,
+            Stage::Identify => self.identify(session, api()?, item, more, cancel).await,
+            Stage::Grade if o.local() => self.grade_locally(session, item).await,
+            Stage::Grade => self.submit_grading(session, api()?, item, cancel).await,
+            Stage::Crop => self.submit_crop(session, api()?, item, cancel).await,
+        }
+    }
+
+    /// Identifies the card with the Ximilar API.
     async fn identify(
         &self,
         session: &Session,
         client: &XimilarClient,
         item: &ItemDetail,
+        more: bool,
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item_id = item.summary.id;
@@ -1174,12 +1202,6 @@ impl Runner {
             cancel,
         )
         .await?;
-        let grading = o.grading_mode();
-        let next = if grading == GradingMode::Off {
-            ItemStatus::Done
-        } else {
-            ItemStatus::Grading
-        };
         self.db.save_recognition(
             item_id,
             &rec.id_type,
@@ -1190,22 +1212,16 @@ impl Runner {
             rec.slab.as_ref(),
             &raw,
             calls,
-            next,
-        )?;
-        if grading == GradingMode::Off {
-            return Ok(());
-        }
-        self.emit_item(item_id);
-        self.submit_grading(session, client, item, cancel).await
+            identified(more),
+        )
     }
 
-    /// Waits until an AI agent identifies the card over MCP (or the run stops: the card goes back to the queue), then
-    /// grades it through Ximilar if the session grades.
+    /// Waits until an AI agent identifies the card over MCP (or the run stops: the card goes back to the queue).
     async fn identify_by_agent(
         &self,
         session: &Session,
-        client: Option<&XimilarClient>,
         item: &ItemDetail,
+        more: bool,
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item_id = item.summary.id;
@@ -1217,12 +1233,16 @@ impl Runner {
                 answer: tx,
             },
         );
+        // Off the list however the wait ends: answered, stopped, or this worker dropped.
+        let _waiting = Waiting {
+            waits: &self.agent_waits,
+            item_id,
+        };
         self.emit_item(item_id);
         let answer = tokio::select! {
             answer = rx => answer.ok(),
             _ = cancel.cancelled() => None,
         };
-        self.agent_waits.lock().unwrap().remove(&item_id);
         let (id_type, card, certainty, note) = match answer {
             None => return Err(ApiError::Cancelled.into()),
             Some(AgentAnswer::Unidentified { note }) => {
@@ -1235,7 +1255,6 @@ impl Runner {
                 note,
             }) => (id_type, card, certainty, note),
         };
-        let grading = session.options.grading_mode();
         let raw =
             json!({"endpoint": "agent", "certainty": certainty, "note": note, "response": card});
         self.db.save_recognition(
@@ -1248,18 +1267,8 @@ impl Runner {
             None,
             &raw,
             0,
-            if grading == GradingMode::Off {
-                ItemStatus::Done
-            } else {
-                ItemStatus::Grading
-            },
-        )?;
-        if grading == GradingMode::Off {
-            return Ok(());
-        }
-        self.emit_item(item_id);
-        let client = client.ok_or(ApiError::NoToken)?;
-        self.submit_grading(session, client, item, cancel).await
+            identified(more),
+        )
     }
 
     /// The cards waiting for an AI agent, oldest first: (session id, item id), of one session or of all.
@@ -1289,9 +1298,7 @@ impl Runner {
             .map_err(|_| Error::msg(format!("card {item_id} isn't waiting for an AI agent")))
     }
 
-    /// Sends the card to the session's card-grader endpoint; the poller stores the result. After an identification
-    /// a failure here fails only the grading of the card; a grade-only session handles it as any failed call
-    /// (offline pauses the session).
+    /// Sends the card to the session's card-grader endpoint; the poller stores the result.
     async fn submit_grading(
         &self,
         session: &Session,
@@ -1299,73 +1306,30 @@ impl Runner {
         item: &ItemDetail,
         cancel: &CancellationToken,
     ) -> Result<()> {
-        let item_id = item.summary.id;
-        let grading = session.options.grading_mode();
         // Grading wants the full scan, not the preview.
-        let front = encode(
-            PathBuf::from(&item.summary.front_path),
-            imaging::GRADING_LONG_EDGE,
-        )
-        .await?;
-        let back = match &item.summary.back_path {
-            Some(b) => Some(encode(PathBuf::from(b), imaging::GRADING_LONG_EDGE).await?),
-            None => None,
-        };
+        let (front, back) = scans_b64(item).await?;
         let body = grading::build_request(
-            grading,
+            session.options.grading_mode(),
             &session.options.condition_mode,
             &front,
             back.as_deref(),
         );
-        let only = !session.options.identifies();
-        match grading::submit(client, &body, cancel).await {
-            Ok(job) => self.db.set_job(item_id, JobKind::Grading, &job)?,
-            Err(e) if only || matches!(e, ApiError::Cancelled) || e.failure() == Failure::Auth => {
-                return Err(e.into())
-            }
-            Err(e) => self.db.set_item_status(
-                item_id,
-                ItemStatus::Error,
-                Some(&format!("grading: {e}")),
-            )?,
-        }
-        Ok(())
+        let job = grading::submit(client, &body, cancel).await?;
+        self.db.set_job(item.summary.id, JobKind::Grading, &job)
     }
 
-    /// Sends the card's sides, as scanned, to be cropped; the poller saves the pictures. After the card was
-    /// identified or graded (`after`), a failure here fails only its crop; alone, it is handled as any failed call.
+    /// Sends the card's sides, as scanned, to be cropped; the poller saves the pictures.
     async fn submit_crop(
         &self,
         session: &Session,
         client: &XimilarClient,
         item: &ItemDetail,
-        after: bool,
         cancel: &CancellationToken,
     ) -> Result<()> {
-        let front = encode(
-            PathBuf::from(&item.summary.front_path),
-            imaging::GRADING_LONG_EDGE,
-        )
-        .await?;
-        let back = match &item.summary.back_path {
-            Some(b) => Some(encode(PathBuf::from(b), imaging::GRADING_LONG_EDGE).await?),
-            None => None,
-        };
+        let (front, back) = scans_b64(item).await?;
         let body = grading::build_crop_request(&front, back.as_deref(), session.options.crop_level);
-        match grading::submit(client, &body, cancel).await {
-            Ok(job) => self.db.set_job(item.summary.id, JobKind::Crop, &job)?,
-            Err(e)
-                if !after || matches!(e, ApiError::Cancelled) || e.failure() == Failure::Auth =>
-            {
-                return Err(e.into())
-            }
-            Err(e) => self.db.set_item_status(
-                item.summary.id,
-                ItemStatus::Error,
-                Some(&format!("crop: {e}")),
-            )?,
-        }
-        Ok(())
+        let job = grading::submit(client, &body, cancel).await?;
+        self.db.set_job(item.summary.id, JobKind::Crop, &job)
     }
 
     /// Where a session's cropped pictures go.
@@ -1376,8 +1340,13 @@ impl Runner {
         }
     }
 
-    /// Identifies the card with the on-device model: no API calls, no prices, alternatives or grading.
-    async fn identify_locally(&self, session: &Session, item: &ItemDetail) -> Result<()> {
+    /// Identifies the card with the on-device model: no API calls, no prices or alternatives.
+    async fn identify_locally(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        more: bool,
+    ) -> Result<()> {
         let image = item
             .preview_path
             .clone()
@@ -1394,7 +1363,6 @@ impl Runner {
             .local
             .identify(model, Path::new(&image), back, session.id_mode)
             .await?;
-        let grading = session.options.grading_mode();
         self.db.save_recognition(
             item.summary.id,
             &rec.id_type,
@@ -1405,17 +1373,8 @@ impl Runner {
             None,
             &raw,
             0,
-            if grading == GradingMode::Off {
-                ItemStatus::Done
-            } else {
-                ItemStatus::Grading
-            },
-        )?;
-        if grading == GradingMode::Off {
-            return Ok(());
-        }
-        self.emit_item(item.summary.id);
-        self.grade_locally(session, item).await
+            identified(more),
+        )
     }
 
     /// Grades the card with the on-device model (after identifying it, or alone in a grade-only session).
@@ -1432,22 +1391,19 @@ impl Runner {
             .map(PathBuf::from)
             .collect();
         let scale = crate::local::grade::scale(&session.options.condition_mode);
-        match self.local.grade(model, &sides, grading, scale).await {
-            Ok(g) => {
-                // A grade's condition is a label of the scale too, and the same label means another step on another
-                // scale ("Light Played" on Cardmarket's and Whatnot's): exports read it on this one.
-                let mut raw = g.raw;
-                raw["scale"] = json!(scale.id);
-                self.db
-                    .save_grading(item.summary.id, g.grade, g.condition.as_deref(), &raw, &[])?
-            }
-            Err(e) => self.db.set_item_status(
-                item.summary.id,
-                ItemStatus::Error,
-                Some(&format!("grading: {e}")),
-            )?,
-        }
-        Ok(())
+        let g = self.local.grade(model, &sides, grading, scale).await?;
+        // A grade's condition is a label of the scale too, and the same label means another step on another scale
+        // ("Light Played" on Cardmarket's and Whatnot's): exports read it on this one.
+        let mut raw = g.raw;
+        raw["scale"] = json!(scale.id);
+        self.db.save_grading(
+            item.summary.id,
+            g.grade,
+            g.condition.as_deref(),
+            &raw,
+            &[],
+            None,
+        )
     }
 
     /// Polls the session's grading and crop jobs until none is left and nothing new can come.
@@ -1467,12 +1423,10 @@ impl Runner {
                 if cancel.is_cancelled() {
                     return;
                 }
-                let what = match kind {
-                    JobKind::Grading => "grading",
-                    JobKind::Crop => "crop",
-                };
-                match grading::status(&client, &job, &cancel).await {
-                    Ok(JobStatus::Pending) => {}
+                let what = kind.as_str();
+                // Why the job is over without a result, if it is: only that part of the card fails.
+                let failed = match grading::status(&client, &job, &cancel).await {
+                    Ok(JobStatus::Pending) => continue,
                     Ok(JobStatus::Done) => {
                         let stored = match kind {
                             JobKind::Grading => {
@@ -1484,44 +1438,27 @@ impl Runner {
                                     .await
                             }
                         };
-                        if let Err(e) = stored {
+                        stored.err().and_then(|e| {
                             tracing::warn!("{what} result of item {item_id}: {e}");
-                            if !matches!(e, Error::Api(ApiError::Cancelled)) {
-                                let _ = self.db.set_item_status(
-                                    item_id,
-                                    ItemStatus::Error,
-                                    Some(&format!("{what}: {e}")),
-                                );
-                            }
-                        }
-                        self.emit_item(item_id);
-                        self.emit_session(&session.id);
+                            (!matches!(e, Error::Api(ApiError::Cancelled)))
+                                .then(|| format!("{what}: {e}"))
+                        })
                     }
-                    Ok(JobStatus::Failed(why)) => {
-                        let _ = self.db.set_item_status(
-                            item_id,
-                            ItemStatus::Error,
-                            Some(&format!("{what} failed: {why}")),
-                        );
-                        self.emit_item(item_id);
-                        self.emit_session(&session.id);
-                    }
+                    Ok(JobStatus::Failed(why)) => Some(format!("{what} failed: {why}")),
                     Err(ApiError::Cancelled) => return,
                     Err(e) if e.failure() == Failure::Retry => {
-                        tracing::warn!("{what} status of item {item_id}: {e}")
+                        tracing::warn!("{what} status of item {item_id}: {e}");
+                        continue;
                     }
                     // Asking again won't help (the token changed, the job expired): without this the poller would
                     // keep the session running forever.
-                    Err(e) => {
-                        let _ = self.db.set_item_status(
-                            item_id,
-                            ItemStatus::Error,
-                            Some(&format!("{what}: {e}")),
-                        );
-                        self.emit_item(item_id);
-                        self.emit_session(&session.id);
-                    }
+                    Err(e) => Some(format!("{what}: {e}")),
+                };
+                if let Some(why) = failed {
+                    let _ = self.db.fail_job(item_id, kind, &why);
                 }
+                self.emit_item(item_id);
+                self.emit_session(&session.id);
             }
             tokio::select! {
                 _ = tokio::time::sleep(GRADING_POLL) => {},
@@ -1571,15 +1508,8 @@ impl Runner {
             summary.condition.as_deref(),
             &json!({"endpoint": mode.as_str(), "response": response}),
             &images,
-        )?;
-        if let Some(err) = summary.error {
-            self.db.set_item_status(
-                item_id,
-                ItemStatus::Error,
-                Some(&format!("grading: {err}")),
-            )?;
-        }
-        Ok(())
+            summary.error.map(|e| format!("grading: {e}")).as_deref(),
+        )
     }
 
     /// Saves a crop job's pictures in the session's file type, named after the card's files (Ximilar's are
@@ -1637,6 +1567,46 @@ impl Runner {
             error.as_deref(),
         )
     }
+}
+
+/// Takes a card off the list of those waiting for an AI agent when its wait ends.
+struct Waiting<'a> {
+    waits: &'a Mutex<HashMap<i64, AgentWait>>,
+    item_id: i64,
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        self.waits.lock().unwrap().remove(&self.item_id);
+    }
+}
+
+/// An identified card's status: it waits (`grading`) for the stages that follow, if any do.
+fn identified(more: bool) -> ItemStatus {
+    if more {
+        ItemStatus::Grading
+    } else {
+        ItemStatus::Done
+    }
+}
+
+/// Stopped, offline or refused for the token: the same call may pass on a later run.
+fn comes_back(e: &Error) -> bool {
+    matches!(e, Error::Api(e) if matches!(e, ApiError::Cancelled) || e.failure() != Failure::Reject)
+}
+
+/// The card's sides as scanned, for the card-grader (grading and cropping want the full scan, not the preview).
+async fn scans_b64(item: &ItemDetail) -> Result<(String, Option<String>)> {
+    let front = encode(
+        PathBuf::from(&item.summary.front_path),
+        imaging::GRADING_LONG_EDGE,
+    )
+    .await?;
+    let back = match &item.summary.back_path {
+        Some(b) => Some(encode(PathBuf::from(b), imaging::GRADING_LONG_EDGE).await?),
+        None => None,
+    };
+    Ok((front, back))
 }
 
 /// The crops are what gets listed and shared: kept close to Ximilar's own quality.
@@ -3910,6 +3880,120 @@ pub(crate) mod tests {
             1,
             "the grading overlay stays apart"
         );
+    }
+
+    /// One card of a session that identifies, grades and saves crops (`name`), in a folder of its own.
+    fn one_card_session(db: &Db, dir: &Path, name: &str, grading: GradingMode) -> Session {
+        let cards = dir.join(name);
+        std::fs::create_dir_all(&cards).unwrap();
+        RgbImage::from_pixel(630, 880, Rgb([200, 30, 30]))
+            .save(cards.join("charizard.png"))
+            .unwrap();
+        db.create_session(&NewSession {
+            name: name.into(),
+            source_kind: SourceKind::Folder,
+            source_ref: cards.to_string_lossy().into_owned(),
+            id_mode: IdMode::Tcg,
+            options: SessionOptions {
+                grading,
+                save_crops: true,
+                ..SessionOptions::default()
+            },
+        })
+        .unwrap()
+    }
+
+    /// A crop that fails while the card's grading is still out fails only the crop: the grade comes in on a later
+    /// poll, and the card says what went wrong.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_failed_crop_keeps_the_grade() {
+        let server = mock_ximilar().await;
+        // The grading isn't ready on the first poll; the crop is, without the back.
+        Mock::given(method("GET"))
+            .and(path("/account/v2/request/job-1/status"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({"status": "PROCESSING"})))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        let crop = format!("{}/files/crop.webp", server.uri());
+        Mock::given(method("GET"))
+            .and(path("/account/v2/request/job-crop"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(
+                json!({"id": "job-crop", "status": "DONE",
+                "response": {"type": "card-grader", "endpoint": "crop_level", "records": [
+                    {"_id": "front", "_status": {"code": 200, "text": "OK"}, "_img_url": crop},
+                    {"_id": "back", "_status": {"code": 400, "text": "No card detected"}}]}}),
+            ))
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        mock_crops(&server).await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        let session = one_card_session(&db, dir.path(), "half", GradingMode::Grade);
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+
+        let item = db.items(&session.id).unwrap()[0].clone();
+        assert_eq!(item.status, ItemStatus::Error);
+        assert_eq!(item.error.as_deref(), Some("crop: back: No card detected"));
+        assert_eq!(item.grade, Some(7.5), "the grading still came in");
+        let detail = db.item(item.id).unwrap();
+        assert_eq!(detail.crop_images.len(), 1, "the front was cropped");
+        assert_eq!(detail.grading_images.len(), 1);
+        assert!(db.jobs(&session.id).unwrap().is_empty());
+    }
+
+    /// A pass cut short after the card was identified (here the crop is refused for the token) leaves the card in
+    /// the queue owing its crop: the next run submits the crop and doesn't identify the card again.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_card_goes_on_at_the_stage_it_owes() {
+        let server = mock_ximilar().await;
+        Mock::given(method("POST"))
+            .and(path("/account/v2/request/"))
+            .and(wiremock::matchers::body_partial_json(
+                json!({"endpoint": "crop_level"}),
+            ))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_json(json!({"detail": "Invalid token."})),
+            )
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        mock_crops(&server).await;
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        let session = one_card_session(&db, dir.path(), "owing", GradingMode::Off);
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Failed, "{s:?}");
+        let item = db.items(&session.id).unwrap()[0].clone();
+        assert_eq!(item.status, ItemStatus::Queued);
+        assert_eq!(item.card.name, "Charizard ex", "its identification is kept");
+        assert_eq!(db.stage(item.id).unwrap(), Some(Stage::Crop));
+
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Completed, "{s:?}");
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            bodies(&requests, "/collectibles/v2/tcg_id").len(),
+            1,
+            "identified once"
+        );
+        let detail = db.item(item.id).unwrap();
+        assert_eq!(detail.summary.status, ItemStatus::Done);
+        assert_eq!(detail.crop_images.len(), 2);
+        assert_eq!(db.stage(item.id).unwrap(), None);
+        // One identification, one crop job: the refused call isn't counted.
+        assert_eq!(detail.calls, 2);
     }
 
     /// WebP crops are Ximilar's file as it is; the other types are encoded from it.

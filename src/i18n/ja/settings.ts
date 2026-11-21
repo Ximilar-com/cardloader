@@ -124,7 +124,7 @@ const messages: Messages<typeof en> = {
     permissions: {
       run: "実行と確認",
       runHint:
-        "セッションの作成・実行・停止、カードの承認・選択・編集、Cards Cloudへの同期、CSVとTCGplayerのエクスポート",
+        "セッションの作成・実行・停止、カードの識別・承認・選択・編集、eBay価格の検索、Cards Cloudへの同期、CSVとTCGplayerのエクスポート",
       delete: "削除",
       deleteHint: "カードとセッション（Cards Cloud上のものも含む）",
       market: "マーケットプレイス",

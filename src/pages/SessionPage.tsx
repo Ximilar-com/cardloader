@@ -117,6 +117,10 @@ function SessionView({ id }: { id: string }) {
   const [keysHelp, setKeysHelp] = useState(false);
   const samples = useRef<[number, number][]>([]);
   const selectedRef = useRef<string | null>(null);
+  /** A card's detail that took a while to come (an eBay search): shown only if the card is still the open one. */
+  const showDetail = (d: ItemDetail) => {
+    if (String(d.id) === selectedRef.current) setDetail(d);
+  };
   useEffect(() => {
     selectedRef.current = selected;
   }, [selected]);
@@ -716,9 +720,10 @@ function SessionView({ id }: { id: string }) {
           cropping={cropping}
           onFindListings={
             ebaySearch && detail.idType && (detail.name || detail.fullName)
-              ? () => api.findEbayListings(detail.id).then(setDetail)
+              ? () => api.findEbayListings(detail.id).then(showDetail)
               : undefined
           }
+          onKeepListings={detail.market ? (ids) => api.keepEbayListings(detail.id, ids).then(showDetail) : undefined}
           onAccept={identifies ? () => accept([detail.id]) : undefined}
           onUnaccept={identifies ? () => api.reviewItems(id, [detail.id], false).catch(toastError) : undefined}
           onEdit={cropOnly ? undefined : (edit) => api.updateItem(detail.id, edit).then(setDetail)}

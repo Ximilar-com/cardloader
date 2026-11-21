@@ -114,6 +114,7 @@ const messages: Messages<typeof en> = {
     noPrices: "このカードの出品はありません。",
     auction: "オークション",
     leftOut: "除外",
+    counts: "この出品を価格帯に含める",
     searched: "「{query}」、{date} · eBayに{total}件",
     leftOutCount: { other: "{count}件を除外。" },
   },

@@ -678,6 +678,9 @@ export const api = {
   /** Searches eBay for the card's active listings and keeps them on it. */
   findEbayListings: (itemId: number, query?: string) =>
     invoke<ItemDetail>("find_ebay_listings", { itemId, query: query ?? null }),
+  /** Only these listings of the card's last eBay search are the card: its price range counts them alone. */
+  keepEbayListings: (itemId: number, listingIds: string[]) =>
+    invoke<ItemDetail>("keep_ebay_listings", { itemId, listingIds }),
   exportCsv: (id: string, path: string) => invoke<number>("export_csv", { id, path }),
   previewCsv: (path: string) => invoke<CsvPreview>("preview_csv", { path }),
   /** A new session from a CSV; with `reanalyze`, identified rows with an image are analysed again. */

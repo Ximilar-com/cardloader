@@ -11,6 +11,7 @@ import type {
   ItemEdit,
   ItemSummary,
   MarketListing,
+  PriceRange,
   Json,
   ModelStatus,
   Session,
@@ -406,6 +407,24 @@ function makeCrop(sessionId: string, seq: number): ItemDetail {
   };
 }
 
+/** What `PriceRange::of` does in Rust: the range of the listings that count. */
+function rangeOf(listings: MarketListing[]): PriceRange | null {
+  const counted = listings
+    .filter((l) => l.counted)
+    .map((l) => l.price)
+    .sort((x, y) => x - y);
+  if (!counted.length) return null;
+  const mid = Math.floor(counted.length / 2);
+  return {
+    min: counted[0],
+    max: counted[counted.length - 1],
+    average: Math.round((counted.reduce((x, y) => x + y, 0) / counted.length) * 100) / 100,
+    median: counted.length % 2 ? counted[mid] : (counted[mid - 1] + counted[mid]) / 2,
+    count: counted.length,
+    currency: "USD",
+  };
+}
+
 /** Active eBay listings of a card around its price, as `find_ebay_listings` keeps them; with a `note`, an agent kept
  * only the ones that are the card (the last two are a lot and a graded copy). */
 function withMarket(item: ItemDetail, note: string, query?: string): Pick<ItemDetail, "market" | "marketRange"> {
@@ -430,19 +449,7 @@ function withMarket(item: ItemDetail, note: string, query?: string): Pick<ItemDe
     country: "US",
     counted: !note || i < 7,
   }));
-  const counted = listings
-    .filter((l) => l.counted)
-    .map((l) => l.price)
-    .sort((x, y) => x - y);
-  const mid = Math.floor(counted.length / 2);
-  const range = {
-    min: counted[0],
-    max: counted[counted.length - 1],
-    average: Math.round((counted.reduce((x, y) => x + y, 0) / counted.length) * 100) / 100,
-    median: counted.length % 2 ? counted[mid] : (counted[mid - 1] + counted[mid]) / 2,
-    count: counted.length,
-    currency: "USD",
-  };
+  const range = rangeOf(listings);
   return {
     market: {
       query: query ?? title,
@@ -1392,6 +1399,17 @@ export function installDemo() {
         case "find_ebay_listings": {
           const item = [...items.values()].flat().find((i) => i.id === a.itemId)!;
           Object.assign(item, withMarket(item, "", a.query ?? undefined));
+          void emit("item-updated", summary(item));
+          return { ...item };
+        }
+        case "keep_ebay_listings": {
+          const item = [...items.values()].flat().find((i) => i.id === a.itemId)!;
+          if (!item.market) throw "search the card's listings first (find_ebay_listings)";
+          const kept = a.listingIds as string[];
+          const listings = item.market.listings.map((l) => ({ ...l, counted: kept.includes(l.id) }));
+          const range = rangeOf(listings);
+          item.market = { ...item.market, listings, note: "", range };
+          item.marketRange = range;
           void emit("item-updated", summary(item));
           return { ...item };
         }

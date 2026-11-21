@@ -42,6 +42,7 @@ export default function DetailPanel({
   extra,
   cropping,
   onFindListings,
+  onKeepListings,
 }: {
   view: CardView;
   onClose: () => void;
@@ -69,6 +70,8 @@ export default function DetailPanel({
   cropping?: boolean;
   /** Searches eBay for the card's active listings; without it, only listings an agent found show. */
   onFindListings?: () => Promise<unknown>;
+  /** Only the listings with these ids are the card: with it, each listing has a tick. */
+  onKeepListings?: (ids: string[]) => Promise<unknown>;
 }) {
   const t = useT();
   const [editing, setEditing] = useState(false);
@@ -370,7 +373,7 @@ export default function DetailPanel({
           </Section>
         )}
 
-        <Market market={view.market} onFind={onFindListings} />
+        <Market market={view.market} onFind={onFindListings} onKeep={onKeepListings} />
 
         <Files images={view.images} />
 
@@ -600,19 +603,30 @@ function Grading({ view }: { view: CardView }) {
 }
 
 /** The card's active eBay listings: the price range of those that are the card, and the listings. */
-function Market({ market, onFind }: { market?: EbayMarket | null; onFind?: () => Promise<unknown> }) {
+function Market({
+  market,
+  onFind,
+  onKeep,
+}: {
+  market?: EbayMarket | null;
+  onFind?: () => Promise<unknown>;
+  onKeep?: (ids: string[]) => Promise<unknown>;
+}) {
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   if (!market && !onFind) return null;
-  const find = () => {
-    if (!onFind) return;
+  const run = (work: Promise<unknown>) => {
     setBusy(true);
     setError(null);
-    onFind()
-      .catch((e) => setError(errorText(e)))
-      .finally(() => setBusy(false));
+    work.catch((e) => setError(errorText(e))).finally(() => setBusy(false));
   };
+  const find = () => onFind && run(onFind());
+  // The listing counts, or stops counting; the others stay as they are.
+  const toggle = (id: string) =>
+    market &&
+    onKeep &&
+    run(onKeep(market.listings.filter((l) => (l.id === id ? !l.counted : l.counted)).map((l) => l.id)));
   const range = market?.range;
   // The listings that are the card first, then those left out.
   const listings = market ? [...market.listings].sort((a, b) => Number(b.counted) - Number(a.counted)) : [];
@@ -661,6 +675,19 @@ function Market({ market, onFind }: { market?: EbayMarket | null; onFind?: () =>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {listings.map((l) => (
                     <tr key={l.id} className={clsx(!l.counted && "opacity-45")}>
+                      {onKeep && (
+                        <td className="w-7 py-1.5 pl-2 align-top">
+                          <input
+                            type="checkbox"
+                            className="h-3.5 w-3.5 accent-[var(--color-accent)]"
+                            checked={l.counted}
+                            disabled={busy}
+                            onChange={() => toggle(l.id)}
+                            title={t("detail.market.counts")}
+                            aria-label={t("detail.market.counts")}
+                          />
+                        </td>
+                      )}
                       <td className="px-2 py-1.5">
                         <button
                           className="block w-full truncate text-left hover:text-accent hover:underline"

@@ -52,6 +52,29 @@ str_enum!(
 );
 
 str_enum!(
+    /// A step of a card's pass through a session, in order (`SessionOptions::stages`). A pass cut short goes on at
+    /// the stage the card still owes (`items.stage`), so nothing already paid for is asked again.
+    Stage { Identify = "identify", Grade = "grade", Crop = "crop" } default Identify
+);
+
+impl Stage {
+    /// Where a card owing `owed` goes on in a pass of `stages`: at that stage, or at the next one the session
+    /// still has when its options dropped it since (none: the pass is over).
+    pub fn resume(stages: &[Stage], owed: Stage) -> usize {
+        stages
+            .iter()
+            .position(|s| *s as u8 >= owed as u8)
+            .unwrap_or(stages.len())
+    }
+
+    pub fn find(text: &str) -> Option<Self> {
+        [Stage::Identify, Stage::Grade, Stage::Crop]
+            .into_iter()
+            .find(|s| s.as_str() == text)
+    }
+}
+
+str_enum!(
     /// The file type cropped pictures are saved as: JPEG (re-encoded), PNG (lossless, large) or WebP (Ximilar's own
     /// file, as it comes).
     CropFormat { Jpeg = "jpg", Png = "png", Webp = "webp" } default Jpeg
@@ -292,6 +315,19 @@ impl SessionOptions {
             (Task::Condition, _) => GradingMode::Condition,
             (Task::Crop, _) => GradingMode::Off,
         }
+    }
+
+    /// What happens to each card, in order: its identification, its grading (a job of the card-grader, or the local
+    /// model), its crop (always a job of the card-grader).
+    pub fn stages(&self) -> Vec<Stage> {
+        [
+            (self.identifies(), Stage::Identify),
+            (self.grading_mode() != GradingMode::Off, Stage::Grade),
+            (self.crops(), Stage::Crop),
+        ]
+        .into_iter()
+        .filter_map(|(on, stage)| on.then_some(stage))
+        .collect()
     }
 
     /// Identified or graded on this computer (cropping always calls Ximilar): a crop-only session never is.
@@ -700,6 +736,63 @@ mod tests {
             GradingMode::Condition
         );
         assert_eq!(with(Task::Crop, GradingMode::Grade), GradingMode::Off);
+    }
+
+    #[test]
+    fn each_task_has_its_stages() {
+        use Stage::*;
+        let with = |task, grading, save_crops| {
+            SessionOptions {
+                task,
+                grading,
+                save_crops,
+                ..SessionOptions::default()
+            }
+            .stages()
+        };
+        assert_eq!(with(Task::Identify, GradingMode::Off, false), [Identify]);
+        assert_eq!(
+            with(Task::Identify, GradingMode::Grade, true),
+            [Identify, Grade, Crop]
+        );
+        assert_eq!(with(Task::Grade, GradingMode::Off, false), [Grade]);
+        assert_eq!(with(Task::Condition, GradingMode::Off, true), [Grade, Crop]);
+        assert_eq!(with(Task::Crop, GradingMode::Grade, false), [Crop]);
+
+        // A card owing a stage goes on there; when the options dropped the stage since, at the next one left.
+        assert_eq!(Stage::resume(&[Identify, Grade, Crop], Grade), 1);
+        assert_eq!(Stage::resume(&[Identify, Crop], Grade), 1);
+        assert_eq!(Stage::resume(&[Crop], Crop), 0);
+        assert_eq!(Stage::resume(&[Identify], Crop), 1, "nothing left to do");
+    }
+
+    /// What a session's options mean is written twice, here and in `src/lib/format.ts` (`gradingOf`, `usesApi`,
+    /// `agentOf`, `cropsOf`). Both are checked against the same cases, so neither drifts from the other.
+    #[test]
+    fn options_mean_what_the_shared_cases_say() {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Case {
+            options: SessionOptions,
+            grading_mode: GradingMode,
+            uses_api: bool,
+            agent: bool,
+            crops: bool,
+        }
+        let cases: Vec<Case> =
+            serde_json::from_str(include_str!("../../src/lib/session-options.cases.json")).unwrap();
+        assert!(cases.len() > 10);
+        for case in cases {
+            let o = &case.options;
+            let what = format!(
+                "{:?} by {:?}, grading {:?}, crops {}, sync {}",
+                o.task, o.engine, o.grading, o.save_crops, o.sync_remote
+            );
+            assert_eq!(o.grading_mode(), case.grading_mode, "{what}");
+            assert_eq!(o.uses_api(), case.uses_api, "{what}");
+            assert_eq!(o.agent(), case.agent, "{what}");
+            assert_eq!(o.crops(), case.crops, "{what}");
+        }
     }
 
     #[test]

@@ -90,7 +90,11 @@ state from them.
   the wrapper and types in `src/lib/api.ts`, and a mock in `src/lib/demo.ts`. Types are written by hand; keep
   Rust (`#[serde(rename_all = "camelCase")]`) and TypeScript in sync.
 - **Schema changes** go in a new `src-tauri/migrations/NNN_name.sql` appended to `MIGRATIONS` in `db.rs`. Never edit a
-  released migration.
+  released migration. A column every row needs goes into `db::ITEM_SUMMARY` and is read by name (`col!("…")`,
+  found when compiling), never by its place.
+- **What a session's options mean** (`SessionOptions::grading_mode`, `uses_api`, `agent`, `crops` and their mirrors
+  `gradingOf`, `usesApi`, `agentOf`, `cropsOf` in `format.ts`) is checked on both sides against
+  `src/lib/session-options.cases.json`: a changed rule changes the cases.
 - **Pipeline changes** (runner, sync, sources, Ximilar clients) need a test; extend the wiremock end-to-end tests in
   `runner.rs` (`folder_session_end_to_end`, `csv_import_end_to_end`) rather than calling real APIs.
 - **Operations with logic beyond one `Db`/`Runner` call** (create/delete/import a session, exports, eBay jobs,
@@ -149,19 +153,33 @@ state from them.
   mirrored by `gradingOf` in `format.ts`: grade-only is `grade` or `centering`, condition-only `condition`; locally
   through `grade_locally`). Their items keep `id_type` NULL, which is what keeps them out of review (`TO_REVIEW`,
   `needsReview`) and the Cards page; they never sync to Cards Cloud, and the session page drops review, sell and
-  turn actions for them. `settings.default_task` is where the setup wizard's first question lands.
+  turn actions for them. `settings.default_task` is where the setup wizard's first question lands. A session with
+  cards can't change between identifying and not (`commands::keeps_its_kind`; the dialog disables those tasks).
 - **Crops** (`crop_level`, `grading::build_crop_request`: both sides as records with `level`; always the API, also in
   a local session): a crop-only session, or any other with `options.save_crops` (`SessionOptions::crops`,
-  `cropsOf`). The crop is the card's second async job (`items.crop_job_id`, migration 008), submitted after its
-  identification/grading (`Runner::submit_crop`; a failure then fails only the crop, as grading's does); the card
-  stays `grading` until both jobs are stored (`Db::set_job`/`jobs`, `save_grading` and `save_crop` each clear their
-  job id). `Runner::store_crop` downloads each side's WebP and writes `<file stem>.<ext>` into `options.crop_folder`
-  in `options.crop_format` (`crop_file`: WebP as it came, JPEG q95 or PNG encoded from it; empty folder =
+  `cropsOf`). The crop is the card's second async job, submitted after its identification/grading
+  (`Runner::submit_crop`). `Runner::store_crop` downloads each side's WebP and writes `<file stem>.<ext>` into
+  `options.crop_folder` in `options.crop_format` (`crop_file`: WebP as it came, JPEG q95 or PNG encoded from it; empty folder =
   `<session>/crops`, deleted with the session, so the dialog asks for a folder; `settings.default_crop_folder` and
   `default_crop_format` remember the last); a taken name gets `_2`, `_3`… but a card cropped again
   overwrites its own (`crop_path`). Paths are `items.crop_images` (apart from grading overlays; deleting a card
   leaves them). The crop folder may not be the folder read or watched (`valid_crop_folder`), and an agent's must be
-  outside the app's folders (`tools::crop_folder`).
+  outside the app's folders (`tools::crop_folder`). The webview is served only the app's own folder
+  (`assetProtocol.scope`), so `get_item` allows the folders of a card's crops (`commands::show_crops`); the folder
+  picker allows a picked one too, but only until the app quits.
+- **A card's pass** (`Runner::recognize_item`): the stages its session has, in order (`SessionOptions::stages`:
+  identify, grade, crop; `run_stage` picks what does each by the options). The first stage failing is the card
+  failing (`process`: offline pauses, a refused token stops the run). A later stage that can't pass fails only that
+  part (`Db::fail_job`, "grading: …" / "crop: …") and ends the pass; one stopped, offline or refused for the token
+  (`comes_back`) leaves the card in the queue owing that stage (`items.stage`), and the next run goes on there
+  (`Stage::resume`: at the next stage left, if the options dropped that one since) without identifying it again.
+  `Db::requeue` (retry, Analyse again) is a pass from the start.
+- **Async jobs** (`item_jobs`, migration 010: one row per card and `JobKind`, grading or crop): `Db::set_job` when
+  submitted (one call), gone when stored (`save_grading`, `save_crop`), kept with why when failed (`fail_job`, or a
+  result with an error). The card's status and error follow from its jobs (`SETTLED`: `grading` while one is out,
+  else `error` with what the failed ones say, else `done`), so a failed crop never hides a grading still to come.
+  A result changes the status only of a card the dispatcher has let go (`settle`); one queued, just claimed or
+  owing a stage is settled when its pass ends (`Db::finish_pass`). `Db::jobs` is what the poller asks about.
 - Cards Cloud (`cards-cloud/v2`, formerly `cardstream/v2`) is shared with Ximilar's Cardstream live-stream app;
   a remote session's `client.name` / `platform` tells which app made it (Cardloader sends `client.name: "cardloader"`).
 - Cards Cloud rows are keyed by `event_id`. Re-uploading a known row never changes its card fields, so a user's
@@ -200,10 +218,13 @@ state from them.
   (client credentials: the Settings keyset's App ID + Cert ID, or `EBAY_APP_ID` = base64 `client_id:secret`, which
   tests ignore unless `CARDLOADER_REAL_EBAY=1`, and never with a mock `api_base`). `search_for` builds the query and
   category from the card (TCG 183454, sports singles 261328, comics 63; condition 2750 graded / 4000 ungraded),
-  fixed price unless asked for auctions. `AppState::find_ebay_listings` / `keep_ebay_listings` (Tauri command and MCP
-  tools) store `items.market` (all listings, `counted` flags, the agent's note) and `items.market_range`
-  (`PriceRange`, read with every row for the session table's eBay column), migration 009. `real_ebay_search` is the
-  opt-in check against eBay.
+  fixed price unless asked for auctions. The card is typed as for listing it (`listing::Collectible::of`: its
+  `id_type`, else its game or sport, which is what a slab has). `AppState::find_ebay_listings` /
+  `keep_ebay_listings` (Tauri commands and MCP tools; the panel's ticks are the user's `keep`, which drops the
+  agent's note) store `items.market` (all listings, `counted` flags, the agent's note) and `items.market_range`
+  (`PriceRange`, read with every row for the session table's eBay column), migration 009. Both are dropped when the
+  card becomes another one (`db::OTHER_CARD`: a new recognition, a pick, typed card fields). `real_ebay_search` is
+  the opt-in check against eBay.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail
@@ -215,7 +236,8 @@ state from them.
   rows, the agents' `turn_cards_upright`) turns only the cards tagged upside down: rows don't carry the tag. Cards
   Cloud's image keeps the old picture, as does a live eBay listing until a draft job updates it.
 - **Offline**: a card whose API call still fails after the retries with a network error, 429 or 5xx goes back to
-  the queue and the session pauses with the reason in `sessions.error` (`Runner::pause_with`); Resume clears it.
+  the queue (owing the stage that failed, see "A card's pass") and the session pauses with the reason in
+  `sessions.error` (`Runner::pause_with`); Resume clears it.
   The dispatcher waits for cards in flight before a run ends, so a card put back is never stranded.
 - **TWAIN driver settings**: `scanner_driver_settings` opens the driver's own dialog through the sidecar's
   `configure` (automatic crop, deskew, …) and keeps them in `<config>/twain/<device>.bin`; every scan replays

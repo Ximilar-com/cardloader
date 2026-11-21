@@ -115,6 +115,7 @@ export default {
     noPrices: "None of the listings is this card.",
     auction: "Auction",
     leftOut: "left out",
+    counts: "Count this listing in the price range",
     searched: "“{query}”, {date} · {total} on eBay",
     leftOutCount: { one: "{count} left out.", other: "{count} left out." },
   },

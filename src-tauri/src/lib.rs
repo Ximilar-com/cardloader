@@ -94,6 +94,7 @@ pub fn run() {
             commands::session_folder,
             commands::crops_folder,
             commands::find_ebay_listings,
+            commands::keep_ebay_listings,
             commands::export_csv,
             commands::preview_csv,
             commands::import_csv,

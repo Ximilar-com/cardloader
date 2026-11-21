@@ -25,6 +25,8 @@ pub enum ApiError {
     NoToken,
     #[error("eBay is not connected — connect it in Settings")]
     NotConnected,
+    #[error("enter your eBay App ID and Cert ID in Settings → Selling to search eBay listings")]
+    NoEbayKeys,
     #[error("{0:?} is not a Cards Cloud id")]
     BadId(String),
 }
@@ -49,7 +51,7 @@ impl ApiError {
                 401..=403 => Failure::Auth,
                 _ => Failure::Reject,
             },
-            ApiError::NoToken | ApiError::NotConnected => Failure::Auth,
+            ApiError::NoToken | ApiError::NotConnected | ApiError::NoEbayKeys => Failure::Auth,
             ApiError::Decode(_) | ApiError::Cancelled | ApiError::BadId(_) => Failure::Reject,
         }
     }

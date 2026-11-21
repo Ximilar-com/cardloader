@@ -28,7 +28,16 @@ import {
   type SourceKind,
 } from "../lib/api";
 import { locale, useT } from "../i18n";
-import { dateTime, engineLabels, gradingLabels, idModeLabels, price, sourceLabels, taskLabels } from "../lib/format";
+import {
+  dateTime,
+  engineLabels,
+  engineOf,
+  gradingLabels,
+  idModeLabels,
+  price,
+  sourceLabels,
+  taskLabels,
+} from "../lib/format";
 
 const SOURCE_ICONS = { folder: FolderOpen, watch_folder: Eye, scanner: ScanLine, csv: FileSpreadsheet };
 /** 53 weeks: the heatmap's columns. */
@@ -438,9 +447,8 @@ function Defaults({ settings }: { settings: SettingsView }) {
     t("dashboard.defaults.cardsFrom"),
     settings.defaultSources.map((s) => sourceLabels()[s]).join(", ") || sourceLabels().folder,
   ];
-  // Only identification can be an agent's: grading alone goes to Ximilar.
-  const engineOf = settings.engine === "agent" && task !== "identify" ? "ximilar" : settings.engine;
-  const engine = engineOf === "local" ? t("dashboard.defaults.localModel") : engineLabels()[engineOf];
+  const by = engineOf({ task, engine: settings.engine });
+  const engine = by === "local" ? t("dashboard.defaults.localModel") : engineLabels()[by];
   const crops: [string, string] = [
     t("dashboard.defaults.crops"),
     settings.defaultSaveCrops ? t("common.on") : t("common.off"),

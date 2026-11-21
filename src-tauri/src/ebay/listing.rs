@@ -51,9 +51,9 @@ pub fn setup_missing(cfg: &EbaySettings) -> Option<&'static str> {
         || cfg.payment_policy_id.is_empty()
         || cfg.return_policy_id.is_empty()
     {
-        Some("choose your shipping, payment and return policies in Settings › eBay")
+        Some("choose your shipping, payment and return policies in Settings → Selling")
     } else if cfg.location_key.is_empty() {
-        Some("choose the location cards ship from in Settings › eBay")
+        Some("choose the location cards ship from in Settings → Selling")
     } else {
         None
     }
@@ -169,19 +169,45 @@ pub fn plan(item: &ItemSummary) -> Result<Listing, String> {
 }
 
 pub fn kind(item: &ItemSummary) -> Result<Kind, String> {
-    match item.id_type.as_deref() {
-        Some("tcg") => return Ok(Kind::Tcg),
-        Some("sport") => return Ok(Kind::Sport),
-        Some("comics") => return Err("comics can't be listed on eBay yet".into()),
-        _ => {}
+    match Collectible::of(item) {
+        Some(Collectible::Card(kind)) => Ok(kind),
+        Some(Collectible::Comic) => Err("comics can't be listed on eBay yet".into()),
+        None => Err("unknown card type (only trading and sports cards are listed)".into()),
     }
-    let sub = item.card.subcategory.as_str();
-    if TCG_GAMES.iter().any(|g| g.eq_ignore_ascii_case(sub)) {
-        Ok(Kind::Tcg)
-    } else if SPORTS.iter().any(|s| s.eq_ignore_ascii_case(sub)) {
-        Ok(Kind::Sport)
-    } else {
-        Err("unknown card type (only trading and sports cards are listed)".into())
+}
+
+/// What an identified card is to eBay: listing and searching (`browse`) type it the same way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Collectible {
+    Card(Kind),
+    Comic,
+}
+
+impl Collectible {
+    /// By the card's type as identified, else by its game or sport: a slab's label names neither category.
+    pub fn of(item: &ItemSummary) -> Option<Self> {
+        match item.id_type.as_deref() {
+            Some("tcg") => return Some(Collectible::Card(Kind::Tcg)),
+            Some("sport") => return Some(Collectible::Card(Kind::Sport)),
+            Some("comics") => return Some(Collectible::Comic),
+            _ => {}
+        }
+        let sub = item.card.subcategory.as_str();
+        if TCG_GAMES.iter().any(|g| g.eq_ignore_ascii_case(sub)) {
+            Some(Collectible::Card(Kind::Tcg))
+        } else if SPORTS.iter().any(|s| s.eq_ignore_ascii_case(sub)) {
+            Some(Collectible::Card(Kind::Sport))
+        } else {
+            None
+        }
+    }
+
+    /// EBAY_US's category: the cards' own, or Comic Books & Memorabilia.
+    pub fn category(self) -> &'static str {
+        match self {
+            Collectible::Card(kind) => kind.category(),
+            Collectible::Comic => "63",
+        }
     }
 }
 

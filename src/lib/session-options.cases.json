@@ -1,0 +1,153 @@
+[
+  {
+    "options": { "task": "identify", "engine": "ximilar", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "identify", "engine": "local", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "grade",
+    "usesApi": false,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "identify", "engine": "local", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "identify", "engine": "local", "grading": "off", "saveCrops": true, "syncRemote": false },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true
+  },
+  {
+    "options": { "task": "identify", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": true,
+    "crops": false
+  },
+  {
+    "options": { "task": "identify", "engine": "agent", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": true,
+    "crops": false
+  },
+  {
+    "options": { "task": "identify", "engine": "agent", "grading": "off", "saveCrops": true, "syncRemote": false },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": true,
+    "crops": true
+  },
+  {
+    "options": { "task": "identify", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": true,
+    "crops": false
+  },
+  {
+    "options": { "task": "grade", "engine": "ximilar", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": {
+      "task": "grade",
+      "engine": "ximilar",
+      "grading": "condition",
+      "saveCrops": false,
+      "syncRemote": false
+    },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": {
+      "task": "grade",
+      "engine": "ximilar",
+      "grading": "centering",
+      "saveCrops": false,
+      "syncRemote": false
+    },
+    "gradingMode": "centering",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "grade", "engine": "local", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "gradingMode": "grade",
+    "usesApi": false,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "grade", "engine": "local", "grading": "off", "saveCrops": true, "syncRemote": false },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": true
+  },
+  {
+    "options": { "task": "grade", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": {
+      "task": "condition",
+      "engine": "ximilar",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false
+    },
+    "gradingMode": "condition",
+    "usesApi": true,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "condition", "engine": "local", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "condition",
+    "usesApi": false,
+    "agent": false,
+    "crops": false
+  },
+  {
+    "options": { "task": "crop", "engine": "ximilar", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true
+  },
+  {
+    "options": { "task": "crop", "engine": "local", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true
+  },
+  {
+    "options": { "task": "crop", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true
+  }
+]

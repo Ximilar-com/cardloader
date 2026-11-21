@@ -63,7 +63,7 @@ pub struct Settings {
     pub default_crop_format: CropFormat,
     pub default_scanner: Option<String>,
     pub scan: ScanSettings,
-    /// What new sessions do: identify the cards, or only crop them.
+    /// What new sessions do: identify the cards, or only grade them, read their condition or crop them.
     pub default_task: Task,
     pub default_id_mode: IdMode,
     pub default_grading: GradingMode,
@@ -147,7 +147,8 @@ impl Default for EbaySettings {
 pub struct McpSettings {
     pub enabled: bool,
     pub port: u16,
-    /// Create, run and stop sessions; accept, pick, edit, retry and turn cards; sync; CSV exports.
+    /// Create, run and stop sessions; identify, accept, pick, edit, retry and turn cards; search eBay's listings
+    /// (with the user's keyset); sync; CSV exports.
     pub allow_run: bool,
     /// Delete cards and sessions (also in Cards Cloud).
     pub allow_delete: bool,

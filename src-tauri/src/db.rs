@@ -21,18 +21,93 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/007_agent_review.sql"),
     include_str!("../migrations/008_crop.sql"),
     include_str!("../migrations/009_market.sql"),
+    include_str!("../migrations/010_jobs.sql"),
 ];
 
 #[derive(Clone)]
 pub struct Db(Arc<Mutex<Connection>>);
 
-const ITEM_SUMMARY_COLUMNS: &str =
-    "id, session_id, seq, status, front_path, back_path, thumb_path, id_type, \
-     name, full_name, set_name, set_code, card_number, series, year, subcategory, \
-     confidence, distance, price, grade, condition, error, synced_rev, rev, updated_at, \
-     picks, picks_synced, slab_company, slab_grade, slab_certificate, \
-     ebay_status, ebay_price, ebay_listing_id, ebay_error, reviewed, edited, notes, location, \
-     agent_reviewed, review_note, market_range";
+/// The columns of `items` an `ItemSummary` is read from, in the order every query that reads one selects them
+/// (`item_columns`). A column is read by its name (`col!`), so a new one goes anywhere in the list.
+const ITEM_SUMMARY: &[&str] = &[
+    "id",
+    "session_id",
+    "seq",
+    "status",
+    "front_path",
+    "back_path",
+    "thumb_path",
+    "id_type",
+    "name",
+    "full_name",
+    "set_name",
+    "set_code",
+    "card_number",
+    "series",
+    "year",
+    "subcategory",
+    "confidence",
+    "distance",
+    "price",
+    "grade",
+    "condition",
+    "error",
+    "synced_rev",
+    "rev",
+    "updated_at",
+    "picks",
+    "picks_synced",
+    "slab_company",
+    "slab_grade",
+    "slab_certificate",
+    "ebay_status",
+    "ebay_price",
+    "ebay_listing_id",
+    "ebay_error",
+    "reviewed",
+    "edited",
+    "notes",
+    "location",
+    "agent_reviewed",
+    "review_note",
+    "market_range",
+];
+
+/// The place of `name` in `ITEM_SUMMARY`. A name that isn't there doesn't compile (`col!`).
+const fn item_column(name: &str) -> usize {
+    let name = name.as_bytes();
+    let mut i = 0;
+    while i < ITEM_SUMMARY.len() {
+        let column = ITEM_SUMMARY[i].as_bytes();
+        let mut same = column.len() == name.len();
+        let mut b = 0;
+        while same && b < name.len() {
+            same = column[b] == name[b];
+            b += 1;
+        }
+        if same {
+            return i;
+        }
+        i += 1;
+    }
+    panic!("not a column of ITEM_SUMMARY")
+}
+
+/// A column of an `ItemSummary` row by its name, found when compiling.
+macro_rules! col {
+    ($name:literal) => {
+        const { item_column($name) }
+    };
+}
+
+/// The `ItemSummary` columns for a SELECT, each after `prefix` ("" or "i.").
+fn item_columns(prefix: &str) -> String {
+    ITEM_SUMMARY
+        .iter()
+        .map(|column| format!("{prefix}{column}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 /// An identified card nobody has accepted or corrected yet, whatever its confidence (the same rule as
 /// `needsReview` in `src/lib/cardview.ts`). A crop session's cards have no type: there is nothing to review.
@@ -40,7 +115,11 @@ const ITEM_SUMMARY_COLUMNS: &str =
 const TO_REVIEW: &str =
     "(i.status IN ('done', 'grading') AND i.reviewed = 0 AND i.id_type IS NOT NULL)";
 
-/// The async card-grader jobs a card can wait for at once.
+/// The card is another one now (a new recognition, another candidate picked, its fields typed): the eBay listings
+/// found for what it was say nothing about it.
+const OTHER_CARD: &str = "market = NULL, market_range = NULL";
+
+/// The async card-grader jobs a card can wait for at once, each a row of `item_jobs` (migration 010).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobKind {
     Grading,
@@ -48,11 +127,67 @@ pub enum JobKind {
 }
 
 impl JobKind {
-    fn column(self) -> &'static str {
+    /// The kind as stored, and as a card's error names it ("grading: …", "crop: …").
+    pub fn as_str(self) -> &'static str {
         match self {
-            JobKind::Grading => "grading_job_id",
-            JobKind::Crop => "crop_job_id",
+            JobKind::Grading => "grading",
+            JobKind::Crop => "crop",
         }
+    }
+
+    fn parse(text: &str) -> Option<Self> {
+        [JobKind::Grading, JobKind::Crop]
+            .into_iter()
+            .find(|k| k.as_str() == text)
+    }
+}
+
+/// A job of the card `items.id` that is still out.
+const JOB_OUT: &str =
+    "EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NULL)";
+
+/// What a card's jobs make of it: `grading` while one is out (whatever failed is said once none is), else `error`
+/// with what the failed ones say (the grading's first), else `done`.
+const SETTLED: &str = "status = CASE
+        WHEN EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NULL) THEN 'grading'
+        WHEN EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NOT NULL) THEN 'error'
+        ELSE 'done' END,
+    error = CASE
+        WHEN EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NULL) THEN NULL
+        ELSE (SELECT group_concat(error, '; ') FROM
+            (SELECT error FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NOT NULL ORDER BY kind DESC))
+        END";
+
+/// A job's result changes the status only of a card the dispatcher has let go. One in the queue, just claimed
+/// (`recognizing`) or part-way through its pass (it owes a stage) is settled when the pass ends
+/// (`Db::finish_pass`): until then its status is the dispatcher's.
+fn settle(c: &Connection, id: i64) -> rusqlite::Result<usize> {
+    c.execute(
+        &format!(
+            "UPDATE items SET {SETTLED}
+             WHERE id = ?1 AND stage IS NULL AND status IN ('grading', 'done', 'error')"
+        ),
+        params![id],
+    )
+}
+
+/// The job stops being out: gone when it was stored, kept with why when it failed.
+fn close_job(
+    c: &Connection,
+    id: i64,
+    kind: JobKind,
+    error: Option<&str>,
+) -> rusqlite::Result<usize> {
+    match error {
+        None => c.execute(
+            "DELETE FROM item_jobs WHERE item_id = ?1 AND kind = ?2",
+            params![id, kind.as_str()],
+        ),
+        Some(error) => c.execute(
+            "INSERT INTO item_jobs (item_id, kind, error) VALUES (?1, ?2, ?3)
+             ON CONFLICT (item_id, kind) DO UPDATE SET error = excluded.error",
+            params![id, kind.as_str(), error],
+        ),
     }
 }
 
@@ -275,15 +410,16 @@ impl Db {
     }
 
     /// After a restart nothing is running: running sessions become paused, half-done items queued. An item
-    /// waiting for grading (or its crop) without a job (the app quit before it was submitted) has nothing to poll,
-    /// so it is half-done too.
+    /// waiting for grading (or its crop) without a job out (the app quit before it was submitted) has nothing to
+    /// poll, so it is half-done too, as is one that still owes a stage of its pass.
     pub fn recover_interrupted(&self) -> Result<()> {
         self.with(|c| {
-            c.execute_batch(
+            c.execute_batch(&format!(
                 "UPDATE sessions SET status = 'paused' WHERE status = 'running';
                  UPDATE items SET status = 'queued' WHERE status = 'recognizing'
-                    OR (status = 'grading' AND grading_job_id IS NULL AND crop_job_id IS NULL);",
-            )
+                    OR (status = 'grading' AND NOT {JOB_OUT})
+                    OR (stage IS NOT NULL AND status != 'queued');"
+            ))
         })
     }
 
@@ -417,11 +553,7 @@ impl Db {
             "duplicates" => "copies > 1".into(),
             _ => "1".into(),
         };
-        let columns = ITEM_SUMMARY_COLUMNS
-            .split(',')
-            .map(|c| format!("i.{}", c.trim()))
-            .collect::<Vec<_>>()
-            .join(", ");
+        let columns = item_columns("i.");
         // Copies are counted over all identified cards, before the search narrows them.
         let sql = format!(
             "WITH i AS (
@@ -441,6 +573,8 @@ impl Db {
             "" => String::new(),
             q => format!("%{q}%"),
         };
+        // What the query selects after the card's own columns.
+        const MORE: usize = ITEM_SUMMARY.len();
         self.with(|c| {
             let mut stmt = c.prepare(&sql)?;
             let mut search = CardSearch::default();
@@ -448,11 +582,11 @@ impl Db {
                 Ok((
                     CardRow {
                         item: item_summary(r)?,
-                        session_name: r.get(41)?,
-                        copies: r.get(42)?,
+                        session_name: r.get(MORE)?,
+                        copies: r.get(MORE + 1)?,
                     },
-                    r.get::<_, i64>(43)?,
-                    r.get::<_, f64>(44)?,
+                    r.get::<_, i64>(MORE + 2)?,
+                    r.get::<_, f64>(MORE + 3)?,
                 ))
             })?;
             for row in rows {
@@ -504,35 +638,48 @@ impl Db {
         })
     }
 
+    /// The status the dispatcher gives a card. A failed card owes nothing: Analyse again is a pass from the start.
     pub fn set_item_status(&self, id: i64, status: ItemStatus, error: Option<&str>) -> Result<()> {
         self.with(|c| {
             c.execute(
-                "UPDATE items SET status = ?2, error = ?3, updated_at = ?4 WHERE id = ?1",
+                "UPDATE items SET status = ?2, error = ?3, updated_at = ?4,
+                    stage = CASE WHEN ?2 = 'error' THEN NULL ELSE stage END
+                 WHERE id = ?1",
                 params![id, status.as_str(), error, now()],
             )
         })?;
         Ok(())
     }
 
-    /// Re-queues failed items (and, with `all`, finished ones too).
+    /// Re-queues failed items (and, with `all`, finished ones too) for a pass from the start: what their last
+    /// pass still owed or had out is dropped.
     pub fn requeue(&self, session_id: &str, item_ids: Option<&[i64]>) -> Result<usize> {
-        self.with(|c| match item_ids {
-            Some(ids) => {
-                let mut n = 0;
-                for id in ids {
-                    n += c.execute(
-                        "UPDATE items SET status = 'queued', error = NULL, grading_job_id = NULL, crop_job_id = NULL
-                         WHERE id = ?1 AND session_id = ?2 AND status IN ('error', 'done')",
-                        params![id, session_id],
-                    )?;
+        const AGAIN: &str = "UPDATE items SET status = 'queued', error = NULL, stage = NULL";
+        self.with(|c| {
+            let n = match item_ids {
+                Some(ids) => {
+                    let mut n = 0;
+                    for id in ids {
+                        n += c.execute(
+                            &format!(
+                                "{AGAIN} WHERE id = ?1 AND session_id = ?2 AND status IN ('error', 'done')"
+                            ),
+                            params![id, session_id],
+                        )?;
+                    }
+                    n
                 }
-                Ok(n)
-            }
-            None => c.execute(
-                "UPDATE items SET status = 'queued', error = NULL, grading_job_id = NULL, crop_job_id = NULL
-                 WHERE session_id = ?1 AND status = 'error'",
+                None => c.execute(
+                    &format!("{AGAIN} WHERE session_id = ?1 AND status = 'error'"),
+                    params![session_id],
+                )?,
+            };
+            c.execute(
+                "DELETE FROM item_jobs WHERE item_id IN
+                    (SELECT id FROM items WHERE session_id = ?1 AND status = 'queued' AND stage IS NULL)",
                 params![session_id],
-            ),
+            )?;
+            Ok(n)
         })
     }
 
@@ -553,13 +700,15 @@ impl Db {
         let ts = now();
         self.with(|c| {
             c.execute(
+                &format!(
                 "UPDATE items SET id_type = ?2, name = ?3, full_name = ?4, set_name = ?5, set_code = ?6,
                     card_number = ?7, series = ?8, year = ?9, subcategory = ?10, confidence = ?11,
                     distance = ?12, price = ?13, recognition = ?14, calls = calls + ?15, status = ?16,
                     error = NULL, analyzed_at = ?17, updated_at = ?17, rev = rev + 1, slab_company = ?18,
                     slab_grade = ?19, slab_certificate = ?20, reviewed = 0, edited = 0,
-                    agent_reviewed = 0, review_note = NULL
-                 WHERE id = ?1",
+                    agent_reviewed = 0, review_note = NULL, {OTHER_CARD}
+                 WHERE id = ?1"
+                ),
                 params![
                     id,
                     id_type,
@@ -603,11 +752,13 @@ impl Db {
         let ts = now();
         self.with(|c| {
             c.execute(
-                "UPDATE items SET name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6,
-                    series = ?7, year = ?8, subcategory = ?9, confidence = ?10, distance = ?11, price = ?12,
-                    recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14,
-                    agent_reviewed = ?15, review_note = ?16
-                 WHERE id = ?1",
+                &format!(
+                    "UPDATE items SET name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6,
+                        series = ?7, year = ?8, subcategory = ?9, confidence = ?10, distance = ?11, price = ?12,
+                        recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14,
+                        agent_reviewed = ?15, review_note = ?16, {OTHER_CARD}
+                     WHERE id = ?1"
+                ),
                 params![
                     id,
                     card.name,
@@ -633,17 +784,21 @@ impl Db {
 
     /// The user typed the card's fields or price. Like a pick, it reaches Cards Cloud as a PATCH (`picks`
     /// counts it); notes and the location stay local. Only a changed card or price accepts it: notes or a location
-    /// alone leave the review as it was (a card to review stays so, the user's accept stays theirs).
+    /// alone leave the review as it was (a card to review stays so, the user's accept stays theirs). Changed card
+    /// fields drop its eBay listings (`OTHER_CARD`); a new price alone doesn't.
     pub fn save_edit(&self, id: i64, edit: &ItemEdit, by: &Reviewer) -> Result<()> {
         let card = &edit.card;
         self.with(|c| {
             c.execute(
-                "WITH card AS (SELECT COALESCE(name, '') IS NOT ?2 OR COALESCE(full_name, '') IS NOT ?3
+                "WITH fields AS (SELECT COALESCE(name, '') IS NOT ?2 OR COALESCE(full_name, '') IS NOT ?3
                     OR COALESCE(set_name, '') IS NOT ?4 OR COALESCE(set_code, '') IS NOT ?5
                     OR COALESCE(card_number, '') IS NOT ?6 OR COALESCE(series, '') IS NOT ?7
-                    OR COALESCE(year, '') IS NOT ?8 OR COALESCE(subcategory, '') IS NOT ?9
-                    OR price IS NOT ?10 AS changed FROM items WHERE id = ?1)
+                    OR COALESCE(year, '') IS NOT ?8 OR COALESCE(subcategory, '') IS NOT ?9 AS other,
+                    price IS NOT ?10 AS priced FROM items WHERE id = ?1),
+                 card AS (SELECT other OR priced AS changed, other FROM fields)
                  UPDATE items SET
+                    market = CASE WHEN (SELECT other FROM card) THEN NULL ELSE market END,
+                    market_range = CASE WHEN (SELECT other FROM card) THEN NULL ELSE market_range END,
                     picks = picks + (SELECT changed FROM card), edited = edited OR (SELECT changed FROM card),
                     name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6, series = ?7,
                     year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12,
@@ -806,22 +961,72 @@ impl Db {
         Ok(())
     }
 
-    /// A submitted async job of the card (one call): it waits in `grading` until every job it has is stored.
-    pub fn set_job(&self, id: i64, kind: JobKind, job_id: &str) -> Result<()> {
-        let column = kind.column();
+    /// The stage of its pass the card still owes (`items.stage`), if the pass was cut short.
+    pub fn stage(&self, id: i64) -> Result<Option<Stage>> {
+        self.with(|c| {
+            c.query_row("SELECT stage FROM items WHERE id = ?1", params![id], |r| {
+                r.get::<_, Option<String>>(0)
+            })
+        })
+        .map(|stage| stage.as_deref().and_then(Stage::find))
+    }
+
+    /// The card's pass now owes `stage` and what follows it: where a pass cut short goes on.
+    pub fn set_stage(&self, id: i64, stage: Stage) -> Result<()> {
         self.with(|c| {
             c.execute(
-                &format!(
-                    "UPDATE items SET {column} = ?2, calls = calls + 1, status = 'grading', updated_at = ?3
-                     WHERE id = ?1"
-                ),
-                params![id, job_id, now()],
+                "UPDATE items SET stage = ?2 WHERE id = ?1",
+                params![id, stage.as_str()],
             )
         })?;
         Ok(())
     }
 
-    /// A grading result. The card is done unless its crop is still to come.
+    /// A pass from the start: nothing of an earlier one is out or failed any more.
+    pub fn clear_jobs(&self, id: i64) -> Result<()> {
+        self.with(|c| c.execute("DELETE FROM item_jobs WHERE item_id = ?1", params![id]))?;
+        Ok(())
+    }
+
+    /// The card's pass is over: it owes nothing, and is what its jobs make of it (`SETTLED`).
+    pub fn finish_pass(&self, id: i64) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                &format!("UPDATE items SET stage = NULL, {SETTLED}, updated_at = ?2 WHERE id = ?1"),
+                params![id, now()],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// A submitted async job of the card (one call): it waits in `grading` until every job it has is stored.
+    pub fn set_job(&self, id: i64, kind: JobKind, job_id: &str) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "INSERT INTO item_jobs (item_id, kind, job_id) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (item_id, kind) DO UPDATE SET job_id = excluded.job_id, error = NULL",
+                params![id, kind.as_str(), job_id],
+            )?;
+            c.execute(
+                "UPDATE items SET calls = calls + 1, status = 'grading', updated_at = ?2 WHERE id = ?1",
+                params![id, now()],
+            )
+        })?;
+        Ok(())
+    }
+
+    /// The card's job failed (or couldn't be submitted): only that part of the card fails. Its other job, if one is
+    /// out, is still polled and stored, and the card's error says what failed.
+    pub fn fail_job(&self, id: i64, kind: JobKind, error: &str) -> Result<()> {
+        self.with(|c| {
+            close_job(c, id, kind, Some(error))?;
+            settle(c, id)
+        })?;
+        Ok(())
+    }
+
+    /// A grading result, with `error` when the grader answered but couldn't grade the card. The card is done unless
+    /// its crop is still to come.
     pub fn save_grading(
         &self,
         id: i64,
@@ -829,15 +1034,17 @@ impl Db {
         condition: Option<&str>,
         raw: &Value,
         images: &[String],
+        error: Option<&str>,
     ) -> Result<()> {
         self.with(|c| {
             c.execute(
-                "UPDATE items SET grade = ?2, condition = ?3, grading = ?4, grading_images = ?5, grading_job_id = NULL,
-                    status = CASE WHEN crop_job_id IS NULL THEN 'done' ELSE 'grading' END,
-                    error = NULL, updated_at = ?6, rev = rev + 1, analyzed_at = COALESCE(analyzed_at, ?6)
+                "UPDATE items SET grade = ?2, condition = ?3, grading = ?4, grading_images = ?5, updated_at = ?6,
+                    rev = rev + 1, analyzed_at = COALESCE(analyzed_at, ?6)
                  WHERE id = ?1",
                 params![id, grade, condition, raw.to_string(), serde_json::to_string(images).unwrap_or_default(), now()],
-            )
+            )?;
+            close_job(c, id, JobKind::Grading, error)?;
+            settle(c, id)
         })?;
         Ok(())
     }
@@ -853,13 +1060,13 @@ impl Db {
     ) -> Result<()> {
         self.with(|c| {
             c.execute(
-                "UPDATE items SET crop = ?2, crop_images = ?3, crop_job_id = NULL,
-                    status = CASE WHEN ?4 IS NOT NULL THEN 'error' WHEN grading_job_id IS NOT NULL THEN 'grading'
-                        ELSE 'done' END,
-                    error = ?4, analyzed_at = COALESCE(analyzed_at, ?5), updated_at = ?5
+                "UPDATE items SET crop = ?2, crop_images = ?3, analyzed_at = COALESCE(analyzed_at, ?4),
+                    updated_at = ?4
                  WHERE id = ?1",
-                params![id, raw.to_string(), serde_json::to_string(images).unwrap_or_default(), error, now()],
-            )
+                params![id, raw.to_string(), serde_json::to_string(images).unwrap_or_default(), now()],
+            )?;
+            close_job(c, id, JobKind::Crop, error)?;
+            settle(c, id)
         })?;
         Ok(())
     }
@@ -883,27 +1090,21 @@ impl Db {
         Ok(())
     }
 
-    /// The async jobs a session's cards wait for: (item id, kind, job id).
+    /// The async jobs a session's cards wait for, a card's grading before its crop: (item id, kind, job id).
     pub fn jobs(&self, session_id: &str) -> Result<Vec<(i64, JobKind, String)>> {
         self.with(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, grading_job_id, crop_job_id FROM items
-                 WHERE session_id = ?1 AND status = 'grading'
-                    AND (grading_job_id IS NOT NULL OR crop_job_id IS NOT NULL)
-                 ORDER BY seq",
+                "SELECT j.item_id, j.kind, j.job_id FROM item_jobs j JOIN items i ON i.id = j.item_id
+                 WHERE i.session_id = ?1 AND j.error IS NULL AND j.job_id IS NOT NULL
+                 ORDER BY i.seq, j.kind DESC",
             )?;
             let rows = stmt.query_map(params![session_id], |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, Option<String>>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                ))
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
             })?;
             let mut jobs = Vec::new();
             for row in rows {
-                let (id, grading, crop) = row?;
-                jobs.extend(grading.map(|j| (id, JobKind::Grading, j)));
-                jobs.extend(crop.map(|j| (id, JobKind::Crop, j)));
+                let (id, kind, job) = row?;
+                jobs.extend(JobKind::parse(&kind).map(|kind| (id, kind, job)));
             }
             Ok(jobs)
         })
@@ -912,7 +1113,8 @@ impl Db {
     pub fn items(&self, session_id: &str) -> Result<Vec<ItemSummary>> {
         self.with(|c| {
             let mut stmt = c.prepare(&format!(
-                "SELECT {ITEM_SUMMARY_COLUMNS} FROM items WHERE session_id = ?1 ORDER BY seq"
+                "SELECT {} FROM items WHERE session_id = ?1 ORDER BY seq",
+                item_columns("")
             ))?;
             let rows = stmt.query_map(params![session_id], item_summary)?;
             rows.collect()
@@ -922,7 +1124,7 @@ impl Db {
     pub fn item_summary(&self, id: i64) -> Result<ItemSummary> {
         self.with(|c| {
             c.query_row(
-                &format!("SELECT {ITEM_SUMMARY_COLUMNS} FROM items WHERE id = ?1"),
+                &format!("SELECT {} FROM items WHERE id = ?1", item_columns("")),
                 params![id],
                 item_summary,
             )
@@ -940,30 +1142,30 @@ impl Db {
                 |r| {
                     Ok(ItemDetail {
                         summary,
-                        event_id: r.get(0)?,
-                        preview_path: r.get(1)?,
-                        back_preview_path: r.get(2)?,
-                        recognition: json_col(r.get(3)?),
-                        grading: json_col(r.get(4)?),
-                        grading_images: json_col(r.get(5)?)
+                        event_id: r.get("event_id")?,
+                        preview_path: r.get("preview_path")?,
+                        back_preview_path: r.get("back_preview_path")?,
+                        recognition: json_col(r.get("recognition")?),
+                        grading: json_col(r.get("grading")?),
+                        grading_images: json_col(r.get("grading_images")?)
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
-                        calls: r.get(6)?,
-                        analyzed_at: r.get(7)?,
-                        remote_id: r.get(8)?,
-                        ebay_sku: r.get(9)?,
-                        ebay_offer_id: r.get(10)?,
-                        ebay_images: json_col(r.get(11)?)
+                        calls: r.get("calls")?,
+                        analyzed_at: r.get("analyzed_at")?,
+                        remote_id: r.get("remote_id")?,
+                        ebay_sku: r.get("ebay_sku")?,
+                        ebay_offer_id: r.get("ebay_offer_id")?,
+                        ebay_images: json_col(r.get("ebay_images")?)
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
-                        hosted_images: json_col(r.get(12)?)
+                        hosted_images: json_col(r.get("hosted_images")?)
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
-                        crop: json_col(r.get(13)?),
-                        crop_images: json_col(r.get(14)?)
+                        crop: json_col(r.get("crop")?),
+                        crop_images: json_col(r.get("crop_images")?)
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
-                        market: json_col(r.get(15)?).and_then(|v| serde_json::from_value(v).ok()),
+                        market: json_col(r.get("market")?).and_then(|v| serde_json::from_value(v).ok()),
                     })
                 },
             )
@@ -1158,65 +1360,71 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
     let text = |i: usize| -> rusqlite::Result<String> {
         Ok(r.get::<_, Option<String>>(i)?.unwrap_or_default())
     };
-    let synced_rev: i64 = r.get(22)?;
-    let rev: i64 = r.get(23)?;
-    let picks: i64 = r.get(25)?;
-    let picks_synced: i64 = r.get(26)?;
+    let synced_rev: i64 = r.get(col!("synced_rev"))?;
+    let rev: i64 = r.get(col!("rev"))?;
+    let picks: i64 = r.get(col!("picks"))?;
+    let picks_synced: i64 = r.get(col!("picks_synced"))?;
     Ok(ItemSummary {
-        id: r.get(0)?,
-        session_id: r.get(1)?,
-        seq: r.get(2)?,
-        status: ItemStatus::parse(&r.get::<_, String>(3)?),
-        front_path: r.get(4)?,
-        back_path: r.get(5)?,
-        thumb_path: r.get(6)?,
-        id_type: r.get(7)?,
+        id: r.get(col!("id"))?,
+        session_id: r.get(col!("session_id"))?,
+        seq: r.get(col!("seq"))?,
+        status: ItemStatus::parse(&r.get::<_, String>(col!("status"))?),
+        front_path: r.get(col!("front_path"))?,
+        back_path: r.get(col!("back_path"))?,
+        thumb_path: r.get(col!("thumb_path"))?,
+        id_type: r.get(col!("id_type"))?,
         card: CardFields {
-            name: text(8)?,
-            full_name: text(9)?,
-            set_name: text(10)?,
-            set_code: text(11)?,
-            card_number: text(12)?,
-            series: text(13)?,
-            year: text(14)?,
-            subcategory: text(15)?,
+            name: text(col!("name"))?,
+            full_name: text(col!("full_name"))?,
+            set_name: text(col!("set_name"))?,
+            set_code: text(col!("set_code"))?,
+            card_number: text(col!("card_number"))?,
+            series: text(col!("series"))?,
+            year: text(col!("year"))?,
+            subcategory: text(col!("subcategory"))?,
         },
-        confidence: r.get(16)?,
-        distance: r.get(17)?,
-        price: r.get(18)?,
-        grade: r.get(19)?,
-        condition: r.get(20)?,
+        confidence: r.get(col!("confidence"))?,
+        distance: r.get(col!("distance"))?,
+        price: r.get(col!("price"))?,
+        grade: r.get(col!("grade"))?,
+        condition: r.get(col!("condition"))?,
         slab: slab_label(r)?,
-        error: r.get(21)?,
+        error: r.get(col!("error"))?,
         synced: synced_rev > 0 && synced_rev == rev && picks == picks_synced,
-        updated_at: r.get(24)?,
+        updated_at: r.get(col!("updated_at"))?,
         picked: picks > 0,
-        edited: r.get(35)?,
-        reviewed: r.get(34)?,
-        agent_reviewed: r.get(38)?,
-        review_note: text(39)?,
-        notes: text(36)?,
-        location: text(37)?,
+        edited: r.get(col!("edited"))?,
+        reviewed: r.get(col!("reviewed"))?,
+        agent_reviewed: r.get(col!("agent_reviewed"))?,
+        review_note: text(col!("review_note"))?,
+        notes: text(col!("notes"))?,
+        location: text(col!("location"))?,
         ebay: ebay_listing(r)?,
-        market_range: json_col(r.get(40)?).and_then(|v| serde_json::from_value(v).ok()),
+        market_range: json_col(r.get(col!("market_range"))?)
+            .and_then(|v| serde_json::from_value(v).ok()),
     })
 }
 
-/// The eBay columns (30–33): a listing when any of them is set.
+/// The eBay columns: a listing when any of them is set.
 fn ebay_listing(r: &Row) -> rusqlite::Result<Option<EbayListing>> {
-    let status: Option<String> = r.get(30)?;
+    let status: Option<String> = r.get(col!("ebay_status"))?;
     let listing = EbayListing {
         status: status.as_deref().map(EbayStatus::parse),
-        price: r.get(31)?,
-        listing_id: r.get(32)?,
-        error: r.get(33)?,
+        price: r.get(col!("ebay_price"))?,
+        listing_id: r.get(col!("ebay_listing_id"))?,
+        error: r.get(col!("ebay_error"))?,
     };
     Ok((listing != EbayListing::default()).then_some(listing))
 }
 
-/// The slab columns (27–29): a label when any of them is set.
+/// The slab columns: a label when any of them is set.
 fn slab_label(r: &Row) -> rusqlite::Result<Option<SlabLabel>> {
-    let [company, grade, certificate] = [27, 28, 29].map(|i| r.get::<_, Option<String>>(i));
+    let [company, grade, certificate] = [
+        col!("slab_company"),
+        col!("slab_grade"),
+        col!("slab_certificate"),
+    ]
+    .map(|i| r.get::<_, Option<String>>(i));
     let (company, grade, certificate) = (company?, grade?, certificate?);
     if company.is_none() && grade.is_none() && certificate.is_none() {
         return Ok(None);
@@ -1656,7 +1864,7 @@ mod tests {
         assert_eq!(db.claim_next(&s.id).unwrap(), Some(ids[0]));
 
         // The card is done once both its grading and its crop are in, whichever comes first.
-        db.save_grading(ids[1], Some(8.0), None, &Value::Null, &[])
+        db.save_grading(ids[1], Some(8.0), None, &Value::Null, &[], None)
             .unwrap();
         assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Grading);
         assert_eq!(
@@ -1669,5 +1877,233 @@ mod tests {
         assert_eq!(item.summary.status, ItemStatus::Done);
         assert_eq!(item.crop_images, vec!["/crops/a.jpg".to_string()]);
         assert!(db.jobs(&s.id).unwrap().is_empty());
+    }
+
+    fn queued_card(db: &Db, session: &Session) -> i64 {
+        let id = db
+            .insert_item(&session.id, "/a.jpg", None, &ItemImages::default(), None)
+            .unwrap();
+        db.claim_next(&session.id).unwrap();
+        id
+    }
+
+    /// A card's jobs fail apart: a crop without its back leaves the grading out, to be polled and stored, and the
+    /// card then says what failed. Analysing it again starts from nothing.
+    #[test]
+    fn a_failed_job_leaves_the_other_out() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let id = queued_card(&db, &s);
+        db.set_job(id, JobKind::Grading, "job-1").unwrap();
+        db.set_job(id, JobKind::Crop, "job-2").unwrap();
+        db.save_crop(
+            id,
+            &Value::Null,
+            &["/crops/a.jpg".into()],
+            Some("crop: back: No card detected"),
+        )
+        .unwrap();
+        let item = db.item_summary(id).unwrap();
+        assert_eq!(
+            (item.status, item.error),
+            (ItemStatus::Grading, None),
+            "not failed while a job is out"
+        );
+        assert_eq!(
+            db.jobs(&s.id).unwrap(),
+            vec![(id, JobKind::Grading, "job-1".to_string())]
+        );
+        db.save_grading(id, Some(8.0), None, &Value::Null, &[], None)
+            .unwrap();
+        let item = db.item_summary(id).unwrap();
+        assert_eq!(item.status, ItemStatus::Error);
+        assert_eq!(item.error.as_deref(), Some("crop: back: No card detected"));
+        assert_eq!(item.grade, Some(8.0));
+        assert!(db.jobs(&s.id).unwrap().is_empty());
+
+        // Both failing: the grading's reason first. A failed job is polled no more.
+        db.fail_job(id, JobKind::Grading, "grading failed: blurry")
+            .unwrap();
+        assert_eq!(
+            db.item_summary(id).unwrap().error.as_deref(),
+            Some("grading failed: blurry; crop: back: No card detected")
+        );
+        assert!(db.jobs(&s.id).unwrap().is_empty());
+
+        assert_eq!(db.requeue(&s.id, Some(&[id])).unwrap(), 1);
+        assert_eq!(db.claim_next(&s.id).unwrap(), Some(id));
+        db.finish_pass(id).unwrap();
+        let item = db.item_summary(id).unwrap();
+        assert_eq!((item.status, item.error), (ItemStatus::Done, None));
+    }
+
+    /// A pass cut short: the card is back in the queue owing a stage. A job of an earlier stage that comes in
+    /// meanwhile is stored without taking the card out of the queue, and a restart puts a card that owes a stage
+    /// back in it.
+    #[test]
+    fn a_card_owing_a_stage_stays_queued() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let id = queued_card(&db, &s);
+        db.set_job(id, JobKind::Grading, "job-1").unwrap();
+        db.set_stage(id, Stage::Crop).unwrap();
+        db.set_item_status(id, ItemStatus::Queued, None).unwrap();
+        db.save_grading(id, Some(9.0), None, &Value::Null, &[], None)
+            .unwrap();
+        let item = db.item_summary(id).unwrap();
+        assert_eq!((item.status, item.grade), (ItemStatus::Queued, Some(9.0)));
+        assert_eq!(db.stage(id).unwrap(), Some(Stage::Crop));
+
+        // The app quit while the crop was being submitted (the card was `grading` after its grade came in).
+        let other = queued_card(&db, &s);
+        db.set_job(other, JobKind::Grading, "job-2").unwrap();
+        db.set_stage(other, Stage::Crop).unwrap();
+        db.recover_interrupted().unwrap();
+        assert_eq!(db.item_summary(other).unwrap().status, ItemStatus::Queued);
+        assert_eq!(db.stage(other).unwrap(), Some(Stage::Crop));
+        assert_eq!(
+            db.jobs(&s.id).unwrap(),
+            vec![(other, JobKind::Grading, "job-2".to_string())],
+            "its grading is still polled"
+        );
+
+        // Part-way through its pass the card's status is the dispatcher's: a result that comes in before the next
+        // stage is submitted doesn't make the card done, the end of the pass does.
+        let third = queued_card(&db, &s);
+        db.set_job(third, JobKind::Grading, "job-3").unwrap();
+        db.set_stage(third, Stage::Crop).unwrap();
+        db.save_grading(third, Some(7.0), None, &Value::Null, &[], None)
+            .unwrap();
+        assert_eq!(db.item_summary(third).unwrap().status, ItemStatus::Grading);
+        db.finish_pass(third).unwrap();
+        assert_eq!(db.item_summary(third).unwrap().status, ItemStatus::Done);
+        assert_eq!(db.stage(third).unwrap(), None);
+
+        // A failed card owes nothing, and analysing it again is a pass from the start.
+        db.set_stage(other, Stage::Crop).unwrap();
+        db.set_item_status(other, ItemStatus::Error, Some("x"))
+            .unwrap();
+        assert_eq!(db.stage(other).unwrap(), None);
+        db.requeue(&s.id, None).unwrap();
+        assert_eq!(db.stage(other).unwrap(), None);
+        assert!(db.jobs(&s.id).unwrap().is_empty());
+    }
+
+    /// The eBay listings found for a card say nothing about another one: a new recognition, another candidate or
+    /// typed card fields drop them; a new price, notes or a location don't.
+    #[test]
+    fn another_card_drops_its_ebay_listings() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let id = queued_card(&db, &s);
+        let card = CardFields {
+            name: "Pikachu".into(),
+            ..Default::default()
+        };
+        let recognise = || {
+            db.save_recognition(
+                id,
+                "tcg",
+                &card,
+                Some("high"),
+                None,
+                None,
+                None,
+                &Value::Null,
+                1,
+                ItemStatus::Done,
+            )
+            .unwrap()
+        };
+        let listing = MarketListing {
+            id: "v1|1|0".into(),
+            price: 5.0,
+            currency: "USD".into(),
+            counted: true,
+            ..Default::default()
+        };
+        let search = || {
+            let market = EbayMarket {
+                query: "Pikachu".into(),
+                range: PriceRange::of(std::slice::from_ref(&listing)),
+                listings: vec![listing.clone()],
+                ..Default::default()
+            };
+            db.save_market(id, &market).unwrap()
+        };
+        let searched = || db.item(id).unwrap().market.is_some();
+        let edit = |name: &str, price, notes: &str| {
+            let edit = ItemEdit {
+                card: CardFields {
+                    name: name.into(),
+                    ..Default::default()
+                },
+                price,
+                notes: notes.into(),
+                location: String::new(),
+            };
+            db.save_edit(id, &edit, &Reviewer::User).unwrap()
+        };
+        recognise();
+        search();
+        edit("Pikachu", Some(4.0), "sleeved");
+        assert!(searched(), "a price and notes leave the listings");
+        assert!(db.item_summary(id).unwrap().market_range.is_some());
+
+        edit("Raichu", Some(4.0), "sleeved");
+        assert!(!searched(), "typed card fields");
+        assert!(db.item_summary(id).unwrap().market_range.is_none());
+
+        search();
+        db.save_pick(
+            id,
+            &card,
+            Some("high"),
+            None,
+            None,
+            &Value::Null,
+            &Reviewer::User,
+        )
+        .unwrap();
+        assert!(!searched(), "another candidate");
+
+        search();
+        recognise();
+        assert!(!searched(), "a new recognition");
+    }
+
+    /// A database of the version before `item_jobs` (migration 010): the jobs its cards wait for are still polled,
+    /// and a card that was done or failed has none.
+    #[test]
+    fn jobs_out_survive_the_migration() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..9] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch(
+            "PRAGMA user_version = 9;
+             INSERT INTO sessions (id, name, source_kind, id_mode, options, status, created_at)
+                VALUES ('s', 'Old', 'folder', 'auto', '{}', 'paused', '');
+             INSERT INTO items (session_id, seq, event_id, front_path, status, grading_job_id, crop_job_id,
+                    created_at, updated_at)
+                VALUES ('s', 1, 'a', '/a.jpg', 'grading', 'job-1', 'job-2', '', ''),
+                       ('s', 2, 'b', '/b.jpg', 'grading', NULL, 'job-3', '', ''),
+                       ('s', 3, 'c', '/c.jpg', 'error', 'job-4', NULL, '', '');",
+        )
+        .unwrap();
+        let db = Db::init(conn).unwrap();
+        let ids: Vec<i64> = db.items("s").unwrap().iter().map(|i| i.id).collect();
+        assert_eq!(
+            db.jobs("s").unwrap(),
+            vec![
+                (ids[0], JobKind::Grading, "job-1".to_string()),
+                (ids[0], JobKind::Crop, "job-2".to_string()),
+                (ids[1], JobKind::Crop, "job-3".to_string()),
+            ]
+        );
+        db.recover_interrupted().unwrap();
+        assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Grading);
+        db.save_crop(ids[1], &Value::Null, &[], None).unwrap();
+        assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Done);
     }
 }

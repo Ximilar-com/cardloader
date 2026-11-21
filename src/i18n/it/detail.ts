@@ -117,6 +117,7 @@ const messages: Messages<typeof en> = {
     noPrices: "Nessuna inserzione è questa carta.",
     auction: "Asta",
     leftOut: "esclusa",
+    counts: "Conta questa inserzione nella fascia di prezzo",
     searched: "«{query}», {date} · {total} su eBay",
     leftOutCount: { one: "{count} esclusa.", other: "{count} escluse." },
   },

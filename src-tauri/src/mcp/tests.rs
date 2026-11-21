@@ -346,7 +346,6 @@ async fn agent_runs_and_reviews_a_folder() {
     );
 }
 
-/// The app with agents on (any port, allowed what `mcp` says), Ximilar at `api`, its data and config in `dir`.
 /// An agent prices an identified card on eBay: the search goes out with the user's keyset (an application token),
 /// in the card's category, fixed price and ungraded; the listings and their range are kept on the card, and only
 /// those the agent keeps count. Without a keyset the tool says what to set up.
@@ -628,6 +627,7 @@ async fn agent_identifies_a_session() {
     assert!(state.runner.agent_waiting(None).is_empty());
 }
 
+/// The app with agents on (any port, allowed what `mcp` says), Ximilar at `api`, its data and config in `dir`.
 async fn app_with_agent(
     dir: &Path,
     api: &str,

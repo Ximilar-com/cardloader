@@ -40,6 +40,7 @@ import {
   basename,
   defaultSessionName,
   engineLabels,
+  engineOf,
   gradingLabels,
   agentOf,
   cropsOf,
@@ -239,6 +240,8 @@ export default function NewSessionDialog({
   const needsCsv = !editing && kind === "csv" && !csvPath.trim();
   const task: Task = options?.task ?? "identify";
   const identifies = task === "identify";
+  /** Whether the session edited identifies its cards, once it has some. */
+  const lockedKind = editing && from && from.counts.total > 0 ? from.options.task === "identify" : null;
   const crops = task === "crop";
   const savesCrops = !!options && cropsOf(options);
   // Crops go to a folder of the user's: the session's own folder would be deleted with the session.
@@ -280,8 +283,8 @@ export default function NewSessionDialog({
   const ready = models?.filter((m) => m.state === "ready") ?? [];
   const model = ready.find((m) => m.id === options?.localModel) ?? ready[0];
   const picked = options && local && model ? { ...options, localModel: model.id } : options;
-  // Only identified cards go to Cards Cloud.
-  const chosen = picked && !identifies ? { ...picked, syncRemote: false } : picked;
+  // Only identified cards go to Cards Cloud, and only identifying can be an agent's.
+  const chosen = picked && !identifies ? { ...picked, syncRemote: false, engine: engineOf(picked) } : picked;
   // A local or agent session may need Ximilar only to grade, crop or sync.
   const needsToken = !options || usesApi(options);
   const canRun = (!needsToken || tokenSet) && (!local || !!model) && (!agent || agentsReady);
@@ -452,7 +455,15 @@ export default function NewSessionDialog({
         {options && (
           <div>
             <label className="label">{t("newSession.task")}</label>
-            <Select value={task} onChange={chooseTask} options={taskOptions()} />
+            <Select
+              value={task}
+              onChange={chooseTask}
+              // A session with cards keeps identifying them, or keeps not: `update_session` refuses the change.
+              options={taskOptions().map((o) => ({
+                ...o,
+                disabled: lockedKind != null && (o.value === "identify") !== lockedKind,
+              }))}
+            />
           </div>
         )}
 
@@ -645,7 +656,7 @@ export default function NewSessionDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">{identifies ? t("newSession.identifyWith") : t("newSession.gradeWith")}</label>
-              <Select value={options.engine} onChange={chooseEngine} options={engineOptions(identifies)} />
+              <Select value={engineOf(options)} onChange={chooseEngine} options={engineOptions(identifies)} />
             </div>
             {local ? (
               <div>

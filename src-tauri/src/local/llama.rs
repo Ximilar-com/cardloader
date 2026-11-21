@@ -149,8 +149,8 @@ fn context_params(context_tokens: u32) -> LlamaContextParams {
 enum Prompting {
     /// llama.cpp formats it with a template it knows.
     Template(LlamaChatTemplate),
-    /// The profile writes the turn out.
-    Turn(catalog::Profile),
+    /// The profile writes the turn out: its `turn`.
+    Turn(&'static str),
 }
 
 pub struct LlamaVision {
@@ -222,8 +222,8 @@ impl LlamaVision {
             (Some(_), n) if n < 0 => layers,
             (Some(_), n) => (n as u32).min(layers),
         };
-        let prompting = if spec.profile.turn.is_some() {
-            Prompting::Turn(spec.profile)
+        let prompting = if let Some(turn) = spec.profile.turn {
+            Prompting::Turn(turn)
         } else {
             let template = match spec.profile.chat_template {
                 Some(name) => {
@@ -314,9 +314,7 @@ impl VisionModel for LlamaVision {
         let markers = vec![mtmd::mtmd_default_marker(); images.len()].join("\n");
         let content = format!("{markers}\n{prompt}");
         let mut text = match &self.prompting {
-            Prompting::Turn(profile) => profile
-                .user_turn(&content)
-                .ok_or_else(|| Error::msg("the profile writes no turn"))?,
+            Prompting::Turn(turn) => catalog::write_turn(turn, &content),
             Prompting::Template(template) => {
                 let message = LlamaChatMessage::new("user".into(), content)
                     .map_err(|e| err("bad prompt")(&e))?;

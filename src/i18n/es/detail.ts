@@ -117,6 +117,7 @@ const messages: Messages<typeof en> = {
     noPrices: "Ningún anuncio es esta carta.",
     auction: "Subasta",
     leftOut: "descartado",
+    counts: "Contar este anuncio en el rango de precios",
     searched: "«{query}», {date} · {total} en eBay",
     leftOutCount: { one: "{count} descartado.", other: "{count} descartados." },
   },

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::client::{self, EbayClient};
+use super::listing::{Collectible, Kind};
 use super::Hosts;
 use crate::model::{EbayMarket, ItemSummary, MarketListing, PriceRange, SlabLabel};
 use crate::settings::{EbaySettings, Secret, SettingsStore};
@@ -65,9 +66,6 @@ pub fn available(settings: &SettingsStore) -> bool {
     app_key(settings).is_some()
 }
 
-pub const NO_KEY: &str =
-    "enter your eBay App ID and Cert ID in Settings → Selling to search eBay listings";
-
 /// The application token (2 h), kept until shortly before it expires.
 #[derive(Default)]
 pub struct AppToken {
@@ -76,10 +74,7 @@ pub struct AppToken {
 
 impl AppToken {
     pub async fn client(&self, settings: &SettingsStore) -> Result<EbayClient, ApiError> {
-        let key = app_key(settings).ok_or_else(|| ApiError::Status {
-            status: 401,
-            detail: NO_KEY.into(),
-        })?;
+        let key = app_key(settings).ok_or(ApiError::NoEbayKeys)?;
         let mut current = self.current.lock().await;
         if let Some((basic, token, until)) = current.as_ref() {
             if *basic == key.basic && *until > Instant::now() + Duration::from_secs(300) {
@@ -139,11 +134,14 @@ pub fn search_for(item: &ItemSummary) -> Option<Search> {
     if c.name.trim().is_empty() && c.full_name.trim().is_empty() {
         return None;
     }
-    let kind = item.id_type.as_deref().unwrap_or("tcg");
-    let words: Vec<&str> = match kind {
-        "sport" => vec![&c.year, &c.set_name, &c.name, &c.series, &c.card_number],
-        "comics" => vec![&c.name, &c.card_number, &c.set_name],
-        _ => vec![
+    // A card of no known type (a slab whose label names no game) is searched as a trading card.
+    let what = Collectible::of(item).unwrap_or(Collectible::Card(Kind::Tcg));
+    let words: Vec<&str> = match what {
+        Collectible::Card(Kind::Sport) => {
+            vec![&c.year, &c.set_name, &c.name, &c.series, &c.card_number]
+        }
+        Collectible::Comic => vec![&c.name, &c.card_number, &c.set_name],
+        Collectible::Card(Kind::Tcg) => vec![
             &c.name,
             if c.set_code.is_empty() {
                 &c.set_name
@@ -163,15 +161,11 @@ pub fn search_for(item: &ItemSummary) -> Option<Search> {
     if let Some(SlabLabel { company, grade, .. }) = &item.slab {
         query = join(&[&query, company, grade]);
     }
-    let comics = kind == "comics";
     Some(Search {
         query,
-        category_id: Some(match kind {
-            "sport" => "261328",
-            "comics" => "63",
-            _ => "183454",
-        }),
-        condition_id: (!comics).then_some(if item.slab.is_some() {
+        category_id: Some(what.category()),
+        // Comics have no graded/ungraded condition of the cards' kind.
+        condition_id: (what != Collectible::Comic).then_some(if item.slab.is_some() {
             GRADED
         } else {
             UNGRADED
@@ -381,7 +375,31 @@ mod tests {
             },
             None,
         );
-        assert_eq!(search_for(&comic).unwrap().condition_id, None);
+        let s = search_for(&comic).unwrap();
+        assert_eq!((s.category_id, s.condition_id), (Some("63"), None));
+        // A slab is typed by its sport or game, as for listing it: a graded basketball card is a sports card.
+        let slab = item(
+            "slab",
+            CardFields {
+                name: "LeBron James".into(),
+                set_name: "Topps Chrome".into(),
+                card_number: "111".into(),
+                year: "2003".into(),
+                subcategory: "Basketball".into(),
+                ..CardFields::default()
+            },
+            Some(SlabLabel {
+                company: "PSA".into(),
+                grade: "10".into(),
+                certificate: "1".into(),
+            }),
+        );
+        let s = search_for(&slab).unwrap();
+        assert_eq!(s.query, "2003 Topps Chrome LeBron James 111 PSA 10");
+        assert_eq!(
+            (s.category_id, s.condition_id),
+            (Some("261328"), Some(GRADED))
+        );
         assert!(search_for(&item("tcg", CardFields::default(), None)).is_none());
     }
 

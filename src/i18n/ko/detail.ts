@@ -113,6 +113,7 @@ const messages: Messages<typeof en> = {
     noPrices: "이 카드인 판매 목록이 없습니다.",
     auction: "경매",
     leftOut: "제외",
+    counts: "이 매물을 가격대에 포함",
     searched: "“{query}”, {date} · eBay에 {total}건",
     leftOutCount: { other: "{count}건 제외." },
   },

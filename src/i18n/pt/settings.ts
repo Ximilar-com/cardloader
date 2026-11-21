@@ -123,7 +123,7 @@ const messages: Messages<typeof en> = {
     permissions: {
       run: "Executar e revisar",
       runHint:
-        "criar, executar e parar sessões; aceitar, escolher e editar cartas; sincronizar com o Cards Cloud; exportações CSV e TCGplayer",
+        "criar, executar e parar sessões; identificar, aceitar, escolher e editar cartas; buscar preços no eBay; sincronizar com o Cards Cloud; exportações CSV e TCGplayer",
       delete: "Excluir",
       deleteHint: "cartas e sessões, também no Cards Cloud",
       market: "Marketplaces",

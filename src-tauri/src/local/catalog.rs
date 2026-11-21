@@ -87,12 +87,12 @@ impl Profile {
         answer_prefix: "<|channel>thought\n<channel|>",
         ..Profile::GEMMA4
     };
+}
 
-    /// The user's turn with `message` in it, when the profile writes its turns out.
-    #[cfg_attr(not(feature = "local-model"), allow(dead_code))]
-    pub fn user_turn(&self, message: &str) -> Option<String> {
-        self.turn.map(|turn| turn.replace("{prompt}", message))
-    }
+/// A written-out user turn (`Profile::turn`) with `message` in it.
+#[cfg_attr(not(feature = "local-model"), allow(dead_code))]
+pub fn write_turn(turn: &str, message: &str) -> String {
+    turn.replace("{prompt}", message)
 }
 
 pub struct ModelSpec {
@@ -478,13 +478,13 @@ mod tests {
     fn gemma_4_writes_its_turns_out() {
         let e4b = find("gemma-4-e4b").unwrap().profile;
         assert_eq!(
-            e4b.user_turn("<__media__>\nWhat card?").as_deref(),
-            Some("<|turn>user\n<__media__>\nWhat card?<turn|>\n<|turn>model\n")
+            write_turn(e4b.turn.unwrap(), "<__media__>\nWhat card?"),
+            "<|turn>user\n<__media__>\nWhat card?<turn|>\n<|turn>model\n"
         );
         assert_eq!(e4b.answer_prefix, "");
         let large = find("gemma-4-12b").unwrap().profile;
         assert_eq!(large.turn, e4b.turn);
         assert_eq!(large.answer_prefix, "<|channel>thought\n<channel|>");
-        assert_eq!(Profile::QWEN35.user_turn("x"), None);
+        assert_eq!(Profile::QWEN35.turn, None);
     }
 }

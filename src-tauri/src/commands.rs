@@ -255,6 +255,17 @@ fn valid_crop_folder(options: &SessionOptions, source: SourceKind, source_ref: &
     Ok(())
 }
 
+/// Cards that were identified and cards that never were can't share a session: review, selling and Cards Cloud go
+/// by what the session does. Until it has cards, a session can become anything.
+fn keeps_its_kind(before: &Session, options: &SessionOptions) -> Result<()> {
+    if before.counts.total > 0 && before.options.identifies() != options.identifies() {
+        return Err(Error::msg(
+            "the session already has cards: make a new session to identify them, or to only grade or crop them",
+        ));
+    }
+    Ok(())
+}
+
 fn valid_name(name: &str) -> Result<&str> {
     let name = name.trim();
     if name.is_empty() {
@@ -284,6 +295,7 @@ pub fn update_session(
     let name = valid_name(&name)?;
     valid_options(&options)?;
     valid_crop_folder(&options, before.source_kind, &before.source_ref)?;
+    keeps_its_kind(&before, &options)?;
     state.db.update_session_meta(&id, name, id_mode, &options)?;
     if before.name != name {
         state.runner.push_remote_name(&id);
@@ -370,6 +382,13 @@ pub async fn find_ebay_listings(
     state.db.item(item_id)
 }
 
+/// Only these listings of the card's last search are the card, says the user: the range counts them alone.
+#[tauri::command]
+pub fn keep_ebay_listings(state: S, item_id: i64, listing_ids: Vec<String>) -> Result<ItemDetail> {
+    state.keep_ebay_listings(item_id, &listing_ids, "")?;
+    state.db.item(item_id)
+}
+
 impl AppState {
     /// Searches eBay for an identified card's active listings, by its fields or `query`, and keeps them and their
     /// price range on the card.
@@ -395,13 +414,22 @@ impl AppState {
         }
         let client = self.runner.ebay.app.client(&self.settings).await?;
         let (total, listings) = browse::search(&client, &search).await?;
+        // The card may have become another one meanwhile (a pick, an edit, a new recognition), which drops its
+        // listings: these are of the card it was.
+        let now = self.db.item_summary(item_id)?;
+        if now.card != item.card || now.id_type != item.id_type {
+            return Err(Error::msg(
+                "the card changed while eBay was searched: search again",
+            ));
+        }
         let market = browse::market(&search, total, listings);
         self.db.save_market(item_id, &market)?;
         self.runner.emit_item(item_id);
         Ok(market)
     }
 
-    /// Only these listings of the card's last search are the card: the range counts them alone.
+    /// Only these listings of the card's last search are the card: the range counts them alone. `note` is the
+    /// agent's reason; the user's choice has none, and takes an agent's away.
     pub fn keep_ebay_listings(
         &self,
         item_id: i64,
@@ -535,8 +563,28 @@ pub fn list_items(state: S, session_id: String) -> Result<Vec<ItemSummary>> {
 }
 
 #[tauri::command]
-pub fn get_item(state: S, id: i64) -> Result<ItemDetail> {
-    state.db.item(id)
+pub fn get_item(app: AppHandle, state: S, id: i64) -> Result<ItemDetail> {
+    let item = state.db.item(id)?;
+    show_crops(&app, &item);
+    Ok(item)
+}
+
+/// The webview is served only files of the app's own folder (`assetProtocol.scope` in `tauri.conf.json`), and crops
+/// are saved where the user chose: the card's panel can show them once their folder is allowed. A folder picked in
+/// a dialog is allowed too, but only until the app quits.
+fn show_crops(app: &AppHandle, item: &ItemDetail) {
+    use tauri::Manager;
+    let scope = app.asset_protocol_scope();
+    for picture in item.crop_images.iter().map(Path::new) {
+        if scope.is_allowed(picture) {
+            continue;
+        }
+        if let Some(folder) = picture.parent() {
+            if let Err(e) = scope.allow_directory(folder, false) {
+                tracing::warn!("cannot show the crops in {}: {e}", folder.display());
+            }
+        }
+    }
 }
 
 /// The user picked candidate `index` as the card's match.
@@ -1367,6 +1415,38 @@ mod tests {
         );
         assert_eq!(remote_session_id(&id.to_uppercase()).as_deref(), Some(id));
         assert_eq!(remote_session_id("not an id"), None);
+    }
+
+    /// A session can change what it does with its cards only while it has none.
+    #[test]
+    fn a_session_with_cards_keeps_its_kind() {
+        let db = Db::memory().unwrap();
+        let empty = db
+            .create_session(&NewSession {
+                name: "T".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: "/cards".into(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        let task = |task| SessionOptions {
+            task,
+            ..SessionOptions::default()
+        };
+        assert!(keeps_its_kind(&empty, &task(Task::Crop)).is_ok());
+        db.insert_item(
+            &empty.id,
+            "/cards/a.jpg",
+            None,
+            &ItemImages::default(),
+            None,
+        )
+        .unwrap();
+        let with_cards = db.session(&empty.id).unwrap();
+        assert!(keeps_its_kind(&with_cards, &task(Task::Identify)).is_ok());
+        assert!(keeps_its_kind(&with_cards, &task(Task::Crop)).is_err());
+        assert!(keeps_its_kind(&with_cards, &task(Task::Grade)).is_err());
     }
 
     /// The app without a Ximilar account, its files in `dir`.
