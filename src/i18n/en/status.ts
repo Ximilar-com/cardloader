@@ -72,6 +72,14 @@ export default {
     centering: "Centering only",
   },
   /** The session header's "Grading: …". */
+  prices: {
+    off: "Off",
+    ximilar: "Ximilar",
+    ebay: "eBay",
+    agent: "AI agent",
+  },
+  /** One task and what does it, in a session's summary line, e.g. "Grade: Local model". */
+  stageBy: "{stage}: {by}",
   gradingShort: {
     off: "Off",
     condition: "Condition",

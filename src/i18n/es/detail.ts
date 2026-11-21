@@ -32,6 +32,7 @@ const messages: Messages<typeof en> = {
     accepted: "Aceptaste esta coincidencia",
   },
   marketPrice: "Precio de mercado",
+  priceNote: "Precio puesto por el agente de IA: {note}",
   centering: "Centrado",
   condition: "Estado",
   grade: "Nota",

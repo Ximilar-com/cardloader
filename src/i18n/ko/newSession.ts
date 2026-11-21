@@ -196,7 +196,36 @@ const messages: Messages<typeof en> = {
   },
   needsAgents: "에이전트가 카드를 식별할 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",
   agentNote:
-    "AI 에이전트가 이미지로 카드를 하나씩 읽습니다. Claude 등에서 ‘Cardloader의 이 세션 카드를 식별해 줘’라고 요청하세요. 그레이딩과 자르기는 Ximilar를 사용합니다.",
+    "AI 에이전트가 이미지로 카드를 하나씩 읽습니다. Claude 등에서 ‘Cardloader의 이 세션 카드를 식별해 줘’라고 요청하세요.",
   agentHint: "MCP로 연결한 Claude 등의 에이전트",
+  whatToDo: "할 일",
+  tasks: { identify: "식별", prices: "가격", grade: "그레이딩", crop: "자르기" },
+  taskHints: {
+    identify: "이름, 세트, 번호",
+    prices: "카드마다 팔리는 가격",
+    grade: "등급 또는 상태",
+    crop: "잘라내고 똑바로 맞춤",
+  },
+  needsIdentify: "식별 필요",
+  keepOne: "세션은 이 중 하나 이상을 합니다.",
+  identifyLocked: "이 세션에는 카드가 있습니다: 식별 여부는 바꿀 수 없습니다.",
+  priceWith: "가격 산정 방법",
+  priceEngines: { ximilar: "Ximilar 가격 통계", ebay: "eBay 판매 목록", agent: "AI 에이전트(MCP)" },
+  priceHints: {
+    ximilar: "Ximilar 식별과 함께 제공",
+    ebay: "카드의 판매 중 목록 가격의 중앙값",
+    agent: "MCP로 연결한 Claude 등의 에이전트",
+  },
+  priceNotes: {
+    ximilar: "Ximilar의 시세는 식별할 때마다 추가 비용 없이 함께 제공됩니다.",
+    ebay: "카드가 식별되면 Cardloader가 eBay 키셋으로 그 카드의 판매 중인 고정가 eBay 목록을 검색하고 그 중앙값을 가격으로 정합니다. 목록은 카드에 남습니다.",
+    agent:
+      "AI 에이전트가 식별된 카드마다 가격을 매깁니다. Claude 등에서 ‘Cardloader의 이 세션 카드 가격을 매겨 줘’라고 요청하세요.",
+  },
+  needsEbay: "Cardloader가 eBay 목록에서 가격을 검색할 수 있도록 설정에서 eBay 키셋을 추가하세요.",
+  needsAgentsPrices: "에이전트가 카드 가격을 매길 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",
+  gradeWhat: "그레이딩 대상",
+  sameModel: "같은 모델이 카드를 식별합니다.",
+  cropNote: "자르기는 항상 Ximilar API로 합니다.",
 };
 export default messages;

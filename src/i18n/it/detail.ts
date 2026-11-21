@@ -32,6 +32,7 @@ const messages: Messages<typeof en> = {
     accepted: "Hai accettato questa corrispondenza",
   },
   marketPrice: "Prezzo di mercato",
+  priceNote: "Prezzo dato dall’agente IA: {note}",
   centering: "Centratura",
   condition: "Condizione",
   grade: "Voto",

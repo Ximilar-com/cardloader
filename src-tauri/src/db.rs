@@ -22,6 +22,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/008_crop.sql"),
     include_str!("../migrations/009_market.sql"),
     include_str!("../migrations/010_jobs.sql"),
+    include_str!("../migrations/011_price_note.sql"),
 ];
 
 #[derive(Clone)]
@@ -116,27 +117,30 @@ const TO_REVIEW: &str =
     "(i.status IN ('done', 'grading') AND i.reviewed = 0 AND i.id_type IS NOT NULL)";
 
 /// The card is another one now (a new recognition, another candidate picked, its fields typed): the eBay listings
-/// found for what it was say nothing about it.
-const OTHER_CARD: &str = "market = NULL, market_range = NULL";
+/// found for what it was, and the agent's reasons for its price, say nothing about it.
+const OTHER_CARD: &str = "market = NULL, market_range = NULL, price_note = NULL";
 
-/// The async card-grader jobs a card can wait for at once, each a row of `item_jobs` (migration 010).
+/// The async card-grader jobs a card can wait for at once, each a row of `item_jobs` (migration 010). A price
+/// is never a job that is out: its row only keeps why the card's price stage failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobKind {
+    Price,
     Grading,
     Crop,
 }
 
 impl JobKind {
-    /// The kind as stored, and as a card's error names it ("grading: …", "crop: …").
+    /// The kind as stored, and as a card's error names it ("price: …", "grading: …", "crop: …").
     pub fn as_str(self) -> &'static str {
         match self {
+            JobKind::Price => "price",
             JobKind::Grading => "grading",
             JobKind::Crop => "crop",
         }
     }
 
     fn parse(text: &str) -> Option<Self> {
-        [JobKind::Grading, JobKind::Crop]
+        [JobKind::Price, JobKind::Grading, JobKind::Crop]
             .into_iter()
             .find(|k| k.as_str() == text)
     }
@@ -147,7 +151,7 @@ const JOB_OUT: &str =
     "EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NULL)";
 
 /// What a card's jobs make of it: `grading` while one is out (whatever failed is said once none is), else `error`
-/// with what the failed ones say (the grading's first), else `done`.
+/// with what the failed ones say (in the order of the stages: price, grading, crop), else `done`.
 const SETTLED: &str = "status = CASE
         WHEN EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NULL) THEN 'grading'
         WHEN EXISTS (SELECT 1 FROM item_jobs j WHERE j.item_id = items.id AND j.error IS NOT NULL) THEN 'error'
@@ -273,7 +277,8 @@ impl Db {
                     COALESCE(SUM(i.ebay_status = 'listed'), 0),
                     COALESCE(SUM(i.ebay_status = 'sold'), 0),
                     COALESCE(SUM({TO_REVIEW}), 0),
-                    COALESCE(SUM(i.calls), 0)
+                    COALESCE(SUM(i.calls), 0),
+                    COALESCE(SUM(i.stage = 'price' AND i.status = 'grading'), 0)
              FROM sessions s LEFT JOIN items i ON i.session_id = s.id
              {filter} GROUP BY s.id {order}"
         );
@@ -310,6 +315,7 @@ impl Db {
                         ebay_sold: r.get(25)?,
                         to_review: r.get(26)?,
                         calls: r.get(27)?,
+                        pricing: r.get(28)?,
                     },
                 })
             })?;
@@ -1071,6 +1077,18 @@ impl Db {
         Ok(())
     }
 
+    /// A card's price from its price stage (eBay listings, an AI agent), with why when an agent set it. A result
+    /// change: Cards Cloud gets the price with the card.
+    pub fn save_price(&self, id: i64, price: f64, note: Option<&str>) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET price = ?2, price_note = ?3, rev = rev + 1, updated_at = ?4 WHERE id = ?1",
+                params![id, price, note, now()],
+            )
+        })?;
+        Ok(())
+    }
+
     /// A card's active eBay listings and their range (local only: nothing Cards Cloud has changes).
     pub fn save_market(&self, id: i64, market: &EbayMarket) -> Result<()> {
         self.with(|c| {
@@ -1136,7 +1154,8 @@ impl Db {
         self.with(|c| {
             c.query_row(
                 "SELECT event_id, preview_path, back_preview_path, recognition, grading, grading_images, calls, analyzed_at,
-                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images, crop, crop_images, market
+                    remote_id, ebay_sku, ebay_offer_id, ebay_images, hosted_images, crop, crop_images, market,
+                    price_note
                  FROM items WHERE id = ?1",
                 params![id],
                 |r| {
@@ -1166,6 +1185,7 @@ impl Db {
                             .and_then(|v| serde_json::from_value(v).ok())
                             .unwrap_or_default(),
                         market: json_col(r.get("market")?).and_then(|v| serde_json::from_value(v).ok()),
+                        price_note: r.get("price_note")?,
                     })
                 },
             )

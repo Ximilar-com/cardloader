@@ -201,6 +201,44 @@ export default {
   },
   needsAgents: "Turn on AI agents, with “Run & review”, in Settings so your agent can identify the cards.",
   agentNote:
-    "Your AI agent reads each card from its pictures: ask it, e.g. in Claude, to identify the cards of this session in Cardloader. Grading and crops still use Ximilar.",
+    "Your AI agent reads each card from its pictures: ask it, e.g. in Claude, to identify the cards of this session in Cardloader.",
   agentHint: "Claude or another agent connected over MCP",
+  whatToDo: "What to do",
+  tasks: {
+    identify: "Identify",
+    prices: "Prices",
+    grade: "Grade",
+    crop: "Crop",
+  },
+  taskHints: {
+    identify: "Name, set and number",
+    prices: "What each card sells for",
+    grade: "A grade or the condition",
+    crop: "Cut out and straightened",
+  },
+  needsIdentify: "Needs Identify",
+  keepOne: "A session does at least one of these.",
+  identifyLocked: "This session has cards: it keeps identifying them, or keeps not.",
+  priceWith: "Price with",
+  priceEngines: {
+    ximilar: "Ximilar price statistics",
+    ebay: "eBay listings",
+    agent: "AI agent (MCP)",
+  },
+  priceHints: {
+    ximilar: "Comes with Ximilar’s identification",
+    ebay: "The median of the card’s active listings",
+    agent: "Claude or another agent connected over MCP",
+  },
+  priceNotes: {
+    ximilar: "Ximilar’s market prices come with each identification, at no extra cost.",
+    ebay: "Once a card is identified, Cardloader searches its active fixed-price eBay listings with your eBay keyset and takes their median as its price. The listings stay on the card.",
+    agent:
+      "Your AI agent prices each card once it is identified: ask it, e.g. in Claude, to price the cards of this session in Cardloader.",
+  },
+  needsEbay: "Add your eBay keyset in Settings so Cardloader can search eBay’s listings for prices.",
+  needsAgentsPrices: "Turn on AI agents, with “Run & review”, in Settings so your agent can price the cards.",
+  gradeWhat: "What to grade",
+  sameModel: "The same model identifies the cards.",
+  cropNote: "Crops are always made with the Ximilar API.",
 };

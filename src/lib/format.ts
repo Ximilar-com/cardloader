@@ -1,6 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { locale, t } from "../i18n";
-import type { Engine, GradingMode, IdMode, SessionOptions, SourceKind, Task } from "./api";
+import type { Engine, GradingMode, IdMode, Prices, SessionOptions, SourceKind, Stage, Task } from "./api";
 
 /** Ximilar's prices are in US dollars, written the way the app's language writes amounts. */
 export function price(value: number | null | undefined): string {
@@ -136,15 +136,108 @@ export function agentOf(o: Pick<SessionOptions, "task" | "engine">): boolean {
   return engineOf(o) === "agent";
 }
 
-/** Calls the Ximilar API for something (`SessionOptions::uses_api`): a local or agent session that only identifies
- * runs without a token. */
+/** What grades the cards (`SessionOptions::grade_engine`): an agent never does, Ximilar grades for it. */
+export function gradeEngineOf(o: Pick<SessionOptions, "engine" | "gradeEngine">): Engine {
+  const engine = o.gradeEngine ?? o.engine;
+  return engine === "agent" ? "ximilar" : engine;
+}
+
+/** The prices a session asks for, as chosen (an older session's `priceStats` means Ximilar's). */
+export function chosenPrices(o: Pick<SessionOptions, "prices" | "priceStats">): Prices {
+  return o.prices ?? (o.priceStats ? "ximilar" : "off");
+}
+
+/** Where the cards' prices come from (`SessionOptions::prices`): only identified cards are priced, and Ximilar's
+ * price statistics come only with its identification. */
+export function pricesOf(o: Pick<SessionOptions, "task" | "engine" | "prices" | "priceStats">): Prices {
+  const prices = chosenPrices(o);
+  if (o.task !== "identify") return "off";
+  if (prices === "ximilar" && o.engine !== "ximilar") return "off";
+  return prices;
+}
+
+/** What happens to each card, in order (`SessionOptions::stages`). */
+export function stagesOf(o: SessionOptions): Stage[] {
+  const prices = pricesOf(o);
+  return [
+    o.task === "identify" && ("identify" as const),
+    (prices === "ebay" || prices === "agent") && ("price" as const),
+    gradingOf(o) !== "off" && ("grade" as const),
+    cropsOf(o) && ("crop" as const),
+  ].filter((s): s is Stage => !!s);
+}
+
+/** Calls the Ximilar API for something (`SessionOptions::uses_api`): a session whose stages all run elsewhere (on
+ * this computer, by an AI agent, on eBay) runs without a token. */
 export function usesApi(o: SessionOptions): boolean {
-  if (cropsOf(o) || (o.task === "identify" && o.syncRemote)) return true;
-  if (o.task === "crop") return true;
-  if (o.task !== "identify") return o.engine !== "local";
-  if (o.engine === "ximilar") return true;
-  if (o.engine === "local") return false;
-  return gradingOf(o) !== "off";
+  if (cropsOf(o)) return true;
+  if (o.task === "identify" && (o.syncRemote || o.engine === "ximilar")) return true;
+  return gradingOf(o) !== "off" && gradeEngineOf(o) === "ximilar";
+}
+
+/** A task the New session dialog offers; several can be chosen. */
+export type TaskChoice = "identify" | "prices" | "grade" | "crop";
+export const TASK_CHOICES: TaskChoice[] = ["identify", "prices", "grade", "crop"];
+
+/** The tasks a session's options do. */
+export function tasksOf(o: SessionOptions): TaskChoice[] {
+  const identifies = o.task === "identify";
+  return TASK_CHOICES.filter((t) => {
+    switch (t) {
+      case "identify":
+        return identifies;
+      case "prices":
+        return identifies && chosenPrices(o) !== "off";
+      case "grade":
+        return gradingOf(o) !== "off";
+      case "crop":
+        return cropsOf(o);
+    }
+  });
+}
+
+/** The options doing `tasks` (at least one), keeping what each task's tab chose: prices need identification, and
+ * a session that doesn't identify is a grade, condition or crop session with crops as an extra. */
+export function withTasks(o: SessionOptions, tasks: TaskChoice[]): SessionOptions {
+  const has = (t: TaskChoice) => tasks.includes(t);
+  const mode = gradingOf(o);
+  // A grading mode carried over (a condition session that starts identifying), else a full grade.
+  const grading: GradingMode = mode !== "off" ? mode : o.grading !== "off" ? o.grading : "grade";
+  if (has("identify")) {
+    const chosen = chosenPrices(o);
+    const prices: Prices = !has("prices")
+      ? "off"
+      : chosen !== "off"
+        ? chosen
+        : o.engine === "ximilar"
+          ? "ximilar"
+          : "ebay";
+    return {
+      ...o,
+      task: "identify",
+      grading: has("grade") ? grading : "off",
+      saveCrops: has("crop"),
+      prices,
+      priceStats: prices === "ximilar",
+    };
+  }
+  if (has("grade")) {
+    return {
+      ...o,
+      task: grading === "condition" ? "condition" : "grade",
+      grading,
+      saveCrops: has("crop"),
+      syncRemote: false,
+    };
+  }
+  return { ...o, task: "crop", saveCrops: false, syncRemote: false };
+}
+
+/** The grading a session's Grade tab chose: a full grade, centering or the condition, in a session that identifies
+ * or one that only grades. */
+export function withGradeMode(o: SessionOptions, mode: Exclude<GradingMode, "off">): SessionOptions {
+  if (o.task === "identify") return { ...o, grading: mode };
+  return { ...o, task: mode === "condition" ? "condition" : "grade", grading: mode };
 }
 
 /** The session saves cropped pictures of its cards (alone, or with what else it does). */

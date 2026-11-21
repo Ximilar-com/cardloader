@@ -318,6 +318,9 @@ export default function DetailPanel({
               value={view.grade != null ? grade(view.grade) : (view.condition ?? "—")}
               sub={view.grade != null ? (view.condition ?? undefined) : undefined}
             />
+            {view.priceNote && (
+              <p className="col-span-2 text-xs text-slate-500">{t("detail.priceNote", { note: view.priceNote })}</p>
+            )}
           </div>
         )}
 

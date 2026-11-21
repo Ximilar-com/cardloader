@@ -46,9 +46,10 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Cropped pictures.** Ximilar can cut each card out of its image, straighten it and even out its colours
   (`crop_level` of Card Grading); Cardloader saves the crops, front and back, named after the card's files in a
   folder you choose, as JPEG, PNG (lossless) or WebP (the file Ximilar sends, unchanged). Any session can **Also save cropped pictures**, next to identifying or grading the cards.
-- **Grade, condition or crop only.** A session's **Task** can skip identification: **Grade only** and **Condition
-  only** send each card straight to grading (with Ximilar or the local model), and **Crop only** just saves the
-  crops.
+- **Pick what to do, each task by its own engine.** New session's **What to do** chooses any of **Identify**,
+  **Prices**, **Grade** and **Crop**, and each chosen task gets a tab with what does it: for example identify with
+  Ximilar, grade with the local model and price with your AI agent or from eBay's listings. Without **Identify**, a
+  session sends each card straight to grading (a full grade, centering or its condition) or just saves the crops.
 - **Scanner.** Cardloader drives a RICOH/Fujitsu **fi-8170**, or any SANE/TWAIN document scanner, in duplex batches.
   Front and back are paired automatically, in the order you feed them (front or back first), and pages fed upside
   down can be turned as they are scanned. On Windows, **Settings → Scanner → Driver settings…** opens the scanner's
@@ -391,6 +392,11 @@ with the agent's certainty and note, and waits for your review like any other. W
 says so; nothing is identified without the agent. The **Identify cards yourself** prompt (`identify_session`)
 walks an agent through it. An agent session needs no Ximilar token unless it grades, crops or syncs.
 
+An agent can price the cards too: choose **Prices** in New session and price them with **AI agent (MCP)** (or
+`prices: "agent"` in `create_session`). Once a card is identified, by whatever identifies the session's cards, it
+waits for the agent's price (`next_cards_to_price`, answered with `price_cards` in US dollars and a note shown under
+the card's price). The **Price cards yourself** prompt (`price_session`) walks an agent through it.
+
 ### Prices from eBay
 
 Once a card is identified (by the agent, Ximilar or the local model), an agent can look up what it asks on eBay now:
@@ -399,7 +405,8 @@ card's year and parallel, in its eBay category; raw cards among ungraded listing
 grader and grade) and keeps them on the card with their price range: min, max, average and median. The agent then
 reads the titles and calls `keep_ebay_listings` with the ones that are this card, so other cards, lots and other
 grades stop counting; its note says what it left out. The **Prices from eBay** prompt (`ebay_prices`) walks it
-through a session.
+through a session. A session can also do this for every card by itself: choose **Prices** in New session and price
+with **eBay listings**; each identified card's listings are searched and their median becomes its price.
 
 The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
 out greyed) with **Search eBay** to search again yourself; untick a listing that isn't your card, or tick one back,

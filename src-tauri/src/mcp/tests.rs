@@ -453,14 +453,19 @@ async fn agent_prices_a_card_on_ebay() {
     );
 }
 
-/// The cards waiting for the agent, once `n` of them are (scanning the folder takes a moment).
+/// The cards waiting for the agent to identify them, once `n` of them are (scanning the folder takes a moment).
 async fn waiting_cards(agent: &Agent, session: &str, n: usize) -> (Vec<Value>, Value) {
+    cards_from(agent, "next_cards_to_identify", session, n).await
+}
+
+/// The cards `tool` offers the agent, once `n` of them wait.
+async fn cards_from(agent: &Agent, tool: &str, session: &str, n: usize) -> (Vec<Value>, Value) {
     let started = Instant::now();
     loop {
         let result = agent
             .rpc(
                 "tools/call",
-                json!({"name": "next_cards_to_identify",
+                json!({"name": tool,
                        "arguments": {"session_id": session, "max": 10, "wait_seconds": 5}}),
             )
             .await;
@@ -624,7 +629,103 @@ async fn agent_identifies_a_session() {
     assert!(items
         .iter()
         .all(|i| i.status == crate::model::ItemStatus::Queued));
-    assert!(state.runner.agent_waiting(None).is_empty());
+    assert!(state.runner.agent_waiting_count(None) == 0);
+}
+
+/// An agent prices a session's cards as Ximilar identifies them: each comes with its fields and picture, a price
+/// is stored with the agent's note (Ximilar is asked for no price statistics), a card the agent can't price fails
+/// only its price, and a price isn't taken as an identification.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_prices_a_session() {
+    let server = mock_ximilar().await;
+    let dir = tempfile::tempdir().unwrap();
+    let cards = dir.path().join("pokemon");
+    std::fs::create_dir_all(&cards).unwrap();
+    for name in ["a", "b"] {
+        RgbImage::from_pixel(630, 880, Rgb([20, 90, 160]))
+            .save(cards.join(format!("{name}.png")))
+            .unwrap();
+    }
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), &server.uri(), McpSettings::default()).await;
+    let created = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "ximilar", "card_type": "tcg", "prices": "agent"}),
+        )
+        .await;
+    assert_eq!(created["prices"], "agent");
+    assert!(created["next"]
+        .as_str()
+        .unwrap()
+        .contains("next_cards_to_price"));
+    let session = created["id"].as_str().unwrap().to_string();
+
+    let (waiting, _) = cards_from(&agent, "next_cards_to_price", &session, 2).await;
+    assert_eq!(waiting[0]["card"]["name"], "Charizard ex");
+    assert_eq!(waiting[0]["card"]["cardNumber"], "125");
+    let (priced, unpriced) = (
+        waiting[0]["itemId"].as_i64().unwrap(),
+        waiting[1]["itemId"].as_i64().unwrap(),
+    );
+    let not_identify = agent
+        .ok(
+            "identify_cards",
+            json!({"cards": [{"item_id": priced, "name": "Pikachu"}]}),
+        )
+        .await;
+    assert_eq!(not_identify["results"][0]["ok"], false, "{not_identify}");
+    let answered = agent
+        .ok(
+            "price_cards",
+            json!({"cards": [
+                {"item_id": priced, "price": 24.999, "note": "PSA 10s ask 22–28"},
+                {"item_id": unpriced, "unpriced": true, "note": "no sales of this grade"}]}),
+        )
+        .await;
+    let results = answered["results"].as_array().unwrap();
+    assert!(results.iter().all(|r| r["ok"] == true), "{answered}");
+
+    let started = Instant::now();
+    while state.runner.is_running(&session) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let requests = server.received_requests().await.unwrap();
+    assert!(
+        requests
+            .iter()
+            .filter(|r| r.url.path().starts_with("/collectibles/"))
+            .all(|r| serde_json::from_slice::<Value>(&r.body).unwrap()["price_stats"].is_null()),
+        "Ximilar isn't asked for prices"
+    );
+    let card = state.db.item(priced).unwrap();
+    assert_eq!(card.summary.status, crate::model::ItemStatus::Done);
+    assert_eq!(card.summary.price, Some(25.0));
+    assert_eq!(card.price_note.as_deref(), Some("PSA 10s ask 22–28"));
+    let failed = state.db.item_summary(unpriced).unwrap();
+    assert_eq!(failed.status, crate::model::ItemStatus::Error);
+    assert_eq!(failed.card.name, "Charizard ex", "still identified");
+    assert!(
+        failed.error.as_deref().unwrap().starts_with("price: "),
+        "{:?}",
+        failed.error
+    );
+    let done = agent
+        .ok(
+            "next_cards_to_price",
+            json!({"session_id": session, "wait_seconds": 1}),
+        )
+        .await;
+    assert_eq!(done["finished"], true);
+    let (refusal, failed) = agent
+        .tool("next_cards_to_identify", json!({"session_id": session}))
+        .await;
+    assert!(failed);
+    assert!(refusal.as_str().unwrap().contains("engine"), "{refusal}");
 }
 
 /// The app with agents on (any port, allowed what `mcp` says), Ximilar at `api`, its data and config in `dir`.

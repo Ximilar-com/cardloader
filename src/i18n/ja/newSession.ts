@@ -204,7 +204,37 @@ const messages: Messages<typeof en> = {
   needsAgents:
     "エージェントがカードを識別できるよう、「設定」でAIエージェントを「実行とレビュー」付きでオンにしてください。",
   agentNote:
-    "AIエージェントが各カードを画像から読み取ります。Claudeなどで「Cardloaderのこのセッションのカードを識別して」と頼んでください。グレーディングと切り抜きはXimilarを使います。",
+    "AIエージェントが各カードを画像から読み取ります。Claudeなどで「Cardloaderのこのセッションのカードを識別して」と頼んでください。",
   agentHint: "MCPで接続したClaudeなどのエージェント",
+  whatToDo: "やること",
+  tasks: { identify: "識別", prices: "価格", grade: "グレーディング", crop: "切り抜き" },
+  taskHints: {
+    identify: "名前、セット、番号",
+    prices: "各カードの売値",
+    grade: "グレードまたはコンディション",
+    crop: "切り抜いてまっすぐに",
+  },
+  needsIdentify: "識別が必要",
+  keepOne: "セッションはこのうち少なくとも1つを行います。",
+  identifyLocked: "このセッションにはカードがあります：識別するかどうかは変えられません。",
+  priceWith: "価格の取得方法",
+  priceEngines: { ximilar: "Ximilarの価格の統計", ebay: "eBayの出品", agent: "AIエージェント（MCP）" },
+  priceHints: {
+    ximilar: "Ximilarの識別と一緒に届きます",
+    ebay: "カードの出品中リストの中央値",
+    agent: "MCPで接続したClaudeなどのエージェント",
+  },
+  priceNotes: {
+    ximilar: "Ximilarの相場は識別ごとに追加料金なしで届きます。",
+    ebay: "カードが識別されると、CardloaderがあなたのeBayキーセットでそのカードの出品中の固定価格リストを検索し、その中央値を価格にします。見つかった出品はカードに残ります。",
+    agent:
+      "AIエージェントが識別済みのカードに1枚ずつ価格を付けます。Claudeなどで「Cardloaderのこのセッションのカードに価格を付けて」と頼んでください。",
+  },
+  needsEbay: "CardloaderがeBayの出品から価格を検索できるよう、「設定」でeBayキーセットを追加してください。",
+  needsAgentsPrices:
+    "エージェントがカードに価格を付けられるよう、「設定」でAIエージェントを「実行とレビュー」付きでオンにしてください。",
+  gradeWhat: "グレーディングの内容",
+  sameModel: "同じモデルがカードを識別します。",
+  cropNote: "切り抜きは常にXimilar APIで行います。",
 };
 export default messages;

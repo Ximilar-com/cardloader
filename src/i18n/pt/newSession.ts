@@ -212,7 +212,38 @@ const messages: Messages<typeof en> = {
   needsAgents:
     "Ative os agentes de IA, com “Executar e revisar”, nas Configurações para que seu agente possa identificar as cartas.",
   agentNote:
-    "Seu agente de IA lê cada carta pelas imagens: peça a ele, ex. no Claude, que identifique as cartas desta sessão no Cardloader. A graduação e os recortes continuam usando a Ximilar.",
+    "Seu agente de IA lê cada carta pelas imagens: peça a ele, ex. no Claude, que identifique as cartas desta sessão no Cardloader.",
   agentHint: "Claude ou outro agente conectado por MCP",
+  whatToDo: "O que fazer",
+  tasks: { identify: "Identificar", prices: "Preços", grade: "Graduar", crop: "Recortar" },
+  taskHints: {
+    identify: "Nome, coleção e número",
+    prices: "Por quanto cada carta é vendida",
+    grade: "Uma nota ou a condição",
+    crop: "Recortada e endireitada",
+  },
+  needsIdentify: "Requer Identificar",
+  keepOne: "Uma sessão faz pelo menos uma destas tarefas.",
+  identifyLocked: "Esta sessão tem cartas: continua identificando-as, ou continua sem identificar.",
+  priceWith: "Preços com",
+  priceEngines: { ximilar: "Estatísticas de preço da Ximilar", ebay: "Anúncios do eBay", agent: "Agente de IA (MCP)" },
+  priceHints: {
+    ximilar: "Vêm com a identificação da Ximilar",
+    ebay: "A mediana dos anúncios ativos da carta",
+    agent: "Claude ou outro agente conectado por MCP",
+  },
+  priceNotes: {
+    ximilar: "Os preços de mercado da Ximilar vêm com cada identificação, sem custo extra.",
+    ebay: "Depois que uma carta é identificada, o Cardloader busca os anúncios ativos de preço fixo dela no eBay com o seu keyset do eBay e usa a mediana como preço. Os anúncios ficam na carta.",
+    agent:
+      "Seu agente de IA define o preço de cada carta depois que ela é identificada: peça a ele, ex. no Claude, que defina o preço das cartas desta sessão no Cardloader.",
+  },
+  needsEbay:
+    "Adicione seu keyset do eBay nas Configurações para que o Cardloader possa buscar preços nos anúncios do eBay.",
+  needsAgentsPrices:
+    "Ative os agentes de IA, com “Executar e revisar”, nas Configurações para que seu agente possa definir o preço das cartas.",
+  gradeWhat: "O que graduar",
+  sameModel: "O mesmo modelo identifica as cartas.",
+  cropNote: "Os recortes são sempre feitos com a API da Ximilar.",
 };
 export default messages;

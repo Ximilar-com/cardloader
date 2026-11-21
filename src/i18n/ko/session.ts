@@ -191,6 +191,10 @@ const messages: Messages<typeof en> = {
         "“{name}”과(와) 카드 {count}장, 그 이미지가 워크스페이스의 모든 사용자에게서 Cards Cloud에서 삭제됩니다. 업로드한 원래 로컬 세션의 카드는 그대로 남으며, 다시 업로드하면 Cards Cloud에 새 세션이 만들어집니다.",
     },
   },
+  agentPricing: {
+    other:
+      "<b>카드 {count}장</b>이 AI 에이전트의 가격을 기다립니다. Claude 등에서 ‘Cardloader 세션 {name}의 카드 가격을 매겨 줘’라고 요청하세요.",
+  },
   agentWaiting: {
     other:
       "<b>카드 {count}장</b>이 AI 에이전트를 기다립니다. Claude 등에서 ‘Cardloader 세션 {name}의 카드를 식별해 줘’라고 요청하세요.",

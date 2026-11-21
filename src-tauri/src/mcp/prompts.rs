@@ -48,6 +48,14 @@ pub fn list() -> Vec<Prompt> {
                 .with_required(false)]),
         )
         .with_title("Prices from eBay"),
+        Prompt::new(
+            "price_session",
+            Some("Price the cards of a session yourself as they are identified"),
+            Some(vec![PromptArgument::new("session")
+                .with_description("A running session whose cards wait for your prices; empty for any")
+                .with_required(false)]),
+        )
+        .with_title("Price cards yourself"),
     ]
 }
 
@@ -65,6 +73,7 @@ pub fn get(name: &str, arguments: Option<&JsonObject>) -> Option<GetPromptResult
         "new_session" => new_session(&arg("path")?, arg("about").as_deref()),
         "identify_session" => identify(arg("path").as_deref(), arg("session").as_deref()),
         "ebay_prices" => ebay_prices(&arg("session").unwrap_or_else(|| "latest".into())),
+        "price_session" => price(arg("session").as_deref()),
         _ => return None,
     };
     Some(GetPromptResult::new(vec![PromptMessage::new_text(
@@ -161,5 +170,34 @@ what you left out.
 
 At the end, list each card with its price range (min–max), average and median and how many listings count, and \
 point out cards whose range is wide or that had few listings."
+    )
+}
+
+fn price(session: Option<&str>) -> String {
+    let start = match session {
+        Some(session) => format!(
+            "1. The session \"{session}\" is waiting for you (start it with run_session if it isn't running)."
+        ),
+        None => "1. Call list_sessions: a running session priced by an AI agent counts the cards waitingForPrice. \
+If none runs, ask the user for a folder and create_session with prices \"agent\"."
+            .to_string(),
+    };
+    let session_arg = session
+        .map(|s| format!(" with session_id \"{s}\""))
+        .unwrap_or_default();
+    format!(
+        "Price the cards of a Cardloader session yourself, as they are identified.
+
+{start}
+2. Call next_cards_to_price{session_arg}. It returns a few identified cards: name, set, number, year, variant, \
+game, the slab's grade if the card is graded, an eBay range if one was found, and its pictures.
+3. Work out what each card sells for now, as it is (raw, or in its slab's grade). If you may use them, \
+find_ebay_listings and keep_ebay_listings give its active eBay listings; other sources you have are fine too.
+4. Send the prices with price_cards, in US dollars: several cards per call, each with a short note of how you got \
+it (e.g. \"median of 6 listings, no lots\"). If you can't find a price, send the card with unpriced and say why: \
+never guess.
+5. Repeat from 2 until next_cards_to_price says finished.
+
+At the end, list the cards you priced with their prices, and the ones you couldn't price with why."
     )
 }

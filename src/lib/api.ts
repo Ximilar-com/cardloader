@@ -24,6 +24,11 @@ export type IdMode = "auto" | "tcg" | "sport" | "comics" | "slab";
  * MCP that reads the cards' pictures. */
 export type Engine = "ximilar" | "local" | "agent";
 export type GradingMode = "off" | "condition" | "grade" | "centering";
+/** Where identified cards' prices come from: none, Ximilar's price statistics (with its identification), the card's
+ * active eBay listings, or an AI agent over MCP. */
+export type Prices = "off" | "ximilar" | "ebay" | "agent";
+/** A step of a card's pass, in order. */
+export type Stage = "identify" | "price" | "grade" | "crop";
 /** What a session does with each card: identify it (and grade, price…), or only grade it, tell its condition or crop
  * it. */
 export type Task = "identify" | "grade" | "condition" | "crop";
@@ -80,7 +85,12 @@ export interface SessionOptions {
   subcategory: string;
   scan: ScanSettings;
   syncRemote: boolean;
+  /** What identifies the cards (and grades them, unless `gradeEngine` says). */
   engine: Engine;
+  /** What grades the cards; null (older sessions) = `engine`. */
+  gradeEngine?: Engine | null;
+  /** Where prices come from; null (older sessions) = Ximilar's when `priceStats`. */
+  prices?: Prices | null;
   localModel: string;
 }
 
@@ -100,6 +110,8 @@ export interface SessionCounts {
   toReview: number;
   /** Paid Ximilar API calls the cards took. */
   calls: number;
+  /** Identified cards in their price stage (searching eBay, or waiting for an AI agent's price). */
+  pricing: number;
 }
 
 export interface Session {
@@ -279,6 +291,8 @@ export interface ItemDetail extends ItemSummary {
   cropImages: string[];
   /** Its active eBay listings, once searched. */
   market: EbayMarket | null;
+  /** Why the AI agent that priced the card chose its price. */
+  priceNote: string | null;
 }
 
 export interface Settings {

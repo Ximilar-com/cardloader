@@ -25,7 +25,7 @@ use crate::error::{Error, Result};
 use crate::imaging;
 use crate::market::{shopify, whatnot, PricedItem};
 use crate::model::*;
-use crate::runner::AgentAnswer;
+use crate::runner::{AgentAnswer, AgentTask};
 use crate::settings::{McpSettings, Settings};
 use crate::source::{self, csv_file};
 use crate::ximilar::recognition::{self, ALPHABETS, SPORTS, TCG_GAMES};
@@ -38,8 +38,9 @@ candidates. Every identified card waits for review until it is accepted. Whereve
 until finished) → list_cards with filter to_review → get_card (look at the picture) → accept_cards or \
 select_candidate. To identify the cards yourself instead, create the session with engine \"agent\": Cardloader \
 reads the images and hands you each card's pictures through next_cards_to_identify, and you answer with \
-identify_cards. For what an identified card asks on eBay now, call find_ebay_listings, then keep_ebay_listings \
-with the listings that are the card. Cards you accept are marked as accepted by AI in the app, with your note; the \
+identify_cards. To price identified cards yourself, create the session with prices \"agent\": next_cards_to_price \
+hands you each identified card, and you answer with price_cards. For what an identified card asks on eBay now, call \
+find_ebay_listings, then keep_ebay_listings with the listings that are the card. Cards you accept are marked as accepted by AI in the app, with your note; the \
 user sees everything you do live. Tools you may not use are left out: the user allows them in Cardloader → Settings → AI \
 agents.";
 
@@ -186,6 +187,12 @@ struct CreateSession {
     /// What identifies the cards: ximilar (the API), local (the model on this computer), or agent: you do, from
     /// their pictures (next_cards_to_identify, then identify_cards). Default: the user's default.
     engine: Option<Engine>,
+    /// What grades the cards when they are graded: ximilar or local. Default: as `engine` (ximilar for agent).
+    grade_engine: Option<Engine>,
+    /// Where identified cards' prices come from: ximilar (price statistics, only when ximilar identifies), ebay
+    /// (the median of the card's active eBay listings; needs the user's eBay keyset), agent (you price each card:
+    /// next_cards_to_price, then price_cards), or off. Default: ximilar when `price_stats`, else off.
+    prices: Option<Prices>,
     /// identify: name, set, number, price (and grading if asked); grade: only grade each card (no identification);
     /// condition: only its condition (e.g. Near Mint); crop: only cut each card out of its image, straightened, into
     /// pictures in `crop_folder`. Default: the user's default.
@@ -223,7 +230,7 @@ struct CreateSession {
     store_in_cards_cloud: Option<bool>,
     /// A Cards Cloud session id or link to continue: files whose cards it has are skipped.
     continue_cards_cloud_session: Option<String>,
-    /// Ask for market prices. Default: the user's default.
+    /// Ask Ximilar for market prices (the same as prices ximilar). Default: the user's default.
     price_stats: Option<bool>,
     /// CSV only: also analyse rows that are already identified.
     reanalyse: Option<bool>,
@@ -249,6 +256,22 @@ struct NextCards {
     wait_seconds: Option<u64>,
     /// The pictures' long edge in pixels (default 1024; up to 1600 to read small print).
     long_edge: Option<u32>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct PriceCards {
+    cards: Vec<CardPrice>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CardPrice {
+    item_id: i64,
+    /// What the card sells for now, in US dollars (as is: raw, or the slab's grade). Leave out with unpriced.
+    price: Option<f64>,
+    /// How you got it, in a few words (shown to the user), e.g. "median of 6 sold listings, no lots".
+    note: Option<String>,
+    /// You found no price: only the card's price fails, with your note.
+    unpriced: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -544,6 +567,8 @@ fn specs() -> Vec<Spec> {
         spec::<SessionArg>(Run, "stop_session", "Stop a session", "Stops a running session."),
         spec::<NextCards>(Run, "next_cards_to_identify", "Cards to identify", "Cards of sessions with engine agent that wait for you to identify them, each with its front (and back) picture. Waits while the next cards are scanned; says finished when no more can come. Answer with identify_cards."),
         spec::<IdentifyCards>(Run, "identify_cards", "Identify cards", "Your identification of cards from next_cards_to_identify: name, set, number, year, variant, game. The session then goes on with them (grading, crops, Cards Cloud) and the user reviews them."),
+        spec::<NextCards>(Run, "next_cards_to_price", "Cards to price", "Identified cards of sessions with prices agent that wait for you to price them: their name, set, number, year, variant, game, slab grade, any eBay range already found, and their front (and back) picture. Waits while the next cards are identified; says finished when no more can come. Answer with price_cards."),
+        spec::<PriceCards>(Run, "price_cards", "Price cards", "Your price of cards from next_cards_to_price, in US dollars, with a note on how you got it. find_ebay_listings and keep_ebay_listings can help when the user has an eBay keyset."),
         spec::<FindEbayListings>(Run, "find_ebay_listings", "Find eBay listings", "Searches eBay for an identified card's active fixed-price listings (by its name, set and number, or your query) and keeps them on the card with their price range: min, max, average and median. Then call keep_ebay_listings with the listings that are this card. Needs the user's eBay keyset."),
         spec::<KeepEbayListings>(Run, "keep_ebay_listings", "Keep eBay listings", "Of a card's last eBay search, only the listings that are this card count in its price range (the user sees the others left out, with your note)."),
         spec::<WaitForSession>(Run, "wait_for_session", "Wait for a session", "Waits until the session's run ends or the timeout passes, and returns its progress. Call it again while it still runs."),
@@ -750,8 +775,10 @@ impl Handler {
                 self.session_out(&id)
             }
             "wait_for_session" => self.wait(args(a)?).await,
-            "next_cards_to_identify" => self.next_cards(args(a)?).await,
+            "next_cards_to_identify" => self.next_cards(args(a)?, AgentTask::Identify).await,
             "identify_cards" => self.identify_cards(args(a)?),
+            "next_cards_to_price" => self.next_cards(args(a)?, AgentTask::Price).await,
+            "price_cards" => self.price_cards(args(a)?),
             "find_ebay_listings" => self.find_ebay_listings(args(a)?).await,
             "keep_ebay_listings" => self.keep_ebay_listings(args(a)?),
             "accept_cards" => self.accept(args(a)?),
@@ -951,6 +978,8 @@ impl Handler {
             "path": s.source_ref,
             "task": s.options.task,
             "engine": s.options.engine,
+            "gradeEngine": s.options.grade_engine(),
+            "prices": s.options.prices(),
             "cardType": s.id_mode,
             "game": s.options.subcategory,
             "storeInCardsCloud": s.options.sync_remote,
@@ -971,8 +1000,18 @@ impl Handler {
             },
         });
         if s.options.agent() {
-            v["counts"]["waitingForAgent"] =
-                json!(self.state.runner.agent_waiting(Some(&s.id)).len());
+            v["counts"]["waitingForAgent"] = json!(self
+                .state
+                .runner
+                .agent_waiting(Some(&s.id), AgentTask::Identify)
+                .len());
+        }
+        if s.options.prices_by_agent() {
+            v["counts"]["waitingForPrice"] = json!(self
+                .state
+                .runner
+                .agent_waiting(Some(&s.id), AgentTask::Price)
+                .len());
         }
         if options {
             v["options"] = serde_json::to_value(&s.options).unwrap_or(Value::Null);
@@ -999,7 +1038,7 @@ impl Handler {
             "latestSession": sessions.first().map(|s| json!({"id": s.id, "name": s.name})),
             "running": running,
             "cardsToReview": sessions.iter().map(|s| s.counts.to_review).sum::<i64>(),
-            "cardsWaitingForAgent": self.state.runner.agent_waiting(None).len(),
+            "cardsWaitingForAgent": self.state.runner.agent_waiting_count(None),
             "defaults": defaults(&settings),
             "agentsMay": allowed(&settings.mcp),
         }))
@@ -1069,16 +1108,32 @@ impl Handler {
         Ok(content)
     }
 
-    async fn next_cards(&self, a: NextCards) -> Result<Vec<ContentBlock>> {
+    /// The cards waiting for the agent to identify or price them (`task`), with their pictures; long-polls while
+    /// a session that may still offer some runs.
+    async fn next_cards(&self, a: NextCards, task: AgentTask) -> Result<Vec<ContentBlock>> {
+        let offers = |o: &SessionOptions| match task {
+            AgentTask::Identify => o.agent(),
+            AgentTask::Price => o.prices_by_agent(),
+        };
+        let (tool, answer) = match task {
+            AgentTask::Identify => ("next_cards_to_identify", "identify_cards"),
+            AgentTask::Price => ("next_cards_to_price", "price_cards"),
+        };
         let session = match a.session_id.as_deref().map(str::trim) {
             Some(given) if !given.is_empty() => {
                 let id = self.session_id(given)?;
                 let s = self.state.db.session(&id)?;
-                if !s.options.agent() {
-                    return Err(Error::msg(format!(
-                        "session \"{}\" isn't identified by an AI agent (create one with engine \"agent\")",
-                        s.name
-                    )));
+                if !offers(&s.options) {
+                    return Err(Error::msg(match task {
+                        AgentTask::Identify => format!(
+                            "session \"{}\" isn't identified by an AI agent (create one with engine \"agent\")",
+                            s.name
+                        ),
+                        AgentTask::Price => format!(
+                            "session \"{}\" isn't priced by an AI agent (create one with prices \"agent\")",
+                            s.name
+                        ),
+                    }));
                 }
                 Some(id)
             }
@@ -1088,7 +1143,7 @@ impl Handler {
         let started = Instant::now();
         let runner = &self.state.runner;
         let waiting = loop {
-            let waiting = runner.agent_waiting(session.as_deref());
+            let waiting = runner.agent_waiting(session.as_deref(), task);
             if !waiting.is_empty() {
                 break waiting;
             }
@@ -1099,15 +1154,19 @@ impl Handler {
                     .db
                     .sessions()?
                     .iter()
-                    .any(|s| s.options.agent() && runner.is_running(&s.id)),
+                    .any(|s| offers(&s.options) && runner.is_running(&s.id)),
             };
             if !running {
+                let what = match task {
+                    AgentTask::Identify => "identified",
+                    AgentTask::Price => "priced",
+                };
                 return out(json!({"cards": [], "finished": true,
-                    "next": "no session identified by an AI agent is running: nothing more will come"}));
+                    "next": format!("no session {what} by an AI agent is running: nothing more will come")}));
             }
             if started.elapsed() >= timeout {
                 return out(json!({"cards": [], "finished": false,
-                    "next": "the session still runs (e.g. scanning): call next_cards_to_identify again"}));
+                    "next": format!("the session still runs (e.g. scanning): call {tool} again")}));
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         };
@@ -1121,23 +1180,74 @@ impl Handler {
         for (session_id, item_id) in waiting.iter().take(max) {
             let item = self.state.db.item(*item_id)?;
             let s = self.state.db.session(session_id)?;
-            cards.push(json!({
+            let mut card = json!({
                 "itemId": item_id,
                 "sessionId": s.id,
                 "session": s.name,
                 "cardType": s.id_mode,
                 "game": s.options.subcategory,
                 "files": {"front": item.summary.front_path, "back": item.summary.back_path},
-            }));
+            });
+            if task == AgentTask::Price {
+                let i = &item.summary;
+                let c = &i.card;
+                card["cardType"] = json!(i.id_type);
+                card["game"] = json!(c.subcategory);
+                card["card"] = json!({
+                    "name": c.name, "fullName": c.full_name, "setName": c.set_name, "setCode": c.set_code,
+                    "cardNumber": c.card_number, "year": c.year, "variant": c.series,
+                });
+                card["slab"] = json!(i.slab);
+                card["ebayRange"] = json!(i.market_range);
+            }
+            cards.push(card);
             pics.extend(pictures(&item, long_edge).await?);
         }
         let mut content = out(json!({
             "cards": cards,
             "waiting": waiting.len(),
-            "next": "read each card's pictures below, then send them with identify_cards",
+            "next": match task {
+                AgentTask::Identify => format!("read each card's pictures below, then send them with {answer}"),
+                AgentTask::Price => format!("price each card (as is: raw, or the slab's grade), then send the prices \
+                                             with {answer}"),
+            },
         }))?;
         content.extend(pics);
         Ok(content)
+    }
+
+    fn price_cards(&self, a: PriceCards) -> Result<Vec<ContentBlock>> {
+        let mut results = Vec::new();
+        for card in a.cards {
+            let item_id = card.item_id;
+            let note = card.note.unwrap_or_default().trim().to_string();
+            let answer = match (card.unpriced, card.price) {
+                (Some(true), _) => Ok(AgentAnswer::Unpriced {
+                    note: if note.is_empty() {
+                        "no price found".into()
+                    } else {
+                        note
+                    },
+                }),
+                (_, Some(price)) if price.is_finite() && price >= 0.0 => Ok(AgentAnswer::Priced {
+                    price: (price * 100.0).round() / 100.0,
+                    note,
+                }),
+                (_, Some(_)) => Err(Error::msg(
+                    "the price must be a number of dollars, 0 or more",
+                )),
+                (_, None) => Err(Error::msg("give the card's price, or unpriced with a note")),
+            };
+            let result = answer.and_then(|answer| self.state.runner.answer_agent(item_id, answer));
+            results.push(match result {
+                Ok(()) => json!({"itemId": item_id, "ok": true}),
+                Err(e) => json!({"itemId": item_id, "ok": false, "error": e.to_string()}),
+            });
+        }
+        out(json!({
+            "results": results,
+            "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Price).len(),
+        }))
     }
 
     async fn find_ebay_listings(&self, a: FindEbayListings) -> Result<Vec<ContentBlock>> {
@@ -1198,7 +1308,7 @@ impl Handler {
         }
         out(json!({
             "results": results,
-            "stillWaiting": self.state.runner.agent_waiting(None).len(),
+            "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Identify).len(),
         }))
     }
 
@@ -1350,12 +1460,19 @@ impl Handler {
             }
             _ => String::new(),
         };
+        let price_stats = a.price_stats.unwrap_or(settings.price_stats);
         let options = SessionOptions {
             task,
             save_crops,
             crop_folder,
             crop_format: a.crop_format.unwrap_or(settings.default_crop_format),
-            price_stats: a.price_stats.unwrap_or(settings.price_stats),
+            price_stats,
+            prices: Some(a.prices.unwrap_or(if price_stats {
+                Prices::Ximilar
+            } else {
+                Prices::Off
+            })),
+            grade_engine: a.grade_engine,
             grading: a.grading.unwrap_or(settings.default_grading),
             condition_mode: settings.default_condition_mode.clone(),
             pairing: a.pairing.unwrap_or(if local_sport && read_backs {
@@ -1413,11 +1530,18 @@ impl Handler {
             v["cropsFolder"] = json!(self.state.runner.crop_dir(&session));
         }
         if start {
-            v["next"] = json!(if session.options.agent() {
-                "call next_cards_to_identify and identify the cards with identify_cards until it says finished"
-            } else {
-                "call wait_for_session until it finishes"
-            });
+            v["next"] = json!(
+                if session.options.agent() && session.options.prices_by_agent() {
+                    "call next_cards_to_identify and identify the cards with identify_cards, then next_cards_to_price and \
+                 price_cards, until both say finished"
+                } else if session.options.agent() {
+                    "call next_cards_to_identify and identify the cards with identify_cards until it says finished"
+                } else if session.options.prices_by_agent() {
+                    "call next_cards_to_price and price the cards with price_cards until it says finished"
+                } else {
+                    "call wait_for_session until it finishes"
+                }
+            );
         }
         out(v)
     }

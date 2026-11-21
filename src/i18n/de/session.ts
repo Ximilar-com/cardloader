@@ -201,6 +201,11 @@ const messages: Messages<typeof en> = {
         "„{name}“ und ihre {count} Karten samt Bildern werden für alle im Workspace aus Cards Cloud gelöscht. Eine lokale Sitzung, aus der sie hochgeladen wurde, behält ihre Karten; ein erneuter Upload legt dort eine neue Sitzung an.",
     },
   },
+  agentPricing: {
+    one: "<b>{count} Karte</b> wartet auf den Preis deines KI-Agenten. Bitte ihn, z. B. in Claude: „Bepreise die Karten der Cardloader-Sitzung {name}.“",
+    other:
+      "<b>{count} Karten</b> warten auf die Preise deines KI-Agenten. Bitte ihn, z. B. in Claude: „Bepreise die Karten der Cardloader-Sitzung {name}.“",
+  },
   agentWaiting: {
     one: "<b>{count} Karte</b> wartet auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „Erkenne die Karten der Cardloader-Sitzung {name}.“",
     other:

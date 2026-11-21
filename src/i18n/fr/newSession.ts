@@ -213,7 +213,38 @@ const messages: Messages<typeof en> = {
   needsAgents:
     "Activez les agents IA, avec « Lancer et vérifier », dans les Réglages pour que votre agent puisse identifier les cartes.",
   agentNote:
-    "Votre agent IA lit chaque carte d’après ses images : demandez-lui, p. ex. dans Claude, d’identifier les cartes de cette session dans Cardloader. La gradation et le détourage passent toujours par Ximilar.",
+    "Votre agent IA lit chaque carte d’après ses images : demandez-lui, p. ex. dans Claude, d’identifier les cartes de cette session dans Cardloader.",
   agentHint: "Claude ou un autre agent connecté par MCP",
+  whatToDo: "Que faire",
+  tasks: { identify: "Identifier", prices: "Prix", grade: "Grader", crop: "Recadrer" },
+  taskHints: {
+    identify: "Nom, extension et numéro",
+    prices: "Le prix de vente de chaque carte",
+    grade: "Une note ou l’état",
+    crop: "Détourée et redressée",
+  },
+  needsIdentify: "Nécessite Identifier",
+  keepOne: "Une session fait au moins l’une de ces tâches.",
+  identifyLocked: "Cette session a des cartes : elle continue de les identifier, ou de ne pas le faire.",
+  priceWith: "Prix avec",
+  priceEngines: { ximilar: "Statistiques de prix Ximilar", ebay: "Annonces eBay", agent: "Agent IA (MCP)" },
+  priceHints: {
+    ximilar: "Fournies avec l’identification Ximilar",
+    ebay: "La médiane des annonces actives de la carte",
+    agent: "Claude ou un autre agent connecté par MCP",
+  },
+  priceNotes: {
+    ximilar: "Les prix du marché de Ximilar sont fournis avec chaque identification, sans coût supplémentaire.",
+    ebay: "Une fois une carte identifiée, Cardloader cherche ses annonces eBay actives à prix fixe avec votre keyset eBay et prend leur médiane comme prix. Les annonces restent sur la carte.",
+    agent:
+      "Votre agent IA fixe le prix de chaque carte une fois identifiée : demandez-lui, p. ex. dans Claude, de fixer le prix des cartes de cette session dans Cardloader.",
+  },
+  needsEbay:
+    "Ajoutez votre keyset eBay dans les Réglages pour que Cardloader puisse chercher les prix dans les annonces eBay.",
+  needsAgentsPrices:
+    "Activez les agents IA, avec « Lancer et vérifier », dans les Réglages pour que votre agent puisse fixer le prix des cartes.",
+  gradeWhat: "Que grader",
+  sameModel: "Le même modèle identifie les cartes.",
+  cropNote: "Les recadrages passent toujours par l’API Ximilar.",
 };
 export default messages;

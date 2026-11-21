@@ -98,6 +98,8 @@ export interface CardView {
   local?: { model: string; seconds: number | null };
   /** Its active eBay listings, once searched (local cards only). */
   market?: EbayMarket | null;
+  /** Why the AI agent that priced the card chose its price. */
+  priceNote?: string | null;
   /** Identified by an AI agent: how sure it was, and what it read. */
   agent?: { certainty: string | null; note: string };
   /** How Ximilar read it, when not the usual way: "front + back", "Magic AI", a custom endpoint. */
@@ -429,6 +431,7 @@ export function viewFromItem(i: ItemDetail): CardView {
       ? { model: String(i.recognition.model ?? ""), seconds: i.recognition.seconds ?? null }
       : undefined,
     market: i.market,
+    priceNote: i.priceNote,
     agent:
       i.recognition?.endpoint === "agent"
         ? { certainty: i.recognition.certainty ?? null, note: String(i.recognition.note ?? "") }

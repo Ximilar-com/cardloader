@@ -60,6 +60,8 @@ const messages: Messages<typeof en> = {
     grade: "전체 등급",
     centering: "센터링만",
   },
+  prices: { off: "끔", ximilar: "Ximilar", ebay: "eBay", agent: "AI 에이전트" },
+  stageBy: "{stage}: {by}",
   gradingShort: {
     off: "끔",
     condition: "상태",

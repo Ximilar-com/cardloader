@@ -60,6 +60,8 @@ const messages: Messages<typeof en> = {
     grade: "Volles Grading",
     centering: "Nur Zentrierung",
   },
+  prices: { off: "Aus", ximilar: "Ximilar", ebay: "eBay", agent: "KI-Agent" },
+  stageBy: "{stage}: {by}",
   gradingShort: {
     off: "Aus",
     condition: "Zustand",

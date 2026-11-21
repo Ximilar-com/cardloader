@@ -31,6 +31,7 @@ const messages: Messages<typeof en> = {
     accepted: "Du hast diesen Treffer übernommen",
   },
   marketPrice: "Marktpreis",
+  priceNote: "Vom KI-Agenten bepreist: {note}",
   centering: "Zentrierung",
   condition: "Zustand",
   grade: "Bewertung",

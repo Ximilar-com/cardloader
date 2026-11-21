@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (p: string) => `asset://${p}` }));
 
-import type { GradingMode, SessionOptions } from "./api";
+import type { Engine, GradingMode, Prices, SessionOptions, Stage } from "./api";
 import {
   agentOf,
   basename,
@@ -12,10 +12,17 @@ import {
   engineOf,
   eta,
   grade,
+  gradeEngineOf,
   gradingOf,
   parseAmount,
   price,
+  pricesOf,
+  stagesOf,
+  tasksOf,
   usesApi,
+  withGradeMode,
+  withTasks,
+  type TaskChoice,
 } from "./format";
 import cases from "./session-options.cases.json";
 
@@ -118,6 +125,49 @@ describe("format", () => {
       expect(cropsOf(o), what).toBe(c.crops);
       // Only identifying can be an agent's.
       expect(engineOf(o) === "agent", what).toBe(c.agent);
+      expect(gradeEngineOf(o), what).toBe(c.gradeEngine as Engine);
+      expect(pricesOf(o), what).toBe(c.prices as Prices);
+      expect(stagesOf(o), what).toEqual(c.stages as Stage[]);
     }
+  });
+
+  it("maps the chosen tasks onto a session's options and back", () => {
+    const base = {
+      ...cases[0].options,
+      task: "identify",
+      engine: "ximilar",
+      grading: "off",
+      saveCrops: false,
+      priceStats: false,
+      prices: "off",
+    } as SessionOptions;
+    const roundTrip = (tasks: TaskChoice[]) => tasksOf(withTasks(base, tasks));
+    for (const tasks of [
+      ["identify"],
+      ["identify", "prices"],
+      ["identify", "prices", "grade", "crop"],
+      ["grade"],
+      ["grade", "crop"],
+      ["crop"],
+    ] as TaskChoice[][]) {
+      expect(roundTrip(tasks), tasks.join("+")).toEqual(tasks);
+    }
+    // Prices need identification.
+    expect(roundTrip(["prices", "grade"])).toEqual(["grade"]);
+    // Ximilar's prices when Ximilar identifies, else eBay's.
+    expect(withTasks(base, ["identify", "prices"]).prices).toBe("ximilar");
+    expect(withTasks({ ...base, engine: "local" }, ["identify", "prices"]).prices).toBe("ebay");
+
+    // The condition is a grading mode: without identification it is a condition session, and back.
+    const condition = withGradeMode(withTasks(base, ["identify", "grade"]), "condition");
+    expect(condition.grading).toBe("condition");
+    const only = withTasks(condition, ["grade"]);
+    expect(gradingOf(only)).toBe("condition");
+    expect(only.task).toBe("condition");
+    expect(withTasks(only, ["identify", "grade"]).grading).toBe("condition");
+    expect(withGradeMode(withTasks(base, ["grade"]), "centering")).toMatchObject({
+      task: "grade",
+      grading: "centering",
+    });
   });
 });

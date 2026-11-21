@@ -46,6 +46,13 @@ str_enum!(
 );
 
 str_enum!(
+    /// Where an identified card's price comes from: none, the price statistics Ximilar's identification returns
+    /// (only when Ximilar identifies), the card's active eBay listings (Browse API, the user's keyset), or an AI
+    /// agent over MCP (`next_cards_to_price` / `price_cards`).
+    Prices { Off = "off", Ximilar = "ximilar", Ebay = "ebay", Agent = "agent" } default Off
+);
+
+str_enum!(
     /// What a session does with each card: identify it (and grade it, price it…), only grade it, only tell its
     /// condition, or only cut it out of the image (`crop_level`) into a folder of card pictures.
     Task { Identify = "identify", Grade = "grade", Condition = "condition", Crop = "crop" } default Identify
@@ -54,7 +61,7 @@ str_enum!(
 str_enum!(
     /// A step of a card's pass through a session, in order (`SessionOptions::stages`). A pass cut short goes on at
     /// the stage the card still owes (`items.stage`), so nothing already paid for is asked again.
-    Stage { Identify = "identify", Grade = "grade", Crop = "crop" } default Identify
+    Stage { Identify = "identify", Price = "price", Grade = "grade", Crop = "crop" } default Identify
 );
 
 impl Stage {
@@ -68,7 +75,7 @@ impl Stage {
     }
 
     pub fn find(text: &str) -> Option<Self> {
-        [Stage::Identify, Stage::Grade, Stage::Crop]
+        [Stage::Identify, Stage::Price, Stage::Grade, Stage::Crop]
             .into_iter()
             .find(|s| s.as_str() == text)
     }
@@ -255,8 +262,14 @@ pub struct SessionOptions {
     pub scan: ScanSettings,
     /// Mirror the session to Ximilar Cards Cloud while it runs.
     pub sync_remote: bool,
+    /// What identifies the cards (and, for a session that doesn't identify, what grades them unless
+    /// `grade_engine` says).
     pub engine: Engine,
-    /// The local model (`crate::local::catalog`) when `engine` is `Local`.
+    /// What grades the cards; `None` (sessions made before engines were chosen per task) = `engine`.
+    pub grade_engine: Option<Engine>,
+    /// Where prices come from; `None` (older sessions) = Ximilar's price statistics when `price_stats`.
+    pub prices: Option<Prices>,
+    /// The local model (`crate::local::catalog`) when identification or grading is `Local`.
     pub local_model: String,
 }
 
@@ -285,6 +298,8 @@ impl Default for SessionOptions {
             scan: ScanSettings::default(),
             sync_remote: false,
             engine: Engine::Ximilar,
+            grade_engine: None,
+            prices: None,
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
         }
     }
@@ -317,11 +332,15 @@ impl SessionOptions {
         }
     }
 
-    /// What happens to each card, in order: its identification, its grading (a job of the card-grader, or the local
-    /// model), its crop (always a job of the card-grader).
+    /// What happens to each card, in order: its identification, its price (unless Ximilar's identification brought
+    /// it), its grading (a job of the card-grader, or the local model), its crop (always a job of the card-grader).
     pub fn stages(&self) -> Vec<Stage> {
         [
             (self.identifies(), Stage::Identify),
+            (
+                matches!(self.prices(), Prices::Ebay | Prices::Agent),
+                Stage::Price,
+            ),
             (self.grading_mode() != GradingMode::Off, Stage::Grade),
             (self.crops(), Stage::Crop),
         ]
@@ -330,32 +349,70 @@ impl SessionOptions {
         .collect()
     }
 
-    /// Identified or graded on this computer (cropping always calls Ximilar): a crop-only session never is.
-    pub fn local(&self) -> bool {
-        self.engine == Engine::Local && !self.crops_only()
+    /// What grades the cards. An AI agent never grades: a session it identifies grades with Ximilar.
+    pub fn grade_engine(&self) -> Engine {
+        match self.grade_engine.unwrap_or(self.engine) {
+            Engine::Agent => Engine::Ximilar,
+            engine => engine,
+        }
     }
 
-    /// Identified by an AI agent over MCP. Only identification is the agent's: a session that only grades or crops
-    /// with this engine uses the Ximilar API.
+    /// Where the cards' prices come from. Only identified cards are priced, and Ximilar's price statistics come
+    /// only with its identification.
+    pub fn prices(&self) -> Prices {
+        let prices = self.prices.unwrap_or(if self.price_stats {
+            Prices::Ximilar
+        } else {
+            Prices::Off
+        });
+        match prices {
+            _ if !self.identifies() => Prices::Off,
+            Prices::Ximilar if self.engine != Engine::Ximilar => Prices::Off,
+            prices => prices,
+        }
+    }
+
+    /// Identified on this computer.
+    pub fn identifies_locally(&self) -> bool {
+        self.identifies() && self.engine == Engine::Local
+    }
+
+    /// Graded on this computer.
+    pub fn grades_locally(&self) -> bool {
+        self.grading_mode() != GradingMode::Off && self.grade_engine() == Engine::Local
+    }
+
+    /// Identified or graded on this computer (cropping always calls Ximilar).
+    pub fn uses_local(&self) -> bool {
+        self.identifies_locally() || self.grades_locally()
+    }
+
+    /// Identified by an AI agent over MCP. Only identification and prices can be an agent's.
     pub fn agent(&self) -> bool {
         self.engine == Engine::Agent && self.identifies()
     }
 
-    /// Calls the Ximilar API for something: identifying, grading, cropping or syncing. A local or agent session
-    /// that does none of that runs without a token.
+    /// Priced by an AI agent over MCP.
+    pub fn prices_by_agent(&self) -> bool {
+        self.prices() == Prices::Agent
+    }
+
+    /// An AI agent identifies or prices the cards.
+    pub fn uses_agent(&self) -> bool {
+        self.agent() || self.prices_by_agent()
+    }
+
+    /// Prices the cards from their active eBay listings.
+    pub fn uses_ebay(&self) -> bool {
+        self.prices() == Prices::Ebay
+    }
+
+    /// Calls the Ximilar API for something: identifying, grading, cropping or syncing. A session whose stages all
+    /// run elsewhere runs without a token.
     pub fn uses_api(&self) -> bool {
-        if self.crops() || (self.identifies() && self.sync_remote) {
-            return true;
-        }
-        match self.task {
-            Task::Identify => match self.engine {
-                Engine::Ximilar => true,
-                Engine::Local => false,
-                Engine::Agent => self.grading_mode() != GradingMode::Off,
-            },
-            Task::Grade | Task::Condition => !self.local(),
-            Task::Crop => true,
-        }
+        self.crops()
+            || (self.identifies() && (self.sync_remote || self.engine == Engine::Ximilar))
+            || (self.grading_mode() != GradingMode::Off && self.grade_engine() == Engine::Ximilar)
     }
 }
 
@@ -377,6 +434,8 @@ pub struct SessionCounts {
     pub to_review: i64,
     /// Paid Ximilar API calls the cards took.
     pub calls: i64,
+    /// Identified cards in their price stage (searching eBay, or waiting for an AI agent's price).
+    pub pricing: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -678,6 +737,8 @@ pub struct ItemDetail {
     pub crop_images: Vec<String>,
     /// Its active eBay listings, once searched.
     pub market: Option<EbayMarket>,
+    /// Why the AI agent that priced the card chose its price.
+    pub price_note: Option<String>,
 }
 
 /// Cards analysed on one local day (`YYYY-MM-DD`).
@@ -758,6 +819,24 @@ mod tests {
         assert_eq!(with(Task::Grade, GradingMode::Off, false), [Grade]);
         assert_eq!(with(Task::Condition, GradingMode::Off, true), [Grade, Crop]);
         assert_eq!(with(Task::Crop, GradingMode::Grade, false), [Crop]);
+        let priced = |prices| SessionOptions {
+            prices: Some(prices),
+            grading: GradingMode::Grade,
+            ..SessionOptions::default()
+        };
+        assert_eq!(priced(Prices::Ebay).stages(), [Identify, Price, Grade]);
+        assert_eq!(
+            priced(Prices::Ximilar).stages(),
+            [Identify, Grade],
+            "Ximilar's prices come with its identification"
+        );
+        assert_eq!(Stage::resume(&[Identify, Price, Grade], Price), 1);
+        assert_eq!(
+            Stage::resume(&[Identify, Grade], Price),
+            1,
+            "prices dropped since"
+        );
+        assert_eq!(Stage::find("price"), Some(Price));
 
         // A card owing a stage goes on there; when the options dropped the stage since, at the next one left.
         assert_eq!(Stage::resume(&[Identify, Grade, Crop], Grade), 1);
@@ -778,6 +857,9 @@ mod tests {
             uses_api: bool,
             agent: bool,
             crops: bool,
+            grade_engine: Engine,
+            prices: Prices,
+            stages: Vec<Stage>,
         }
         let cases: Vec<Case> =
             serde_json::from_str(include_str!("../../src/lib/session-options.cases.json")).unwrap();
@@ -785,13 +867,16 @@ mod tests {
         for case in cases {
             let o = &case.options;
             let what = format!(
-                "{:?} by {:?}, grading {:?}, crops {}, sync {}",
-                o.task, o.engine, o.grading, o.save_crops, o.sync_remote
+                "{:?} by {:?}, grading {:?} by {:?}, prices {:?}, crops {}, sync {}",
+                o.task, o.engine, o.grading, o.grade_engine, o.prices, o.save_crops, o.sync_remote
             );
             assert_eq!(o.grading_mode(), case.grading_mode, "{what}");
             assert_eq!(o.uses_api(), case.uses_api, "{what}");
             assert_eq!(o.agent(), case.agent, "{what}");
             assert_eq!(o.crops(), case.crops, "{what}");
+            assert_eq!(o.grade_engine(), case.grade_engine, "{what}");
+            assert_eq!(o.prices(), case.prices, "{what}");
+            assert_eq!(o.stages(), case.stages, "{what}");
         }
     }
 
@@ -815,5 +900,28 @@ mod tests {
         };
         assert!(!grade_only.agent());
         assert!(grade_only.uses_api());
+
+        // Each task by its own engine: identified by Ximilar and graded here, or the other way round.
+        let mixed = |engine, grade_engine| SessionOptions {
+            grade_engine: Some(grade_engine),
+            ..with(engine, GradingMode::Grade, false)
+        };
+        let ximilar_then_local = mixed(Engine::Ximilar, Engine::Local);
+        assert!(ximilar_then_local.grades_locally() && !ximilar_then_local.identifies_locally());
+        assert!(ximilar_then_local.uses_api() && ximilar_then_local.uses_local());
+        let local_then_ximilar = mixed(Engine::Local, Engine::Ximilar);
+        assert!(local_then_ximilar.identifies_locally() && !local_then_ximilar.grades_locally());
+        assert!(local_then_ximilar.uses_api());
+        assert!(!mixed(Engine::Local, Engine::Local).uses_api());
+        assert_eq!(
+            mixed(Engine::Agent, Engine::Agent).grade_engine(),
+            Engine::Ximilar,
+            "an agent never grades"
+        );
+        let agent_prices = SessionOptions {
+            prices: Some(Prices::Agent),
+            ..with(Engine::Local, GradingMode::Off, false)
+        };
+        assert!(agent_prices.uses_agent() && !agent_prices.agent() && !agent_prices.uses_api());
     }
 }

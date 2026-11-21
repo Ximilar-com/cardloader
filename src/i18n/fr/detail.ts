@@ -31,6 +31,7 @@ const messages: Messages<typeof en> = {
     accepted: "Vous avez accepté cette correspondance",
   },
   marketPrice: "Prix du marché",
+  priceNote: "Prix fixé par l’agent IA : {note}",
   centering: "Centrage",
   condition: "État",
   grade: "Note",

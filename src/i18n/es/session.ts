@@ -201,6 +201,11 @@ const messages: Messages<typeof en> = {
         "«{name}» y sus {count} cartas, con sus imágenes, se eliminan de Cards Cloud para todos en el espacio de trabajo. Una sesión local desde la que se subió conserva sus cartas; subirla de nuevo crea allí una sesión nueva.",
     },
   },
+  agentPricing: {
+    one: "<b>{count} carta</b> espera el precio de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} de Cardloader».",
+    other:
+      "<b>{count} cartas</b> esperan los precios de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} de Cardloader».",
+  },
   agentWaiting: {
     one: "<b>{count} carta</b> espera a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} de Cardloader».",
     other:

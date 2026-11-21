@@ -112,11 +112,20 @@ pub struct Runner {
     pub ebay: EbayAuth,
     /// On-device models (downloads, the loaded model).
     pub local: Arc<LocalModels>,
-    /// Cards waiting for an AI agent's identification (agent sessions), by item id.
+    /// Cards waiting for an AI agent to identify or price them, by item id (a card waits for one thing at a time).
     agent_waits: Mutex<HashMap<i64, AgentWait>>,
 }
 
-/// What an AI agent says about a card it was shown (MCP `identify_cards`).
+/// What a card waits for an AI agent to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentTask {
+    /// Identify it (`next_cards_to_identify` / `identify_cards`).
+    Identify,
+    /// Price it, once identified (`next_cards_to_price` / `price_cards`).
+    Price,
+}
+
+/// What an AI agent says about a card it was shown (MCP `identify_cards`, `price_cards`).
 #[derive(Debug, Clone)]
 pub enum AgentAnswer {
     Identified {
@@ -128,10 +137,26 @@ pub enum AgentAnswer {
     },
     /// It couldn't tell: the card fails with the note, and Retry offers it again.
     Unidentified { note: String },
+    /// The card's price, in US dollars as Ximilar's are, and why.
+    Priced { price: f64, note: String },
+    /// It found no price: only the card's price fails, with the note.
+    Unpriced { note: String },
+}
+
+impl AgentAnswer {
+    fn task(&self) -> AgentTask {
+        match self {
+            AgentAnswer::Identified { .. } | AgentAnswer::Unidentified { .. } => {
+                AgentTask::Identify
+            }
+            AgentAnswer::Priced { .. } | AgentAnswer::Unpriced { .. } => AgentTask::Price,
+        }
+    }
 }
 
 struct AgentWait {
     session_id: String,
+    task: AgentTask,
     answer: tokio::sync::oneshot::Sender<AgentAnswer>,
 }
 
@@ -494,10 +519,14 @@ impl Runner {
                 session.options = options;
             }
         }
-        let local = session.options.local();
-        if local && !self.local.is_ready(&session.options.local_model) {
+        if session.options.uses_local() && !self.local.is_ready(&session.options.local_model) {
             return Err(Error::msg(
-                "the local model isn't downloaded — download it in Settings, or identify with Ximilar",
+                "the local model isn't downloaded — download it in Settings, or use Ximilar",
+            ));
+        }
+        if session.options.uses_ebay() && !crate::ebay::browse::available(&self.settings) {
+            return Err(Error::msg(
+                "eBay prices need your eBay keyset — add it in Settings → Selling, or price the cards another way",
             ));
         }
         // A local or agent session may need no Ximilar API at all (unless jobs started earlier are still out).
@@ -700,11 +729,12 @@ impl Runner {
         cancel: CancellationToken,
     ) -> Result<Option<String>> {
         let id = session.id.clone();
-        // The local model reads one card at a time.
-        let concurrency = if session.options.local() {
-            1
-        } else if session.options.agent() {
+        // An agent reads several cards per call (the local model still reads one at a time, behind its own lock);
+        // a local model alone gains nothing from more.
+        let concurrency = if session.options.uses_agent() {
             AGENT_BATCH
+        } else if session.options.uses_local() {
+            1
         } else {
             let max = crate::settings::MAX_CONCURRENCY;
             self.settings.get().concurrency.clamp(1, max) as usize
@@ -754,7 +784,7 @@ impl Runner {
         // Grading (and crop) results arrive independently of the dispatcher.
         let (dispatch_done_tx, dispatch_done_rx) = watch::channel(false);
         let grades = (session.options.grading_mode() != GradingMode::Off
-            && !session.options.local())
+            && !session.options.grades_locally())
             || session.options.crops();
         let poller = client
             .clone()
@@ -1115,6 +1145,7 @@ impl Runner {
             // A later stage that can't pass fails only that part of the card. What would follow isn't tried:
             // Analyse again redoes the card.
             let kind = match stage {
+                Stage::Price => JobKind::Price,
                 Stage::Crop => JobKind::Crop,
                 Stage::Identify | Stage::Grade => JobKind::Grading,
             };
@@ -1141,9 +1172,13 @@ impl Runner {
             Stage::Identify if o.agent() => {
                 self.identify_by_agent(session, item, more, cancel).await
             }
-            Stage::Identify if o.local() => self.identify_locally(session, item, more).await,
+            Stage::Identify if o.identifies_locally() => {
+                self.identify_locally(session, item, more).await
+            }
             Stage::Identify => self.identify(session, api()?, item, more, cancel).await,
-            Stage::Grade if o.local() => self.grade_locally(session, item).await,
+            Stage::Price if o.prices_by_agent() => self.price_by_agent(session, item, cancel).await,
+            Stage::Price => self.price_on_ebay(item, cancel).await,
+            Stage::Grade if o.grades_locally() => self.grade_locally(session, item).await,
             Stage::Grade => self.submit_grading(session, api()?, item, cancel).await,
             Stage::Crop => self.submit_crop(session, api()?, item, cancel).await,
         }
@@ -1180,7 +1215,7 @@ impl Runner {
             None
         };
         let opts = RecognitionOptions {
-            price_stats: o.price_stats,
+            price_stats: o.prices() == Prices::Ximilar,
             slab: o.slab,
             magic_ai: o.magic_ai,
             both_sides: o.both_sides,
@@ -1216,20 +1251,21 @@ impl Runner {
         )
     }
 
-    /// Waits until an AI agent identifies the card over MCP (or the run stops: the card goes back to the queue).
-    async fn identify_by_agent(
+    /// Offers the card to an AI agent and waits for its answer (`None`: the run stopped, and the card goes back to
+    /// the queue).
+    async fn wait_for_agent(
         &self,
         session: &Session,
-        item: &ItemDetail,
-        more: bool,
+        item_id: i64,
+        task: AgentTask,
         cancel: &CancellationToken,
-    ) -> Result<()> {
-        let item_id = item.summary.id;
+    ) -> Result<AgentAnswer> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.agent_waits.lock().unwrap().insert(
             item_id,
             AgentWait {
                 session_id: session.id.clone(),
+                task,
                 answer: tx,
             },
         );
@@ -1243,17 +1279,32 @@ impl Runner {
             answer = rx => answer.ok(),
             _ = cancel.cancelled() => None,
         };
+        answer.ok_or_else(|| ApiError::Cancelled.into())
+    }
+
+    /// Waits until an AI agent identifies the card over MCP (or the run stops: the card goes back to the queue).
+    async fn identify_by_agent(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        more: bool,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let item_id = item.summary.id;
+        let answer = self
+            .wait_for_agent(session, item_id, AgentTask::Identify, cancel)
+            .await?;
         let (id_type, card, certainty, note) = match answer {
-            None => return Err(ApiError::Cancelled.into()),
-            Some(AgentAnswer::Unidentified { note }) => {
-                return Err(Error::msg(format!("AI agent: {}", note.trim())))
-            }
-            Some(AgentAnswer::Identified {
+            AgentAnswer::Identified {
                 id_type,
                 card,
                 certainty,
                 note,
-            }) => (id_type, card, certainty, note),
+            } => (id_type, card, certainty, note),
+            AgentAnswer::Unidentified { note } => {
+                return Err(Error::msg(format!("AI agent: {}", note.trim())))
+            }
+            _ => return Err(Error::msg("AI agent: no identification")),
         };
         let raw =
             json!({"endpoint": "agent", "certainty": certainty, "note": note, "response": card});
@@ -1271,28 +1322,132 @@ impl Runner {
         )
     }
 
-    /// The cards waiting for an AI agent, oldest first: (session id, item id), of one session or of all.
-    pub fn agent_waiting(&self, session_id: Option<&str>) -> Vec<(String, i64)> {
+    /// Waits until an AI agent prices the identified card over MCP.
+    async fn price_by_agent(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let item_id = item.summary.id;
+        match self
+            .wait_for_agent(session, item_id, AgentTask::Price, cancel)
+            .await?
+        {
+            AgentAnswer::Priced { price, note } => {
+                let note = note.trim();
+                self.db
+                    .save_price(item_id, price, Some(note).filter(|n| !n.is_empty()))?;
+                self.emit_item(item_id);
+                Ok(())
+            }
+            AgentAnswer::Unpriced { note } => Err(Error::msg(format!("AI agent: {}", note.trim()))),
+            _ => Err(Error::msg("AI agent: no price")),
+        }
+    }
+
+    /// Prices the identified card from its active eBay listings: the median of those that are the card. A card
+    /// eBay has no listings of keeps no price, which isn't an error.
+    async fn price_on_ebay(&self, item: &ItemDetail, cancel: &CancellationToken) -> Result<()> {
+        let item_id = item.summary.id;
+        let market = tokio::select! {
+            market = self.find_ebay_listings(item_id, None, false, None) => market?,
+            _ = cancel.cancelled() => return Err(ApiError::Cancelled.into()),
+        };
+        if let Some(range) = market.range {
+            self.db.save_price(item_id, range.median, None)?;
+            self.emit_item(item_id);
+        }
+        Ok(())
+    }
+
+    /// Searches eBay for an identified card's active listings, by its fields or `query`, and keeps them and their
+    /// price range on the card.
+    pub async fn find_ebay_listings(
+        &self,
+        item_id: i64,
+        query: Option<String>,
+        auctions: bool,
+        limit: Option<u32>,
+    ) -> Result<EbayMarket> {
+        let item = self.db.item_summary(item_id)?;
+        let mut search = crate::ebay::browse::search_for(&item)
+            .ok_or_else(|| Error::msg("the card isn't identified yet: identify it first"))?;
+        if let Some(q) = query
+            .map(|q| q.trim().to_string())
+            .filter(|q| !q.is_empty())
+        {
+            search.query = q;
+        }
+        search.auctions = auctions;
+        if let Some(limit) = limit {
+            search.limit = limit.clamp(1, crate::ebay::browse::MAX_LIMIT);
+        }
+        let client = self.ebay.app.client(&self.settings).await?;
+        let (total, listings) = crate::ebay::browse::search(&client, &search).await?;
+        // The card may have become another one meanwhile (a pick, an edit, a new recognition), which drops its
+        // listings: these are of the card it was.
+        let now = self.db.item_summary(item_id)?;
+        if now.card != item.card || now.id_type != item.id_type {
+            return Err(Error::msg(
+                "the card changed while eBay was searched: search again",
+            ));
+        }
+        let market = crate::ebay::browse::market(&search, total, listings);
+        self.db.save_market(item_id, &market)?;
+        self.emit_item(item_id);
+        Ok(market)
+    }
+
+    /// The cards waiting for an AI agent to do `task`, oldest first: (session id, item id), of one session or of
+    /// all.
+    pub fn agent_waiting(&self, session_id: Option<&str>, task: AgentTask) -> Vec<(String, i64)> {
         let mut cards: Vec<(String, i64)> = self
             .agent_waits
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_, w)| session_id.is_none_or(|s| s == w.session_id))
+            .filter(|(_, w)| w.task == task && session_id.is_none_or(|s| s == w.session_id))
             .map(|(id, w)| (w.session_id.clone(), *id))
             .collect();
         cards.sort_by_key(|(_, id)| *id);
         cards
     }
 
-    /// Hands an AI agent's answer to the card waiting for it.
-    pub fn answer_agent(&self, item_id: i64, answer: AgentAnswer) -> Result<()> {
-        let wait = self
-            .agent_waits
+    /// How many cards wait for an AI agent, for anything.
+    pub fn agent_waiting_count(&self, session_id: Option<&str>) -> usize {
+        self.agent_waits
             .lock()
             .unwrap()
-            .remove(&item_id)
-            .ok_or_else(|| Error::msg(format!("card {item_id} isn't waiting for an AI agent")))?;
+            .values()
+            .filter(|w| session_id.is_none_or(|s| s == w.session_id))
+            .count()
+    }
+
+    /// Hands an AI agent's answer to the card waiting for it.
+    pub fn answer_agent(&self, item_id: i64, answer: AgentAnswer) -> Result<()> {
+        let wait = {
+            let mut waits = self.agent_waits.lock().unwrap();
+            match waits.get(&item_id) {
+                Some(w) if w.task != answer.task() => {
+                    return Err(Error::msg(match w.task {
+                        AgentTask::Identify => {
+                            format!("card {item_id} waits to be identified, not priced")
+                        }
+                        AgentTask::Price => {
+                            format!("card {item_id} waits to be priced, not identified")
+                        }
+                    }))
+                }
+                _ => waits.remove(&item_id),
+            }
+        }
+        .ok_or_else(|| {
+            Error::msg(match answer.task() {
+                AgentTask::Identify => format!("card {item_id} isn't waiting for an AI agent"),
+                AgentTask::Price => format!("card {item_id} isn't waiting for an AI agent's price"),
+            })
+        })?;
         wait.answer
             .send(answer)
             .map_err(|_| Error::msg(format!("card {item_id} isn't waiting for an AI agent")))
@@ -1437,6 +1592,8 @@ impl Runner {
                                 self.store_crop(&session, &client, item_id, &job, &cancel)
                                     .await
                             }
+                            // A price is never a job that is out (`Db::jobs` lists none).
+                            JobKind::Price => continue,
                         };
                         stored.err().and_then(|e| {
                             tracing::warn!("{what} result of item {item_id}: {e}");
@@ -1695,8 +1852,8 @@ const IDENTIFICATION_DPI: u32 = 300;
 
 fn scan_settings(options: &SessionOptions) -> ScanSettings {
     // A crop is as sharp as the scan it is cut from.
-    let grades =
-        (options.grading_mode() != GradingMode::Off && !options.local()) || options.crops();
+    let grades = (options.grading_mode() != GradingMode::Off && !options.grades_locally())
+        || options.crops();
     ScanSettings {
         dpi: if grades {
             options.scan.dpi
@@ -4087,6 +4244,138 @@ pub(crate) mod tests {
         assert_eq!(jobs.len(), 2);
         assert_eq!(jobs[1]["endpoint"], "condition");
         assert_eq!(jobs[1]["mode"], "tcgplayer");
+    }
+
+    /// An eBay keyset's mock: the application token, and the Browse search answering `search` (status, body).
+    async fn mock_browse(status: u16, search: Value) -> MockServer {
+        let ebay = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/identity/v1/oauth2/token"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(json!({"access_token": "app", "expires_in": 7200})),
+            )
+            .mount(&ebay)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/buy/browse/v1/item_summary/search"))
+            .respond_with(ResponseTemplate::new(status).set_body_json(search))
+            .mount(&ebay)
+            .await;
+        ebay
+    }
+
+    /// Each task by its own engine: Ximilar identifies (asked for no price statistics), eBay's listings price the
+    /// card (their median), and the local model grades it. A refused eBay search fails only the card's price.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn each_task_by_its_own_engine() {
+        use crate::settings::Secret;
+        let server = mock_ximilar().await;
+        let listing = |id: &str, price: &str| {
+            json!({"itemId": id, "title": "Charizard ex 125/197 PSA 10", "price": {"value": price, "currency": "USD"},
+                   "itemWebUrl": "https://www.ebay.com/itm/1", "condition": "Graded", "buyingOptions": ["FIXED_PRICE"]})
+        };
+        let ebay = mock_browse(
+            200,
+            json!({"total": 3, "itemSummaries": [
+                listing("v1|1|0", "20.00"), listing("v1|2|0", "30.00"), listing("v1|3|0", "26.00")]}),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        RgbImage::from_pixel(630, 880, Rgb([200, 30, 30]))
+            .save(cards.join("a.png"))
+            .unwrap();
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        let options = SessionOptions {
+            engine: Engine::Ximilar,
+            grading: GradingMode::Grade,
+            grade_engine: Some(Engine::Local),
+            prices: Some(Prices::Ebay),
+            ..SessionOptions::default()
+        };
+        let session = db
+            .create_session(&NewSession {
+                name: "Mixed".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Auto,
+                options: options.clone(),
+            })
+            .unwrap();
+        let err = runner.start(&session.id).unwrap_err();
+        assert!(err.to_string().contains("isn't downloaded"), "{err}");
+        crate::local::testing::install_fake(
+            &runner.local,
+            r#"{"corners": 9, "edges": 8.5, "surface": 7, "centering": 9}"#,
+        );
+        let err = runner.start(&session.id).unwrap_err();
+        assert!(err.to_string().contains("eBay keyset"), "{err}");
+        runner
+            .settings
+            .update_ebay(|e| {
+                e.app_id = "Demo-App".into();
+                e.api_base = ebay.uri();
+            })
+            .unwrap();
+        runner
+            .settings
+            .set_secret(Secret::EbayCert, "cert")
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Completed, "{s:?}");
+        let requests = server.received_requests().await.unwrap();
+        let analyzed = bodies(&requests, "/collectibles/v2/analyze");
+        assert_eq!(analyzed.len(), 1);
+        assert!(analyzed[0]["price_stats"].is_null(), "no Ximilar prices");
+        assert!(
+            bodies(&requests, "/account/v2/request/").is_empty(),
+            "graded on this computer"
+        );
+        let item = db.item(db.items(&session.id).unwrap()[0].id).unwrap();
+        assert_eq!(item.summary.status, ItemStatus::Done);
+        assert_eq!(item.summary.card.name, "Charizard ex");
+        assert_eq!(item.summary.price, Some(26.0), "the listings' median");
+        assert_eq!(item.summary.market_range.map(|r| r.count), Some(3));
+        assert_eq!(item.summary.grade, Some(8.0), "graded by the local model");
+        assert_eq!(
+            item.grading.unwrap()["engine"],
+            format!("local/{}", crate::local::catalog::DEFAULT_MODEL).as_str()
+        );
+
+        // eBay refusing the search fails only the price: the card stays identified.
+        let refusing = mock_browse(400, json!({"errors": [{"message": "bad query"}]})).await;
+        runner
+            .settings
+            .update_ebay(|e| e.api_base = refusing.uri())
+            .unwrap();
+        let session = db
+            .create_session(&NewSession {
+                name: "Refused".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Auto,
+                options,
+            })
+            .unwrap();
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+        let item = &db.items(&session.id).unwrap()[0];
+        assert_eq!(item.status, ItemStatus::Error);
+        assert_eq!(item.card.name, "Charizard ex");
+        assert!(
+            item.error
+                .as_deref()
+                .unwrap_or_default()
+                .starts_with("price: "),
+            "{:?}",
+            item.error
+        );
     }
 
     /// Stopping a session keeps every card its source had sent: each has its item, queued for the next run (a

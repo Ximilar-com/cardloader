@@ -30,6 +30,7 @@ export default {
     accepted: "You accepted this match",
   },
   marketPrice: "Market price",
+  priceNote: "Priced by the AI agent: {note}",
   centering: "Centering",
   condition: "Condition",
   grade: "Grade",

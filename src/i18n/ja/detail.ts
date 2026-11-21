@@ -32,6 +32,7 @@ const messages: Messages<typeof en> = {
     accepted: "この一致を承認しました",
   },
   marketPrice: "相場",
+  priceNote: "AIエージェントが付けた価格：{note}",
   centering: "センタリング",
   condition: "コンディション",
   grade: "グレード",

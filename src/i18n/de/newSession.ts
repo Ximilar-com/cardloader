@@ -213,7 +213,38 @@ const messages: Messages<typeof en> = {
   needsAgents:
     "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten erkennen kann.",
   agentNote:
-    "Dein KI-Agent liest jede Karte anhand ihrer Bilder: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu erkennen. Grading und Zuschnitte laufen weiter über Ximilar.",
+    "Dein KI-Agent liest jede Karte anhand ihrer Bilder: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu erkennen.",
   agentHint: "Claude oder ein anderer per MCP verbundener Agent",
+  whatToDo: "Was tun",
+  tasks: { identify: "Erkennen", prices: "Preise", grade: "Graden", crop: "Zuschneiden" },
+  taskHints: {
+    identify: "Name, Set und Nummer",
+    prices: "Wofür jede Karte verkauft wird",
+    grade: "Eine Note oder der Zustand",
+    crop: "Ausgeschnitten und gerade gerückt",
+  },
+  needsIdentify: "Braucht Erkennen",
+  keepOne: "Eine Sitzung macht mindestens eines davon.",
+  identifyLocked: "Diese Sitzung hat Karten: Sie erkennt sie weiter, oder weiter nicht.",
+  priceWith: "Preise mit",
+  priceEngines: { ximilar: "Ximilar-Preisstatistik", ebay: "eBay-Angebote", agent: "KI-Agent (MCP)" },
+  priceHints: {
+    ximilar: "Kommt mit der Erkennung von Ximilar",
+    ebay: "Der Median der aktiven Angebote der Karte",
+    agent: "Claude oder ein anderer per MCP verbundener Agent",
+  },
+  priceNotes: {
+    ximilar: "Ximilars Marktpreise kommen mit jeder Erkennung, ohne Zusatzkosten.",
+    ebay: "Sobald eine Karte erkannt ist, sucht Cardloader mit deinem eBay-Keyset ihre aktiven eBay-Angebote zum Festpreis und nimmt deren Median als Preis. Die Angebote bleiben an der Karte.",
+    agent:
+      "Dein KI-Agent bepreist jede Karte, sobald sie erkannt ist: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu bepreisen.",
+  },
+  needsEbay:
+    "Füge in den Einstellungen dein eBay-Keyset hinzu, damit Cardloader eBay-Angebote nach Preisen durchsuchen kann.",
+  needsAgentsPrices:
+    "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten bepreisen kann.",
+  gradeWhat: "Was graden",
+  sameModel: "Dasselbe Modell erkennt die Karten.",
+  cropNote: "Zuschnitte laufen immer über die Ximilar-API.",
 };
 export default messages;

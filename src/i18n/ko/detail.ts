@@ -31,6 +31,7 @@ const messages: Messages<typeof en> = {
     accepted: "이 일치 항목을 승인했습니다",
   },
   marketPrice: "시세",
+  priceNote: "AI 에이전트가 매긴 가격: {note}",
   centering: "센터링",
   condition: "상태",
   grade: "등급",

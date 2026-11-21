@@ -65,9 +65,11 @@ import {
   eta,
   agentOf,
   cropsOf,
+  gradeEngineOf,
   gradingOf,
   idModeLabels,
   price,
+  pricesOf,
   sourceLabels,
   taskLabels,
 } from "../lib/format";
@@ -306,8 +308,12 @@ function SessionView({ id }: { id: string }) {
   // Grade-only and crop-only sessions don't identify: no matches to review, sell or sync.
   const identifies = session.options.task === "identify";
   const cropOnly = session.options.task === "crop";
-  // Its cards wait for an AI agent connected over MCP.
+  // Its cards wait for an AI agent connected over MCP: to be identified, or priced.
   const agent = agentOf(session.options);
+  const prices = pricesOf(session.options);
+  // What grades the cards, when it isn't what identifies them (or, in a grade-only session, Ximilar).
+  const gradeEngine = gradeEngineOf(session.options);
+  const gradedElsewhere = gradeEngine !== (identifies ? session.options.engine : "ximilar");
   const savesCrops = cropsOf(session.options);
   // A card waiting only for its crop shows "Cropping", not "Grading".
   const cropping = savesCrops && gradingOf(session.options) === "off";
@@ -364,11 +370,27 @@ function SessionView({ id }: { id: string }) {
                     <FolderOpen className="h-3 w-3" /> {t("session.actions.showCrops")}
                   </button>
                 )}
+                {(prices === "ebay" || prices === "agent") && (
+                  <>
+                    <span>·</span>
+                    <span>
+                      {t("status.stageBy", { stage: t("newSession.tasks.prices"), by: t(`status.prices.${prices}`) })}
+                    </span>
+                  </>
+                )}
                 {(identifies || session.options.task === "grade") && gradingOf(session.options) !== "off" && (
                   <>
                     <span>·</span>
                     <span>
                       {t("session.grading", { mode: t(`status.gradingShort.${gradingOf(session.options)}`) })}
+                    </span>
+                  </>
+                )}
+                {gradingOf(session.options) !== "off" && gradedElsewhere && (
+                  <>
+                    <span>·</span>
+                    <span>
+                      {t("status.stageBy", { stage: t("newSession.tasks.grade"), by: engineLabels()[gradeEngine] })}
                     </span>
                   </>
                 )}
@@ -510,6 +532,16 @@ function SessionView({ id }: { id: string }) {
                 <Bot className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                 <span>
                   {rich(t("session.agentWaiting", { count: counts.inProgress, name: session.name }), {
+                    b: (s) => <b>{s}</b>,
+                  })}
+                </span>
+              </p>
+            )}
+            {prices === "agent" && active && counts.pricing > 0 && (
+              <p className="mt-2 flex items-start gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm text-slate-700 dark:bg-accent/10 dark:text-slate-200">
+                <Bot className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                <span>
+                  {rich(t("session.agentPricing", { count: counts.pricing, name: session.name }), {
                     b: (s) => <b>{s}</b>,
                   })}
                 </span>

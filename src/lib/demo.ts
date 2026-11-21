@@ -166,6 +166,7 @@ function counts(id: string) {
     ebaySold: list.filter((i) => i.ebay?.status === "sold").length,
     toReview: list.filter(needsReview).length,
     calls: list.reduce((a, i) => a + i.calls, 0),
+    pricing: 0,
   };
 }
 
@@ -355,6 +356,7 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     cropImages: [],
     market: null,
     marketRange: null,
+    priceNote: null,
     calls: grade == null ? 2 : 3,
     analyzedAt: now(),
   };
@@ -649,7 +651,15 @@ function seed() {
       sourceKind: "folder",
       sourceRef: "/Users/demo/Cards/shoebox",
       idMode: "tcg",
-      options: { ...options, syncRemote: false },
+      // Each task by its own engine: Ximilar identifies, the local model grades, eBay's listings price.
+      options: {
+        ...options,
+        syncRemote: false,
+        gradeEngine: "local" as const,
+        prices: "ebay" as const,
+        priceStats: false,
+        conditionMode: "tcgplayer",
+      },
       status: "stopped",
       createdAt: "2026-10-12T09:05:00Z",
       startedAt: "2026-10-12T09:05:00Z",
@@ -662,7 +672,14 @@ function seed() {
       sourceKind: "folder",
       sourceRef: "/Users/demo/Cards/binder7",
       idMode: "auto",
-      options: { ...options, engine: "agent" as const, grading: "off" as const, syncRemote: false },
+      options: {
+        ...options,
+        engine: "agent" as const,
+        grading: "off" as const,
+        syncRemote: false,
+        prices: "agent" as const,
+        priceStats: false,
+      },
       status: "running",
       createdAt: "2026-10-16T18:00:00Z",
       startedAt: "2026-10-16T18:00:00Z",
@@ -711,7 +728,7 @@ function seed() {
   binder[3].ebay = listing("sold", 12);
   binder[4].ebay = listing(null, null, "Invalid category. (25005)");
   items.set("demo-2", []);
-  // Four cards the agent identified and priced on eBay, two waiting for it.
+  // Four cards the agent identified and priced from eBay's listings, two waiting for it.
   items.set(
     "demo-5",
     Array.from({ length: 6 }, (_, i) => {
@@ -721,7 +738,8 @@ function seed() {
           ...card,
           confidence: "agent",
           distance: null,
-          price: null,
+          price: [24, 8.5, 310, 12][i],
+          priceNote: "Median of the 5 listings that are this card; left out a lot of 20.",
           grade: null,
           condition: null,
           slab: null,

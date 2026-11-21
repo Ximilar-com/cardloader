@@ -211,7 +211,38 @@ const messages: Messages<typeof en> = {
   needsAgents:
     "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa identificare le carte.",
   agentNote:
-    "Il tuo agente IA legge ogni carta dalle sue immagini: chiedigli, ad es. in Claude, di identificare le carte di questa sessione in Cardloader. Gradazione e ritagli usano sempre Ximilar.",
+    "Il tuo agente IA legge ogni carta dalle sue immagini: chiedigli, ad es. in Claude, di identificare le carte di questa sessione in Cardloader.",
   agentHint: "Claude o un altro agente collegato tramite MCP",
+  whatToDo: "Cosa fare",
+  tasks: { identify: "Identifica", prices: "Prezzi", grade: "Gradazione", crop: "Ritaglio" },
+  taskHints: {
+    identify: "Nome, set e numero",
+    prices: "A quanto si vende ogni carta",
+    grade: "Un voto o la condizione",
+    crop: "Ritagliata e raddrizzata",
+  },
+  needsIdentify: "Richiede Identifica",
+  keepOne: "Una sessione fa almeno una di queste attività.",
+  identifyLocked: "Questa sessione ha delle carte: continua a identificarle, o continua a non farlo.",
+  priceWith: "Prezzi con",
+  priceEngines: { ximilar: "Statistiche prezzi Ximilar", ebay: "Inserzioni eBay", agent: "Agente IA (MCP)" },
+  priceHints: {
+    ximilar: "Arrivano con l’identificazione di Ximilar",
+    ebay: "La mediana delle inserzioni attive della carta",
+    agent: "Claude o un altro agente collegato tramite MCP",
+  },
+  priceNotes: {
+    ximilar: "I prezzi di mercato di Ximilar arrivano con ogni identificazione, senza costi aggiuntivi.",
+    ebay: "Una volta identificata una carta, Cardloader cerca le sue inserzioni eBay attive a prezzo fisso con il tuo keyset eBay e ne prende la mediana come prezzo. Le inserzioni restano sulla carta.",
+    agent:
+      "Il tuo agente IA dà un prezzo a ogni carta una volta identificata: chiedigli, ad es. in Claude, di dare un prezzo alle carte di questa sessione in Cardloader.",
+  },
+  needsEbay:
+    "Aggiungi il tuo keyset eBay nelle Impostazioni perché Cardloader possa cercare i prezzi nelle inserzioni eBay.",
+  needsAgentsPrices:
+    "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa dare un prezzo alle carte.",
+  gradeWhat: "Tipo di gradazione",
+  sameModel: "Lo stesso modello identifica le carte.",
+  cropNote: "I ritagli si fanno sempre con l’API di Ximilar.",
 };
 export default messages;

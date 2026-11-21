@@ -92,9 +92,10 @@ state from them.
 - **Schema changes** go in a new `src-tauri/migrations/NNN_name.sql` appended to `MIGRATIONS` in `db.rs`. Never edit a
   released migration. A column every row needs goes into `db::ITEM_SUMMARY` and is read by name (`col!("…")`,
   found when compiling), never by its place.
-- **What a session's options mean** (`SessionOptions::grading_mode`, `uses_api`, `agent`, `crops` and their mirrors
-  `gradingOf`, `usesApi`, `agentOf`, `cropsOf` in `format.ts`) is checked on both sides against
-  `src/lib/session-options.cases.json`: a changed rule changes the cases.
+- **What a session's options mean** (`SessionOptions::grading_mode`, `uses_api`, `agent`, `crops`, `grade_engine`,
+  `prices`, `stages` and their mirrors `gradingOf`, `usesApi`, `agentOf`, `cropsOf`, `gradeEngineOf`, `pricesOf`,
+  `stagesOf` in `format.ts`) is checked on both sides against `src/lib/session-options.cases.json`: a changed rule
+  changes the cases.
 - **Pipeline changes** (runner, sync, sources, Ximilar clients) need a test; extend the wiremock end-to-end tests in
   `runner.rs` (`folder_session_end_to_end`, `csv_import_end_to_end`) rather than calling real APIs.
 - **Operations with logic beyond one `Db`/`Runner` call** (create/delete/import a session, exports, eBay jobs,
@@ -167,8 +168,19 @@ state from them.
   outside the app's folders (`tools::crop_folder`). The webview is served only the app's own folder
   (`assetProtocol.scope`), so `get_item` allows the folders of a card's crops (`commands::show_crops`); the folder
   picker allows a picked one too, but only until the app quits.
+- **Each task by its own engine**: the New session dialog's "What to do" tiles (Identify, Prices, Grade, Crop:
+  `tasksOf` / `withTasks` in `format.ts`) map onto `task`, `grading` and `save_crops` as before (Condition is a
+  grading mode in the Grade tab; without Identify it is `task: condition`), and each chosen task gets a tab with its
+  engine: `engine` identifies (Ximilar, local, agent), `grade_engine` grades (Ximilar or local; `None` in older
+  sessions = `engine`, an agent never grades), `prices` (`Prices`: Ximilar's price statistics, which come only with
+  Ximilar's identification, eBay listings, or an agent; `None` = `price_stats`), crops are always Ximilar's. One
+  `local_model` serves both local tasks. Run checks: `uses_local` needs the model downloaded, `uses_ebay` the eBay
+  keyset; `uses_agent` runs `AGENT_BATCH` cards at once, else `uses_local` runs one.
 - **A card's pass** (`Runner::recognize_item`): the stages its session has, in order (`SessionOptions::stages`:
-  identify, grade, crop; `run_stage` picks what does each by the options). The first stage failing is the card
+  identify, price, grade, crop; `run_stage` picks what does each by the options). The price stage is
+  `price_on_ebay` (`Runner::find_ebay_listings`, the same search the Tauri command and the MCP tool run; the median of
+  the listings becomes `items.price` via `Db::save_price`, no listings = no price) or `price_by_agent`; a failed price
+  is `JobKind::Price` ("price: …"), a row with no job id that is never polled. The first stage failing is the card
   failing (`process`: offline pauses, a refused token stops the run). A later stage that can't pass fails only that
   part (`Db::fail_job`, "grading: …" / "crop: …") and ends the pass; one stopped, offline or refused for the token
   (`comes_back`) leaves the card in the queue owing that stage (`items.stage`), and the next run goes on there
@@ -213,7 +225,11 @@ state from them.
   response}`), and grading through Ximilar as after any identification. `unidentified` fails the card with the note.
   Stop cancels the waits (cards back to `queued`); up to `AGENT_BATCH` cards wait at once. `SessionOptions::uses_api`
   (mirrored by `usesApi` in `format.ts`) says whether a session needs the token: an agent or local session that only
-  identifies doesn't. Prompt `identify_session` in `mcp/prompts.rs`.
+  identifies doesn't. Prompt `identify_session` in `mcp/prompts.rs`. Pricing by an agent (`prices: agent`) is the
+  same waiter with `AgentTask::Price` (a card waits for one thing at a time; `answer_agent` refuses an answer of the
+  other kind): `next_cards_to_price` / `price_cards` (USD, a note kept in `items.price_note`, migration 011, cleared
+  with `OTHER_CARD`; `unpriced` fails only the price), prompt `price_session`; `counts.pricing` is the session page's
+  banner.
 - **eBay prices** (`ebay/browse.rs`): the Browse API's `item_summary/search` with an application token
   (client credentials: the Settings keyset's App ID + Cert ID, or `EBAY_APP_ID` = base64 `client_id:secret`, which
   tests ignore unless `CARDLOADER_REAL_EBAY=1`, and never with a mock `api_base`). `search_for` builds the query and

@@ -189,6 +189,7 @@ pub fn test_item(id_type: &str, game: &str) -> ItemDetail {
         crop: None,
         crop_images: vec![],
         market: None,
+        price_note: None,
         calls: 1,
         analyzed_at: None,
         remote_id: None,

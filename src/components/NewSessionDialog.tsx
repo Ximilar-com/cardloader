@@ -3,10 +3,12 @@ import clsx from "clsx";
 import {
   BadgeCheck,
   Bot,
+  Check as CheckMark,
   ChevronRight,
   Cloud,
   Cpu,
   Crop,
+  DollarSign,
   Eye,
   FileSpreadsheet,
   FolderOpen,
@@ -15,6 +17,7 @@ import {
   ScanLine,
   Search,
   Settings,
+  ShoppingBag,
   Zap,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -28,6 +31,8 @@ import {
   type Pairing,
   type CsvPreview,
   type Engine,
+  type GradingMode,
+  type Prices,
   type ScannerSupport,
   type Session,
   type SessionOptions,
@@ -38,17 +43,25 @@ import {
 import { locale, rich, t, useT } from "../i18n";
 import {
   basename,
+  chosenPrices,
   defaultSessionName,
   engineLabels,
   engineOf,
+  gradeEngineOf,
   gradingLabels,
   agentOf,
   cropsOf,
   gradingOf,
   idModeLabels,
+  pricesOf,
   sourceLabels,
+  TASK_CHOICES,
   taskLabels,
+  tasksOf,
   usesApi,
+  withGradeMode,
+  withTasks,
+  type TaskChoice,
 } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
@@ -111,6 +124,10 @@ export default function NewSessionDialog({
   const [tokenSet, setTokenSet] = useState(true);
   /** Whether agents can connect and run sessions (Settings → AI agents): an agent session needs both. */
   const [agentsReady, setAgentsReady] = useState(true);
+  /** Whether eBay's listings can be searched (Settings → Selling): prices from eBay need it. */
+  const [ebaySearch, setEbaySearch] = useState(true);
+  /** The task tab shown below the source; falls back to the first chosen task. */
+  const [tab, setTab] = useState<TaskChoice>("identify");
   const [remoteSession, setRemoteSession] = useState("");
   const models = useModels();
   const [error, setError] = useState<string | null>(null);
@@ -120,6 +137,7 @@ export default function NewSessionDialog({
     api.getSettings().then((s) => {
       setTokenSet(s.tokenSet);
       setAgentsReady(s.mcp.enabled && s.mcp.allowRun);
+      setEbaySearch(s.ebaySearch);
       // Scanner sessions always scan with the settings in Settings → Scanner (see `saveScan`).
       if (from?.sourceKind === "scanner") {
         setOptions((o) => o && { ...o, scan: s.scan, pairing: s.scan.duplex ? "front_back" : "single" });
@@ -154,6 +172,10 @@ export default function NewSessionDialog({
         scan: s.scan,
         syncRemote: s.syncByDefault,
         engine: s.engine,
+        // Each task starts with the default engine: an agent identifies but never grades, and Ximilar's prices
+        // come only with its identification.
+        gradeEngine: s.engine === "agent" ? "ximilar" : s.engine,
+        prices: s.priceStats && s.engine === "ximilar" ? "ximilar" : "off",
         localModel: s.localModel,
       };
       setOptions(withKindDefaults(options, s.defaultIdMode, options.pairing));
@@ -242,52 +264,81 @@ export default function NewSessionDialog({
   const identifies = task === "identify";
   /** Whether the session edited identifies its cards, once it has some. */
   const lockedKind = editing && from && from.counts.total > 0 ? from.options.task === "identify" : null;
-  const crops = task === "crop";
+  const chosenTasks = options ? tasksOf(options) : [];
+  const shownTab = chosenTasks.includes(tab) ? tab : chosenTasks[0];
   const savesCrops = !!options && cropsOf(options);
   // Crops go to a folder of the user's: the session's own folder would be deleted with the session.
   const needsCropFolder = savesCrops && !options?.cropFolder.trim();
   const sourceMissing = needsFolder || needsCsv || needsCropFolder;
-  // Cropping always runs on the Ximilar API.
-  const local = options?.engine === "local" && !crops;
-  // An AI agent connected over MCP identifies the cards.
+  const grading = options ? gradingOf(options) : "off";
+  // Each task by its own engine; cropping always runs on the Ximilar API.
+  const identifiesLocally = identifies && options?.engine === "local";
+  const gradeEngine = options ? gradeEngineOf(options) : "ximilar";
+  const gradesLocally = grading !== "off" && gradeEngine === "local";
+  const usesLocal = identifiesLocally || gradesLocally;
+  const prices: Prices = options ? pricesOf(options) : "off";
+  // An AI agent connected over MCP identifies the cards, or prices them.
   const agent = !!options && agentOf(options);
+  const agentPrices = prices === "agent";
+  const ebayPrices = prices === "ebay";
   // A local session holds one kind of cards (Auto and slabs are the API's).
-  const sessionIdMode = local ? localKind(idMode) : idMode;
+  const sessionIdMode = identifiesLocally ? localKind(idMode) : idMode;
   // What "Images per card" goes back to when a local session stops reading backs.
   const basePairing: Pairing =
     kind === "scanner" && options?.scan.duplex ? "front_back" : (chosenPairing ?? defaultPairing);
+  const chooseTasks = (next: TaskChoice[]) => {
+    if (!next.length) return;
+    setOptions((o) => o && withTasks(o, next));
+  };
+  const toggleTask = (k: TaskChoice) =>
+    chooseTasks(
+      chosenTasks.includes(k)
+        ? chosenTasks.filter((c) => c !== k)
+        : TASK_CHOICES.filter((c) => c === k || chosenTasks.includes(c)),
+    );
+  // Ximilar's prices come only with its identification: identifying another way prices from eBay instead.
   const chooseEngine = (engine: Engine) =>
-    setOptions(
-      (o) =>
-        o &&
-        (o.engine === "local" || engine === "local"
-          ? withKindDefaults({ ...o, engine }, idMode, basePairing)
-          : { ...o, engine }),
-    );
-  // Only identification can be the agent's: other tasks go back to the API.
-  const chooseTask = (next: Task) =>
-    setOptions(
-      (o) => o && { ...o, task: next, engine: next !== "identify" && o.engine === "agent" ? "ximilar" : o.engine },
-    );
+    setOptions((o) => {
+      if (!o) return o;
+      const priced: SessionOptions =
+        engine !== "ximilar" && chosenPrices(o) === "ximilar" ? { ...o, prices: "ebay", priceStats: false } : o;
+      return o.engine === "local" || engine === "local"
+        ? withKindDefaults({ ...priced, engine }, idMode, basePairing)
+        : { ...priced, engine };
+    });
+  const choosePrices = (p: Prices) => set("prices", p);
   const pickCropFolder = async () => {
     const picked = await open({ directory: true, defaultPath: options?.cropFolder || folder || undefined });
     if (typeof picked === "string") set("cropFolder", picked);
   };
   const chooseIdMode = (mode: IdMode) => {
     setIdMode(mode);
-    if (local) setOptions((o) => o && withKindDefaults(o, mode, basePairing));
+    if (identifiesLocally) setOptions((o) => o && withKindDefaults(o, mode, basePairing));
   };
   // Only grading and cropping use more than a 300 dpi scan (the runner's `scan_settings`).
-  const grades = savesCrops || (!local && !!options && gradingOf(options) !== "off");
+  const grades = savesCrops || (grading !== "off" && !gradesLocally);
   // Only a downloaded model can be picked: the chosen one, else the first downloaded.
   const ready = models?.filter((m) => m.state === "ready") ?? [];
   const model = ready.find((m) => m.id === options?.localModel) ?? ready[0];
-  const picked = options && local && model ? { ...options, localModel: model.id } : options;
-  // Only identified cards go to Cards Cloud, and only identifying can be an agent's.
-  const chosen = picked && !identifies ? { ...picked, syncRemote: false, engine: engineOf(picked) } : picked;
-  // A local or agent session may need Ximilar only to grade, crop or sync.
+  const picked = options && usesLocal && model ? { ...options, localModel: model.id } : options;
+  // What each task does is written out: prices and the grading engine as they are read, only identified cards go
+  // to Cards Cloud, and only identifying can be an agent's.
+  const chosen =
+    picked &&
+    ({
+      ...picked,
+      gradeEngine: gradeEngineOf(picked),
+      prices: pricesOf(picked),
+      priceStats: pricesOf(picked) === "ximilar",
+      ...(identifies ? {} : { syncRemote: false, engine: engineOf(picked) }),
+    } satisfies SessionOptions);
+  // A session whose tasks all run elsewhere needs no Ximilar token.
   const needsToken = !options || usesApi(options);
-  const canRun = (!needsToken || tokenSet) && (!local || !!model) && (!agent || agentsReady);
+  const canRun =
+    (!needsToken || tokenSet) &&
+    (!usesLocal || !!model) &&
+    (!(agent || agentPrices) || agentsReady) &&
+    (!ebayPrices || ebaySearch);
 
   // The scanner row edits Settings → Scanner, which every scanner run uses; the next session that crops starts in
   // this one's folder, with its file type.
@@ -376,6 +427,23 @@ export default function NewSessionDialog({
     </>
   );
 
+  /** The local model, for whichever task runs on this computer (one model does both). */
+  const modelField = (
+    <div>
+      <label className="label">{t("newSession.model")}</label>
+      <Select
+        value={model?.id ?? ""}
+        onChange={(v) => set("localModel", v)}
+        placeholder={t("newSession.noModel")}
+        options={(models ?? []).map((m) =>
+          m.state === "ready"
+            ? modelOption(m)
+            : { ...modelOption(m), disabled: true, hint: t("newSession.notDownloaded") },
+        )}
+      />
+    </div>
+  );
+
   return (
     <Modal
       title={t(
@@ -426,15 +494,23 @@ export default function NewSessionDialog({
             </div>
           </ErrorNote>
         )}
-        {agent && !agentsReady && (
+        {(agent || agentPrices) && !agentsReady && (
           <ErrorNote>
             <div className="flex items-center gap-3">
-              <span className="flex-1">{t("newSession.needsAgents")}</span>
+              <span className="flex-1">{t(agent ? "newSession.needsAgents" : "newSession.needsAgentsPrices")}</span>
               <OpenSettings section="agents" onOpen={onClose} />
             </div>
           </ErrorNote>
         )}
-        {local && models && !model && (
+        {ebayPrices && !ebaySearch && (
+          <ErrorNote>
+            <div className="flex items-center gap-3">
+              <span className="flex-1">{t("newSession.needsEbay")}</span>
+              <OpenSettings section="ebay" onOpen={onClose} />
+            </div>
+          </ErrorNote>
+        )}
+        {usesLocal && models && !model && (
           <ErrorNote>
             <div className="flex items-center gap-3">
               <span className="flex-1">{t("newSession.needsModel")}</span>
@@ -454,16 +530,46 @@ export default function NewSessionDialog({
 
         {options && (
           <div>
-            <label className="label">{t("newSession.task")}</label>
-            <Select
-              value={task}
-              onChange={chooseTask}
-              // A session with cards keeps identifying them, or keeps not: `update_session` refuses the change.
-              options={taskOptions().map((o) => ({
-                ...o,
-                disabled: lockedKind != null && (o.value === "identify") !== lockedKind,
-              }))}
-            />
+            <label className="label">{t("newSession.whatToDo")}</label>
+            <div className="grid grid-cols-4 gap-2">
+              {TASK_CHOICES.map((k) => {
+                const on = chosenTasks.includes(k);
+                const Icon = TASK_ICONS[k];
+                // A session with cards keeps identifying them, or keeps not: `update_session` refuses the change.
+                const locked = k === "identify" && lockedKind != null;
+                const needsIdentify = k === "prices" && !identifies;
+                const last = on && chosenTasks.length === 1;
+                return (
+                  <button
+                    key={k}
+                    onClick={() => toggleTask(k)}
+                    disabled={locked || needsIdentify}
+                    aria-pressed={on}
+                    title={locked ? t("newSession.identifyLocked") : last ? t("newSession.keepOne") : undefined}
+                    className={clsx(
+                      "relative flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors disabled:opacity-40",
+                      on
+                        ? "border-accent bg-accent/5 ring-2 ring-accent/20"
+                        : "border-slate-200 enabled:hover:border-slate-300 dark:border-slate-700",
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        "absolute top-2.5 right-2.5 flex h-4 w-4 items-center justify-center rounded border",
+                        on ? "border-accent bg-accent text-white" : "border-slate-300 dark:border-slate-600",
+                      )}
+                    >
+                      {on && <CheckMark className="h-3 w-3" strokeWidth={3} />}
+                    </span>
+                    <Icon className="h-5 w-5 text-accent" />
+                    <span className="text-sm font-medium">{t(`newSession.tasks.${k}`)}</span>
+                    <span className="text-xs text-slate-500">
+                      {needsIdentify ? t("newSession.needsIdentify") : t(`newSession.taskHints.${k}`)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -633,165 +739,191 @@ export default function NewSessionDialog({
           </div>
         )}
 
-        {options && crops && (
+        {options && kind !== "csv" && kind !== "scanner" && (
           <div className="grid grid-cols-2 gap-4">
-            {cropFields(options)}
-            {kind !== "csv" && (
-              <div>
-                <label className="label">{t("newSession.imagesPerCard")}</label>
-                <Select
-                  value={options.pairing}
-                  onChange={(pairing) => {
-                    setChosenPairing(pairing);
-                    setOptions({ ...options, pairing });
-                  }}
-                  options={pairingOptions()}
-                />
-              </div>
-            )}
+            <div>
+              <label className="label">{t("newSession.imagesPerCard")}</label>
+              <Select
+                value={options.pairing}
+                onChange={(pairing) => {
+                  setChosenPairing(pairing);
+                  setOptions({ ...options, pairing, bothSides: pairing === "front_back" && options.bothSides });
+                }}
+                options={pairingOptions()}
+              />
+            </div>
           </div>
         )}
 
-        {options && !crops && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">{identifies ? t("newSession.identifyWith") : t("newSession.gradeWith")}</label>
-              <Select value={engineOf(options)} onChange={chooseEngine} options={engineOptions(identifies)} />
-            </div>
-            {local ? (
-              <div>
-                <label className="label">{t("newSession.model")}</label>
-                <Select
-                  value={model?.id ?? ""}
-                  onChange={(v) => set("localModel", v)}
-                  placeholder={t("newSession.noModel")}
-                  options={(models ?? []).map((m) =>
-                    m.state === "ready"
-                      ? modelOption(m)
-                      : { ...modelOption(m), disabled: true, hint: t("newSession.notDownloaded") },
+        {options && shownTab && (
+          <div>
+            <div role="tablist" className="flex gap-1 border-b border-slate-200 dark:border-slate-700">
+              {chosenTasks.map((k) => (
+                <button
+                  key={k}
+                  role="tab"
+                  aria-selected={shownTab === k}
+                  onClick={() => setTab(k)}
+                  className={clsx(
+                    "-mb-px flex items-baseline gap-1.5 border-b-2 px-3 py-2 text-sm",
+                    shownTab === k
+                      ? "border-accent font-medium text-slate-900 dark:text-white"
+                      : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200",
                   )}
-                />
-              </div>
-            ) : (
-              <div />
-            )}
-            {local && identifies && (
-              <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>
-            )}
-            {agent && <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.agentNote")}</p>}
-            {identifies && (
-              <div>
-                <label className="label">{t("newSession.identifyAs")}</label>
-                <Select
-                  value={sessionIdMode}
-                  onChange={chooseIdMode}
-                  options={local ? localKindOptions() : optionsOf(idModeLabels())}
-                />
-              </div>
-            )}
-            {task !== "condition" && (
-              <div>
-                <label className="label">{t("newSession.grading")}</label>
-                <Select
-                  value={gradingOf(options)}
-                  onChange={(v) => set("grading", v)}
-                  // Grading only is a full grade or centering; the condition is a task of its own.
-                  options={optionsOf(gradingLabels()).filter(
-                    (o) => identifies || o.value === "grade" || o.value === "centering",
-                  )}
-                />
-              </div>
-            )}
-            {kind !== "csv" && (
-              <div>
-                <label className="label">{t("newSession.imagesPerCard")}</label>
-                <Select
-                  value={options.pairing}
-                  onChange={(pairing) => {
-                    setChosenPairing(pairing);
-                    setOptions({ ...options, pairing, bothSides: pairing === "front_back" && options.bothSides });
-                  }}
-                  options={pairingOptions()}
-                />
-              </div>
-            )}
-            {gradingOf(options) === "condition" || (local && gradingOf(options) === "grade") ? (
-              <div>
-                <label className="label">{t("newSession.conditionScale")}</label>
-                <Select
-                  value={conditionScale(options.conditionMode, local)}
-                  onChange={(v) => set("conditionMode", v)}
-                  options={local ? localConditionOptions() : conditionOptions()}
-                />
-              </div>
-            ) : (
-              kind !== "csv" && <div />
-            )}
-            {/* A comic is read off its cover: its back says nothing about it. */}
-            {local && identifies && sessionIdMode !== "comics" && (
-              <div className="col-span-2">
-                <Check
-                  label={t("newSession.localBack.label")}
-                  checked={options.bothSides}
-                  onChange={(v) =>
-                    setOptions({
-                      ...options,
-                      bothSides: v,
-                      ...(kind === "csv" ? {} : { pairing: v ? "front_back" : options.pairing }),
-                    })
-                  }
-                />
-                <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.localBack.hint")}</p>
-              </div>
-            )}
-            {!local && !agent && identifies && (
-              <>
-                <Check
-                  label={t("newSession.priceStats")}
-                  checked={options.priceStats}
-                  onChange={(v) => set("priceStats", v)}
-                />
-                <Check label={t("newSession.readSlabs")} checked={options.slab} onChange={(v) => set("slab", v)} />
-                <MoreOptions initiallyOpen={usesMoreOptions(options)}>
-                  <KnownAttributes
-                    options={options}
-                    idMode={idMode}
-                    onChange={(patch) => setOptions({ ...options, ...patch })}
-                  />
-                  <BothSides
-                    options={options}
-                    idMode={idMode}
-                    csv={kind === "csv"}
-                    onChange={(patch) => setOptions({ ...options, ...patch })}
-                  />
-                </MoreOptions>
-              </>
-            )}
-            {identifies && (
-              <Check
-                label={t("newSession.syncRemote")}
-                checked={options.syncRemote || !!remoteSession.trim()}
-                disabled={!!remoteSession.trim()}
-                onChange={(v) => set("syncRemote", v)}
-              />
-            )}
-            <div className="col-span-2">
-              <Check
-                label={t("newSession.crop.also")}
-                checked={options.saveCrops}
-                onChange={(v) => set("saveCrops", v)}
-              />
-              <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.crop.alsoHint")}</p>
+                >
+                  {t(`newSession.tasks.${k}`)}
+                  <span className="text-xs font-normal text-slate-400">
+                    {k === "identify"
+                      ? engineLabels()[options.engine]
+                      : k === "prices"
+                        ? t(`status.prices.${prices}`)
+                        : k === "grade"
+                          ? engineLabels()[gradeEngine]
+                          : engineLabels().ximilar}
+                  </span>
+                </button>
+              ))}
             </div>
-            {options.saveCrops && cropFields(options)}
-            {identifies && !editing && kind !== "csv" && (
-              <ContinueRemote
-                value={remoteSession}
-                onChange={setRemoteSession}
-                onFound={(remoteName) => setName(remoteName)}
-                folder={kind !== "scanner"}
-              />
-            )}
+
+            <div role="tabpanel" className="grid grid-cols-2 gap-4 pt-4">
+              {shownTab === "identify" && (
+                <>
+                  <div>
+                    <label className="label">{t("newSession.identifyWith")}</label>
+                    <Select value={options.engine} onChange={chooseEngine} options={engineOptions(true)} />
+                  </div>
+                  {identifiesLocally ? modelField : <div />}
+                  {identifiesLocally && (
+                    <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.localNote")}</p>
+                  )}
+                  {agent && <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.agentNote")}</p>}
+                  <div>
+                    <label className="label">{t("newSession.identifyAs")}</label>
+                    <Select
+                      value={sessionIdMode}
+                      onChange={chooseIdMode}
+                      options={identifiesLocally ? localKindOptions() : optionsOf(idModeLabels())}
+                    />
+                  </div>
+                  <div />
+                  {/* A comic is read off its cover: its back says nothing about it. */}
+                  {identifiesLocally && sessionIdMode !== "comics" && (
+                    <div className="col-span-2">
+                      <Check
+                        label={t("newSession.localBack.label")}
+                        checked={options.bothSides}
+                        onChange={(v) =>
+                          setOptions({
+                            ...options,
+                            bothSides: v,
+                            ...(kind === "csv" ? {} : { pairing: v ? "front_back" : options.pairing }),
+                          })
+                        }
+                      />
+                      <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.localBack.hint")}</p>
+                    </div>
+                  )}
+                  {options.engine === "ximilar" && (
+                    <>
+                      <Check
+                        label={t("newSession.readSlabs")}
+                        checked={options.slab}
+                        onChange={(v) => set("slab", v)}
+                      />
+                      <div />
+                      <MoreOptions initiallyOpen={usesMoreOptions(options)}>
+                        <KnownAttributes
+                          options={options}
+                          idMode={idMode}
+                          onChange={(patch) => setOptions({ ...options, ...patch })}
+                        />
+                        <BothSides
+                          options={options}
+                          idMode={idMode}
+                          csv={kind === "csv"}
+                          onChange={(patch) => setOptions({ ...options, ...patch })}
+                        />
+                      </MoreOptions>
+                    </>
+                  )}
+                  <Check
+                    label={t("newSession.syncRemote")}
+                    checked={options.syncRemote || !!remoteSession.trim()}
+                    disabled={!!remoteSession.trim()}
+                    onChange={(v) => set("syncRemote", v)}
+                  />
+                  {!editing && kind !== "csv" && (
+                    <ContinueRemote
+                      value={remoteSession}
+                      onChange={setRemoteSession}
+                      onFound={(remoteName) => setName(remoteName)}
+                      folder={kind !== "scanner"}
+                    />
+                  )}
+                </>
+              )}
+
+              {shownTab === "prices" && (
+                <>
+                  <div>
+                    <label className="label">{t("newSession.priceWith")}</label>
+                    <Select
+                      value={prices === "off" ? chosenPrices(options) : prices}
+                      onChange={choosePrices}
+                      options={priceOptions(options.engine === "ximilar")}
+                    />
+                  </div>
+                  <div />
+                  {prices !== "off" && (
+                    <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.priceNotes.${prices}`)}</p>
+                  )}
+                </>
+              )}
+
+              {shownTab === "grade" && (
+                <>
+                  <div>
+                    <label className="label">{t("newSession.gradeWith")}</label>
+                    <Select
+                      value={gradeEngine}
+                      onChange={(v) => set("gradeEngine", v)}
+                      options={engineOptions(false)}
+                    />
+                  </div>
+                  {gradesLocally && !identifiesLocally ? modelField : <div />}
+                  {gradesLocally && identifiesLocally && (
+                    <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.sameModel")}</p>
+                  )}
+                  <div>
+                    <label className="label">{t("newSession.gradeWhat")}</label>
+                    <Select
+                      value={grading === "off" ? "grade" : grading}
+                      onChange={(mode) => setOptions(withGradeMode(options, mode))}
+                      options={gradeModeOptions()}
+                    />
+                  </div>
+                  {grading === "condition" || (gradesLocally && grading === "grade") ? (
+                    <div>
+                      <label className="label">{t("newSession.conditionScale")}</label>
+                      <Select
+                        value={conditionScale(options.conditionMode, gradesLocally)}
+                        onChange={(v) => set("conditionMode", v)}
+                        options={gradesLocally ? localConditionOptions() : conditionOptions()}
+                      />
+                    </div>
+                  ) : (
+                    <div />
+                  )}
+                </>
+              )}
+
+              {shownTab === "crop" && (
+                <>
+                  {cropFields(options)}
+                  <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.cropNote")}</p>
+                </>
+              )}
+            </div>
           </div>
         )}
         <ErrorNote>{error}</ErrorNote>
@@ -815,7 +947,7 @@ function localKindOptions(): SelectOption<IdMode>[] {
 /** A local session of sports cards reads both sides by default (the number, year and set are on the back); other
  * kinds, and the API, start with the front only. Turning the back off returns "Images per card" to `basePairing`. */
 function withKindDefaults(o: SessionOptions, mode: IdMode, basePairing: Pairing): SessionOptions {
-  const back = o.engine === "local" && localKind(mode) === "sport";
+  const back = o.engine === "local" && o.task === "identify" && localKind(mode) === "sport";
   if (back === o.bothSides) return o;
   return { ...o, bothSides: back, pairing: back ? "front_back" : basePairing };
 }
@@ -1051,27 +1183,23 @@ function usesMoreOptions(o: SessionOptions): boolean {
   );
 }
 
-/** Roughly what analysing the folder costs: a call per card, one more to grade it and one more to crop it; Cards Cloud
- * bills one per stored image and one for the session. */
+/** Roughly what analysing the folder costs: a call per card to identify it with Ximilar, one more to grade it there
+ * and one more to crop it; Cards Cloud bills one per stored image and one for the session. Local, agent and eBay
+ * stages cost no API calls. */
 function costOf(o: SessionOptions, images: number): string {
   const cards = o.pairing === "front_back" ? Math.ceil(images / 2) : images;
+  const identifies = o.task === "identify";
+  const byXimilar = identifies && o.engine === "ximilar";
   const crops = cropsOf(o) ? cards : 0;
-  if (o.task === "crop") return t("newSession.cost.calls", { count: crops });
-  const local = o.engine === "local";
-  // Grade-only and condition-only sessions: one job per card, nothing to Cards Cloud.
-  if (o.task !== "identify") {
-    if (local && !crops) return t("newSession.cost.localGrade");
-    return t("newSession.cost.calls", { count: (local ? 0 : cards) + crops });
+  const graded = gradingOf(o) !== "off" && gradeEngineOf(o) === "ximilar" ? cards : 0;
+  const sync = identifies && o.syncRemote ? cards + 1 : 0;
+  const calls = (byXimilar ? cards : 0) + graded + crops + sync;
+  if (!calls) {
+    if (!identifies) return t("newSession.cost.localGrade");
+    return t(o.engine === "agent" ? "newSession.cost.agent" : "newSession.cost.local");
   }
-  const sync = o.syncRemote ? cards + 1 : 0;
-  if (o.engine === "agent") {
-    const calls = (o.grading !== "off" ? cards : 0) + crops + sync;
-    return calls ? t("newSession.cost.calls", { count: calls }) : t("newSession.cost.agent");
-  }
-  const calls = (local ? 0 : cards * (1 + (o.grading !== "off" ? 1 : 0))) + crops + sync;
-  if (!calls) return t("newSession.cost.local");
-  if (local) return t(crops ? "newSession.cost.calls" : "newSession.cost.callsCloud", { count: calls });
-  return t(o.magicAi ? "newSession.cost.callsMagicAi" : "newSession.cost.calls", { count: calls });
+  if (identifies && o.engine === "local" && calls === sync) return t("newSession.cost.callsCloud", { count: calls });
+  return t(byXimilar && o.magicAi ? "newSession.cost.callsMagicAi" : "newSession.cost.calls", { count: calls });
 }
 
 /** Front + back identification, magic AI and a custom endpoint: mostly for sports cards. */
@@ -1150,6 +1278,31 @@ function BothSides({
 const MISSING = "border-amber-400 ring-2 ring-amber-400/25 dark:border-amber-500";
 
 // Functions, not constants: the labels follow the app's language.
+
+const TASK_ICONS: Record<TaskChoice, typeof Search> = {
+  identify: Search,
+  prices: DollarSign,
+  grade: BadgeCheck,
+  crop: Crop,
+};
+
+/** Where prices come from; Ximilar's come only with its identification. */
+export function priceOptions(ximilarIdentifies: boolean): SelectOption<Prices>[] {
+  const icons = { ximilar: Cloud, ebay: ShoppingBag, agent: Bot };
+  return (["ximilar", "ebay", "agent"] as const).map((value) => ({
+    value,
+    label: t(`newSession.priceEngines.${value}`),
+    hint: t(`newSession.priceHints.${value}`),
+    icon: icons[value],
+    disabled: value === "ximilar" && !ximilarIdentifies,
+  }));
+}
+
+/** What the Grade tab grades: a full grade, centering only, or the condition. */
+function gradeModeOptions(): SelectOption<Exclude<GradingMode, "off">>[] {
+  const labels = gradingLabels();
+  return (["grade", "centering", "condition"] as const).map((value) => ({ value, label: labels[value] }));
+}
 
 export function taskOptions(): SelectOption<Task>[] {
   const labels = taskLabels();

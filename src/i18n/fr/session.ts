@@ -202,6 +202,11 @@ const messages: Messages<typeof en> = {
         "« {name} » et ses {count} cartes, avec leurs images, sont supprimées de Cards Cloud pour tout le monde dans l’espace de travail. Une session locale d’où elle a été envoyée garde ses cartes ; l’envoyer à nouveau crée une nouvelle session là-bas.",
     },
   },
+  agentPricing: {
+    one: "<b>{count} carte</b> attend le prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « Fixe le prix des cartes de la session Cardloader {name}. »",
+    other:
+      "<b>{count} cartes</b> attendent les prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « Fixe le prix des cartes de la session Cardloader {name}. »",
+  },
   agentWaiting: {
     one: "<b>{count} carte</b> attend votre agent IA. Demandez-lui, p. ex. dans Claude : « Identifie les cartes de la session Cardloader {name}. »",
     other:

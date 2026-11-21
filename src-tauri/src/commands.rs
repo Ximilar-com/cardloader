@@ -391,7 +391,7 @@ pub fn keep_ebay_listings(state: S, item_id: i64, listing_ids: Vec<String>) -> R
 
 impl AppState {
     /// Searches eBay for an identified card's active listings, by its fields or `query`, and keeps them and their
-    /// price range on the card.
+    /// price range on the card (as a session's eBay price stage does).
     pub async fn find_ebay_listings(
         &self,
         item_id: i64,
@@ -399,33 +399,9 @@ impl AppState {
         auctions: bool,
         limit: Option<u32>,
     ) -> Result<EbayMarket> {
-        let item = self.db.item_summary(item_id)?;
-        let mut search = browse::search_for(&item)
-            .ok_or_else(|| Error::msg("the card isn't identified yet: identify it first"))?;
-        if let Some(q) = query
-            .map(|q| q.trim().to_string())
-            .filter(|q| !q.is_empty())
-        {
-            search.query = q;
-        }
-        search.auctions = auctions;
-        if let Some(limit) = limit {
-            search.limit = limit.clamp(1, browse::MAX_LIMIT);
-        }
-        let client = self.runner.ebay.app.client(&self.settings).await?;
-        let (total, listings) = browse::search(&client, &search).await?;
-        // The card may have become another one meanwhile (a pick, an edit, a new recognition), which drops its
-        // listings: these are of the card it was.
-        let now = self.db.item_summary(item_id)?;
-        if now.card != item.card || now.id_type != item.id_type {
-            return Err(Error::msg(
-                "the card changed while eBay was searched: search again",
-            ));
-        }
-        let market = browse::market(&search, total, listings);
-        self.db.save_market(item_id, &market)?;
-        self.runner.emit_item(item_id);
-        Ok(market)
+        self.runner
+            .find_ebay_listings(item_id, query, auctions, limit)
+            .await
     }
 
     /// Only these listings of the card's last search are the card: the range counts them alone. `note` is the

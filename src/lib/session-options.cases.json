@@ -1,66 +1,156 @@
 [
   {
-    "options": { "task": "identify", "engine": "ximilar", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "ximilar",
+    "stages": ["identify"]
   },
   {
-    "options": { "task": "identify", "engine": "local", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "grade",
     "usesApi": false,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["identify", "grade"]
   },
   {
-    "options": { "task": "identify", "engine": "local", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": true,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["identify"]
   },
   {
-    "options": { "task": "identify", "engine": "local", "grading": "off", "saveCrops": true, "syncRemote": false },
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "grading": "off",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": false,
-    "crops": true
+    "crops": true,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["identify", "crop"]
   },
   {
-    "options": { "task": "identify", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": false,
     "agent": true,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify"]
   },
   {
-    "options": { "task": "identify", "engine": "agent", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "grade",
     "usesApi": true,
     "agent": true,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify", "grade"]
   },
   {
-    "options": { "task": "identify", "engine": "agent", "grading": "off", "saveCrops": true, "syncRemote": false },
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "grading": "off",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": true,
-    "crops": true
+    "crops": true,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify", "crop"]
   },
   {
-    "options": { "task": "identify", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": true,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": true,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify"]
   },
   {
-    "options": { "task": "grade", "engine": "ximilar", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "grade",
+      "engine": "ximilar",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "grade",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
     "options": {
@@ -68,12 +158,16 @@
       "engine": "ximilar",
       "grading": "condition",
       "saveCrops": false,
-      "syncRemote": false
+      "syncRemote": false,
+      "priceStats": true
     },
     "gradingMode": "grade",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
     "options": {
@@ -81,33 +175,67 @@
       "engine": "ximilar",
       "grading": "centering",
       "saveCrops": false,
-      "syncRemote": false
+      "syncRemote": false,
+      "priceStats": true
     },
     "gradingMode": "centering",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
-    "options": { "task": "grade", "engine": "local", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "options": {
+      "task": "grade",
+      "engine": "local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": true,
+      "priceStats": true
+    },
     "gradingMode": "grade",
     "usesApi": false,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
-    "options": { "task": "grade", "engine": "local", "grading": "off", "saveCrops": true, "syncRemote": false },
+    "options": {
+      "task": "grade",
+      "engine": "local",
+      "grading": "off",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "grade",
     "usesApi": true,
     "agent": false,
-    "crops": true
+    "crops": true,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["grade", "crop"]
   },
   {
-    "options": { "task": "grade", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "grade",
+      "engine": "agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "grade",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
     "options": {
@@ -115,39 +243,264 @@
       "engine": "ximilar",
       "grading": "grade",
       "saveCrops": false,
-      "syncRemote": false
+      "syncRemote": false,
+      "priceStats": true
     },
     "gradingMode": "condition",
     "usesApi": true,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
-    "options": { "task": "condition", "engine": "local", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "condition",
+      "engine": "local",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "condition",
     "usesApi": false,
     "agent": false,
-    "crops": false
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["grade"]
   },
   {
-    "options": { "task": "crop", "engine": "ximilar", "grading": "grade", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "crop",
+      "engine": "ximilar",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": false,
-    "crops": true
+    "crops": true,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["crop"]
   },
   {
-    "options": { "task": "crop", "engine": "local", "grading": "off", "saveCrops": false, "syncRemote": false },
+    "options": {
+      "task": "crop",
+      "engine": "local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": false,
-    "crops": true
+    "crops": true,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["crop"]
   },
   {
-    "options": { "task": "crop", "engine": "agent", "grading": "off", "saveCrops": false, "syncRemote": true },
+    "options": {
+      "task": "crop",
+      "engine": "agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": true,
+      "priceStats": true
+    },
     "gradingMode": "off",
     "usesApi": true,
     "agent": false,
-    "crops": true
+    "crops": true,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["crop"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "gradeEngine": "local",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "ximilar",
+    "stages": ["identify", "grade"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "gradeEngine": "ximilar",
+      "grading": "condition",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "condition",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify", "grade"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "prices": "ebay",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "ebay",
+    "stages": ["identify", "price"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "prices": "agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": true,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "agent",
+    "stages": ["identify", "price"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "prices": "ximilar",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "off",
+    "stages": ["identify"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "gradeEngine": "local",
+      "prices": "agent",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": false,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "local",
+    "prices": "agent",
+    "stages": ["identify", "price", "grade"]
+  },
+  {
+    "options": {
+      "task": "grade",
+      "engine": "ximilar",
+      "prices": "agent",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
+  },
+  {
+    "options": {
+      "task": "grade",
+      "engine": "local",
+      "gradeEngine": "ximilar",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["grade"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "priceStats": false,
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "gradeEngine": "local",
+      "prices": "ebay",
+      "grading": "grade",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": true,
+    "agent": true,
+    "crops": true,
+    "gradeEngine": "local",
+    "prices": "ebay",
+    "stages": ["identify", "price", "grade", "crop"]
   }
 ]

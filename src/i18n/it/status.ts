@@ -60,6 +60,8 @@ const messages: Messages<typeof en> = {
     grade: "Voto completo",
     centering: "Solo centratura",
   },
+  prices: { off: "Disattivati", ximilar: "Ximilar", ebay: "eBay", agent: "Agente IA" },
+  stageBy: "{stage}: {by}",
   gradingShort: {
     off: "Disattivata",
     condition: "Condizione",
