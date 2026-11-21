@@ -194,6 +194,8 @@ struct CreateSession {
     /// (the median of the card's active eBay listings; needs the user's eBay keyset), agent (you price each card:
     /// next_cards_to_price, then price_cards), or off. Default: ximilar when `price_stats`, else off.
     prices: Option<Prices>,
+    /// For prices from eBay or by you: the eBay site (EBAY_US, EBAY_GB, EBAY_DE, …). Default: the user's.
+    ebay_site: Option<String>,
     /// identify: name, set, number, price (and grading if asked); grade: only grade each card (no identification);
     /// condition: only its condition (e.g. Near Mint); crop: only cut each card out of its image, straightened, into
     /// pictures in `crop_folder`. Default: the user's default.
@@ -275,6 +277,8 @@ struct AddToCardsArgs {
     /// For condition: tcgplayer, cardmarket, ebay_tcg, ebay_sport, or ximilar (Ximilar only). Default: the
     /// session's.
     condition_scale: Option<String>,
+    /// For prices: the eBay site (EBAY_US, EBAY_GB, EBAY_DE, …). Default: the session's, else the user's.
+    ebay_site: Option<String>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -814,6 +818,7 @@ impl Handler {
                     grade_engine: a.grade_engine,
                     condition_mode: a.condition_scale,
                     local_model: None,
+                    ebay_site: a.ebay_site,
                 };
                 let n = self.state.add_to_cards(&id, a.item_ids.as_deref(), &add)?;
                 let mut v = self.session_json(&self.state.db.session(&id)?, false);
@@ -1274,6 +1279,10 @@ impl Handler {
                 });
                 card["slab"] = json!(i.slab);
                 card["ebayRange"] = json!(i.market_range);
+                // The site its listings are searched on (find_ebay_listings' marketplace), prices in its currency.
+                card["ebaySite"] = json!(Some(s.options.ebay_site.clone())
+                    .filter(|site| !site.is_empty())
+                    .unwrap_or_else(|| self.state.settings.get().ebay.search_marketplace));
             }
             cards.push(card);
             pics.extend(pictures(&item, long_edge).await?);
@@ -1572,6 +1581,7 @@ impl Handler {
                 Prices::Off
             })),
             grade_engine: a.grade_engine,
+            ebay_site: a.ebay_site.clone().unwrap_or_default(),
             grading: a.grading.unwrap_or(settings.default_grading),
             condition_mode: settings.default_condition_mode.clone(),
             pairing: a.pairing.unwrap_or(if local_sport && read_backs {

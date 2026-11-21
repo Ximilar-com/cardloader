@@ -91,6 +91,8 @@ export interface SessionOptions {
   gradeEngine?: Engine | null;
   /** Where prices come from; null (older sessions) = Ximilar's when `priceStats`. */
   prices?: Prices | null;
+  /** The eBay site its cards are priced on (`EBAY_SITES`); empty = Settings' search site. */
+  ebaySite?: string;
   localModel: string;
 }
 
@@ -103,6 +105,8 @@ export interface AddToCards {
   conditionMode?: string | null;
   /** The local model that grades; default: the session's. */
   localModel?: string | null;
+  /** The eBay site prices come from; default: the session's. */
+  ebaySite?: string | null;
 }
 
 export interface SessionCounts {

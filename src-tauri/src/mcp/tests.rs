@@ -1001,21 +1001,23 @@ async fn prices_from_another_ebay_site() {
     assert_eq!(found["range"]["currency"], "EUR");
     assert_eq!(found["range"]["median"], 14.0);
 
-    // A session priced from eBay on the user's search site keeps the euro price apart from dollars.
-    state
-        .settings
-        .update_ebay(|e| e.search_marketplace = "EBAY_DE".into())
-        .unwrap();
+    // A session priced from ebay.de (its own site; Settings' stays ebay.com) keeps the euro price apart from
+    // dollars.
     let n = state
         .add_to_cards(
             &session,
             None,
             &crate::model::AddToCards {
                 prices: Some(Prices::Ebay),
+                ebay_site: Some("EBAY_DE".into()),
                 ..Default::default()
             },
         )
         .unwrap();
+    assert_eq!(
+        state.db.session(&session).unwrap().options.ebay_site,
+        "EBAY_DE"
+    );
     assert_eq!(n, 1);
     let started = Instant::now();
     while state.runner.is_running(&session) {

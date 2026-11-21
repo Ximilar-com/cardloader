@@ -2,6 +2,7 @@ import clsx from "clsx";
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { api, errorText, type Engine, type GradingMode, type Prices, type Session } from "../lib/api";
+import { ebaySiteOptions } from "../lib/ebaySites";
 import { gradeEngineOf } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
@@ -43,6 +44,8 @@ export default function AddToCardsDialog({
   const [mode, setMode] = useState<Mode>(o.grading === "off" ? "grade" : o.grading);
   const [scale, setScale] = useState(o.conditionMode);
   const [model, setModel] = useState(o.localModel);
+  const [site, setSite] = useState<string | null>(o.ebaySite || null);
+  const [defaultSite, setDefaultSite] = useState("EBAY_US");
   const [ready, setReady] = useState<{ token: boolean; ebay: boolean; agents: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,7 +54,10 @@ export default function AddToCardsDialog({
   useEffect(() => {
     api
       .getSettings()
-      .then((s) => setReady({ token: s.tokenSet, ebay: s.ebaySearch, agents: s.mcp.enabled && s.mcp.allowRun }))
+      .then((s) => {
+        setReady({ token: s.tokenSet, ebay: s.ebaySearch, agents: s.mcp.enabled && s.mcp.allowRun });
+        setDefaultSite(s.ebay.searchMarketplace || "EBAY_US");
+      })
       .catch((e) => setError(errorText(e)));
   }, []);
 
@@ -80,6 +86,7 @@ export default function AddToCardsDialog({
         gradeEngine: grade ? gradeBy : null,
         conditionMode: grade ? conditionScale(scale, local) : null,
         localModel: local ? (chosenModel?.id ?? null) : null,
+        ebaySite: prices ? (site ?? defaultSite) : null,
       })
       .then((n) => {
         toast(n ? t("session.addTo.started", { count: n }) : t("session.addTo.none"));
@@ -127,7 +134,10 @@ export default function AddToCardsDialog({
               )}
             />
           </div>
-          <div />
+          <div>
+            <label className="label">{t("detail.market.site")}</label>
+            <Select value={site ?? defaultSite} onChange={setSite} options={ebaySiteOptions()} />
+          </div>
           <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.priceNotes.${pricesBy}`)}</p>
         </Part>
 

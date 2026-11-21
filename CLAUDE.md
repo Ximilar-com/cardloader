@@ -256,8 +256,9 @@ state from them.
   tests ignore unless `CARDLOADER_REAL_EBAY=1`, and never with a mock `api_base`). `search_for` builds the query and
   category from the card (TCG 183454, sports singles 261328, comics 63; condition 2750 graded / 4000 ungraded),
   fixed price unless asked for auctions. Searches go to one of 16 sites (`SEARCH_MARKETS`, mirrored by
-  `src/lib/ebaySites.ts`): `settings.ebay.search_marketplace` (Settings › Selling), else a site the card panel or
-  the MCP tool's `marketplace` names (`EbayClient::on` sets the marketplace header). Only EBAY_US's category and
+  `src/lib/ebaySites.ts`): a site the card panel or the MCP tool's `marketplace` names, else the session's
+  `options.ebay_site` (New session's Prices tab, Add prices; the price stage), else `settings.ebay.search_marketplace`
+  (Settings › Selling). `EbayClient::on` sets the marketplace header. Only EBAY_US's category and
   condition ids are known: elsewhere the category is the Taxonomy API's first suggestion for the query (tree ids
   cached per site), and a search the condition leaves empty is asked again without it. The card is typed as for listing it (`listing::Collectible::of`: its
   `id_type`, else its game or sport, which is what a slab has). `AppState::find_ebay_listings` /

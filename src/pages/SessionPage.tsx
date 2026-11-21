@@ -77,6 +77,7 @@ import {
   taskLabels,
 } from "../lib/format";
 import { rich, t, useT } from "../i18n";
+import { ebaySite as siteName } from "../lib/ebaySites";
 import { SEARCH_FIELD, useShortcuts } from "../lib/shortcuts";
 
 export default function SessionPage() {
@@ -376,7 +377,14 @@ function SessionView({ id }: { id: string }) {
                   <>
                     <span>·</span>
                     <span>
-                      {t("status.stageBy", { stage: t("newSession.tasks.prices"), by: t(`status.prices.${prices}`) })}
+                      {t("status.stageBy", {
+                        stage: t("newSession.tasks.prices"),
+                        // eBay's listings: on which site, when the session says.
+                        by:
+                          prices === "ebay" && session.options.ebaySite
+                            ? siteName(session.options.ebaySite)
+                            : t(`status.prices.${prices}`),
+                      })}
                     </span>
                   </>
                 )}

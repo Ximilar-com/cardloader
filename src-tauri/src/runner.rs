@@ -1195,7 +1195,7 @@ impl Runner {
             }
             Stage::Identify => self.identify(session, api()?, item, more, cancel).await,
             Stage::Price if o.prices_by_agent() => self.price_by_agent(session, item, cancel).await,
-            Stage::Price => self.price_on_ebay(item, cancel).await,
+            Stage::Price => self.price_on_ebay(session, item, cancel).await,
             Stage::Grade if o.grades_locally() => self.grade_locally(session, item).await,
             Stage::Grade => self.submit_grading(session, api()?, item, cancel).await,
             Stage::Crop => self.submit_crop(session, api()?, item, cancel).await,
@@ -1376,10 +1376,17 @@ impl Runner {
 
     /// Prices the identified card from its active eBay listings: the median of those that are the card. A card
     /// eBay has no listings of keeps no price, which isn't an error.
-    async fn price_on_ebay(&self, item: &ItemDetail, cancel: &CancellationToken) -> Result<()> {
+    async fn price_on_ebay(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
         let item_id = item.summary.id;
+        // The session's eBay site, else Settings' (`find_ebay_listings`).
+        let site = Some(session.options.ebay_site.clone()).filter(|s| !s.trim().is_empty());
         let market = tokio::select! {
-            market = self.find_ebay_listings(item_id, None, false, None, None) => market?,
+            market = self.find_ebay_listings(item_id, None, false, None, site) => market?,
             _ = cancel.cancelled() => return Err(ApiError::Cancelled.into()),
         };
         if let Some(range) = market.range {

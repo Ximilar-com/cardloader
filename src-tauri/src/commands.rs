@@ -596,6 +596,9 @@ impl AppState {
             Some(prices) => {
                 options.prices = Some(prices);
                 options.price_stats = false;
+                if let Some(site) = add.ebay_site.as_deref().map(str::trim) {
+                    options.ebay_site = site.to_string();
+                }
                 stages.push(Stage::Price);
             }
         }

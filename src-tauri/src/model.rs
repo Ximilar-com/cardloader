@@ -269,6 +269,8 @@ pub struct SessionOptions {
     pub grade_engine: Option<Engine>,
     /// Where prices come from; `None` (older sessions) = Ximilar's price statistics when `price_stats`.
     pub prices: Option<Prices>,
+    /// The eBay site its cards are priced on (`browse::SEARCH_MARKETS`); empty = Settings' search site.
+    pub ebay_site: String,
     /// The local model (`crate::local::catalog`) when identification or grading is `Local`.
     pub local_model: String,
 }
@@ -300,6 +302,7 @@ impl Default for SessionOptions {
             engine: Engine::Ximilar,
             grade_engine: None,
             prices: None,
+            ebay_site: String::new(),
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
         }
     }
@@ -439,6 +442,8 @@ pub struct AddToCards {
     pub condition_mode: Option<String>,
     /// The local model that grades; default: the session's.
     pub local_model: Option<String>,
+    /// The eBay site prices come from (`EBAY_DE`, …); default: the session's.
+    pub ebay_site: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -64,6 +64,7 @@ import {
   withTasks,
   type TaskChoice,
 } from "../lib/format";
+import { ebaySite as siteName, ebaySiteOptions } from "../lib/ebaySites";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
 import Select, { optionsOf, type SelectOption } from "./Select";
@@ -127,6 +128,8 @@ export default function NewSessionDialog({
   const [agentsReady, setAgentsReady] = useState(true);
   /** Whether eBay's listings can be searched (Settings → Selling): prices from eBay need it. */
   const [ebaySearch, setEbaySearch] = useState(true);
+  /** The eBay site prices are searched on unless the session says (Settings › Selling). */
+  const [defaultSite, setDefaultSite] = useState("EBAY_US");
   /** The task tab shown below the source; falls back to the first chosen task. */
   const [tab, setTab] = useState<TaskChoice>("identify");
   const tabs = useRef<HTMLDivElement>(null);
@@ -144,6 +147,7 @@ export default function NewSessionDialog({
       setTokenSet(s.tokenSet);
       setAgentsReady(s.mcp.enabled && s.mcp.allowRun);
       setEbaySearch(s.ebaySearch);
+      setDefaultSite(s.ebay.searchMarketplace || "EBAY_US");
       // Scanner sessions always scan with the settings in Settings → Scanner (see `saveScan`).
       if (from?.sourceKind === "scanner") {
         setOptions((o) => o && { ...o, scan: s.scan, pairing: s.scan.duplex ? "front_back" : "single" });
@@ -182,6 +186,7 @@ export default function NewSessionDialog({
         // come only with its identification.
         gradeEngine: s.engine === "agent" ? "ximilar" : s.engine,
         prices: s.priceStats && s.engine === "ximilar" ? "ximilar" : "off",
+        ebaySite: s.ebay.searchMarketplace || "EBAY_US",
         localModel: s.localModel,
       };
       setOptions(withKindDefaults(options, s.defaultIdMode, options.pairing));
@@ -781,7 +786,9 @@ export default function NewSessionDialog({
                     {k === "identify"
                       ? engineLabels()[options.engine]
                       : k === "prices"
-                        ? t(`status.prices.${prices}`)
+                        ? prices === "ebay"
+                          ? siteName(options.ebaySite || defaultSite)
+                          : t(`status.prices.${prices}`)
                         : k === "grade"
                           ? engineLabels()[gradeEngine]
                           : engineLabels().ximilar}
@@ -878,7 +885,19 @@ export default function NewSessionDialog({
                       options={priceOptions(options.engine === "ximilar")}
                     />
                   </div>
-                  <div />
+                  {/* eBay's listings (searched here, or by the agent) on one of its sites, in that site's currency. */}
+                  {prices === "ebay" || prices === "agent" ? (
+                    <div>
+                      <label className="label">{t("detail.market.site")}</label>
+                      <Select
+                        value={options.ebaySite || defaultSite}
+                        onChange={(v) => set("ebaySite", v)}
+                        options={ebaySiteOptions()}
+                      />
+                    </div>
+                  ) : (
+                    <div />
+                  )}
                   {prices !== "off" && (
                     <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.priceNotes.${prices}`)}</p>
                   )}
