@@ -126,6 +126,16 @@ jobs:
           if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
           env -u LD_LIBRARY_PATH ldd "$RUNNER_TEMP/deb/usr/bin/cardloader" | grep -E "llama|ggml|mtmd"
 
+      # The same for Windows: the app, the sidecar and the DLLs beside them may import only each other and what
+      # Windows itself provides. Starting the app here would prove nothing, as the runner has more installed than a
+      # user's PC: v0.6.0 to v0.8.0 shipped a llama-common.dll that needed the runner's OpenSSL.
+      - name: The Windows app needs no DLL it doesn't ship
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          node scripts/check-dll-imports.mjs "${CARGO_TARGET_DIR:-target}/release/cardloader.exe" \
+            src-tauri/llama src-tauri/binaries
+
       # Tauri says only "failed to run linuxdeploy" when the AppImage fails: this runs it again on the folder Tauri
       # prepared and shows what it said, and which shipped libraries don't find what they need.
       - name: Why the AppImage failed

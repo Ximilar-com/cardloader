@@ -1,0 +1,9 @@
+# llama.cpp's HTTP client (its model downloader, which Cardloader never uses) links whatever OpenSSL CMake finds on
+# the build machine. With llama.cpp as shared libraries (`gpu-backends`), llama-common.dll then imports
+# libssl-3-x64.dll and libcrypto-3-x64.dll, which no installer ships: the app started only on PCs that had them on
+# PATH from other software. llama-cpp-sys-2 hands every CMAKE_* variable to CMake, and this one makes
+# find_package(OpenSSL) find nothing. `scripts/check-dll-imports.mjs` checks the result on Windows.
+#
+# The sys crate doesn't rebuild for a changed CMAKE_* variable: `cargo clean -p llama-cpp-sys-2` after changing it.
+[env]
+CMAKE_DISABLE_FIND_PACKAGE_OpenSSL = "TRUE"

@@ -363,13 +363,18 @@ Cardloader includes an [MCP](https://modelcontextprotocol.io) server, so AI apps
 
 - **Claude Desktop:** click **Add to Claude Desktop** in Settings → AI agents, then quit and reopen Claude. Or add
   the server to its config file by hand. The file is
-  `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
-  `%APPDATA%\Claude\claude_desktop_config.json` on Windows and `~/.config/Claude/claude_desktop_config.json` on
-  Linux (make it if there is none):
+  `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS and
+  `~/.config/Claude/claude_desktop_config.json` on Linux (make it if there is none):
 
   ```json
   { "mcpServers": { "cardloader": { "command": "/Applications/Cardloader.app/Contents/MacOS/cardloader", "args": ["mcp"] } } }
   ```
+
+  On Windows, Claude Desktop keeps the file in `%LOCALAPPDATA%\Claude-Data\<package>\`, earlier versions in
+  `%LOCALAPPDATA%\Packages\Claude_…\LocalCache\Roaming\Claude\`, and only a PC that had its old installer in
+  `%APPDATA%\Claude\`. Claude's own **Edit Config** opens that last one whichever it reads, so an entry added
+  there may do nothing. **Add to Claude Desktop** finds the file, and Settings names it. Run Cardloader and Claude
+  as the same Windows user, not as administrator: another account has its own settings and token.
 
 - **Claude Code:** `claude mcp add cardloader -- /Applications/Cardloader.app/Contents/MacOS/cardloader mcp`
 - **OpenAI Codex:** `codex mcp add cardloader -- /Applications/Cardloader.app/Contents/MacOS/cardloader mcp`

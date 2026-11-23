@@ -41,7 +41,16 @@ const appTarget = targetArg ?? process.env.TAURI_ENV_TARGET_TRIPLE ?? hostTriple
 mkdirSync(binaries, { recursive: true });
 
 run("rustup", ["target", "add", HELPER_TARGET]);
-run("cargo", ["build", "--release", "-p", "cardloader-twain", "--target", HELPER_TARGET]);
+// With the C runtime linked in: beside the app sit the 64-bit Visual C++ runtime DLLs that llama.cpp's libraries
+// need (src-tauri/build.rs), and a 32-bit helper importing VCRUNTIME140.dll would find those first. It also runs on
+// a PC without the 32-bit redistributable this way. Added to RUSTFLAGS, since a RUSTFLAGS that is set (CI's is)
+// replaces the flags of cargo's configuration.
+const rustflags = [process.env.RUSTFLAGS, "-C target-feature=+crt-static"].filter(Boolean).join(" ");
+execFileSync("cargo", ["build", "--release", "-p", "cardloader-twain", "--target", HELPER_TARGET], {
+  cwd: root,
+  stdio: "inherit",
+  env: { ...process.env, RUSTFLAGS: rustflags },
+});
 // Cargo's target folder is elsewhere when CARGO_TARGET_DIR says so (the Windows CI builds use a short one).
 const targetDir = process.env.CARGO_TARGET_DIR ? resolve(root, process.env.CARGO_TARGET_DIR) : join(root, "target");
 const built = join(targetDir, HELPER_TARGET, "release", "cardloader-twain.exe");

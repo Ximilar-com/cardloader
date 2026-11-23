@@ -64,6 +64,7 @@ fn gather_llama_libs() {
         if windows {
             wanted.extend(files(&backends, &|n| n.ends_with(".dll")));
             wanted.extend(files(&out.join("bin"), &|n| n.ends_with(".dll")));
+            wanted.extend(vc_runtime());
         } else {
             wanted.extend(files(&backends, &|n| n.ends_with(".so")));
             // `libllama.so.0` and the like: the soname the linker records, which the loader looks for.
@@ -111,4 +112,93 @@ fn gather_llama_libs() {
             std::fs::copy(src, &dest).expect("copy a llama.cpp library");
         }
     }
+}
+
+/// The Visual C++ runtime that llama.cpp's DLLs are linked against: the C++ library, the runtime and OpenMP. The
+/// app links its own statically (Tauri's default), DLLs that pass C++ objects to each other can't, and on a Windows
+/// without the redistributable the app wouldn't start. So the files ship beside them, from the folder Visual
+/// Studio keeps for that (`VC\Redist\MSVC\<version>\<arch>\Microsoft.VC143.CRT`, `…OpenMP`). A build that doesn't
+/// find them only warns: `scripts/check-dll-imports.mjs` is what fails CI and releases for a DLL that isn't shipped.
+fn vc_runtime() -> Vec<std::path::PathBuf> {
+    use std::path::PathBuf;
+    const NAMES: [&str; 4] = [
+        "msvcp140.dll",
+        "vcruntime140.dll",
+        "vcruntime140_1.dll",
+        "vcomp140.dll",
+    ];
+    let arch = match std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() {
+        Ok("x86_64") => "x64",
+        Ok("aarch64") => "arm64",
+        _ => return Vec::new(),
+    };
+    let folders = |dir: PathBuf| -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .map(|e| e.path())
+                    .filter(|p| p.is_dir())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    // `VC\Redist\MSVC\14.44.35112` of every Visual Studio, the newest first: a newer runtime serves code built
+    // with an older toolset. The folder has others too (`v143`: merge modules), which hold no such files.
+    println!("cargo:rerun-if-env-changed=VCToolsRedistDir");
+    let mut versions: Vec<PathBuf> = visual_studios()
+        .into_iter()
+        .flat_map(|vs| folders(vs.join("VC").join("Redist").join("MSVC")))
+        .collect();
+    let number = |dir: &PathBuf| -> Vec<u32> {
+        dir.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .split('.')
+            .map(|part| part.parse().unwrap_or(0))
+            .collect()
+    };
+    versions.sort_by_key(|dir| std::cmp::Reverse(number(dir)));
+    // A Visual Studio command prompt names its own.
+    if let Some(dir) = std::env::var_os("VCToolsRedistDir") {
+        versions.insert(0, dir.into());
+    }
+    let mut found = Vec::new();
+    for name in NAMES {
+        let file = versions.iter().find_map(|version| {
+            folders(version.join(arch))
+                .into_iter()
+                .map(|component| component.join(name))
+                .find(|file| file.is_file())
+        });
+        match file {
+            Some(file) => found.push(file),
+            None => println!(
+                "cargo:warning={name} (Visual C++ redistributable) wasn't found in Visual Studio: the bundle will need it installed"
+            ),
+        }
+    }
+    found
+}
+
+/// Where Visual Studio (or its Build Tools) is installed, as its own `vswhere` says.
+fn visual_studios() -> Vec<std::path::PathBuf> {
+    let Some(programs) = std::env::var_os("ProgramFiles(x86)") else {
+        return Vec::new();
+    };
+    let vswhere = std::path::Path::new(&programs)
+        .join("Microsoft Visual Studio")
+        .join("Installer")
+        .join("vswhere.exe");
+    let Ok(out) = std::process::Command::new(vswhere)
+        .args(["-products", "*", "-property", "installationPath", "-utf8"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|line| std::path::PathBuf::from(line.trim()))
+        .filter(|dir| dir.is_dir())
+        .collect()
 }

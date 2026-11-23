@@ -231,6 +231,13 @@ state from them.
   clears both (`byAgent` in `cardview.ts`). What an agent names is checked where it is used: an export path must be a
   `.csv` outside the app's data and config folders and not a link (`tools::writable`), and an id put into a Cards
   Cloud path is one path segment (`cards_cloud::path_id`), or `..` would send the user's token to another endpoint.
+- **Claude Desktop's configuration** (`mcp/claude_desktop.rs`): one folder on macOS and Linux; on Windows, where it
+  is an MSIX package, `candidates` lists where its versions have kept it (`%LOCALAPPDATA%\Claude-Data\<package>`
+  now, the package's `LocalCache\Roaming\Claude` before, `%APPDATA%\Claude` after the old installer, `Claude-3p`
+  last: it exists empty on every install). Which one Claude reads can't be told from outside (its own "Edit
+  Config" opens `%APPDATA%\Claude` regardless), so `targets` is the likeliest folder that exists plus every other
+  that already has a configuration, and `add` writes them all. The places come from users' reports
+  (anthropics/claude-code#26073), not from documentation.
 - **AI agent engine** (`Engine::Agent`, `SessionOptions::agent()`: identify task only, other tasks use Ximilar): the
   worker that claimed a card registers a oneshot waiter (`Runner::agent_waits`, `identify_by_agent`) and waits; the
   MCP tools `next_cards_to_identify` (long-polls `Runner::agent_waiting`, returns the cards with their pictures,
@@ -365,6 +372,19 @@ state from them.
   generator MSBuild ran the steps of llama.cpp's shader generator, a CMake ExternalProject, out of order) and a
   short `CARGO_TARGET_DIR` (that project's nested build folder otherwise passes CMake's 250-character paths);
   `prepare-sidecar.mjs` follows `CARGO_TARGET_DIR`. A local Windows build with `--features vulkan` needs both too.
+- **What the Windows DLLs need**: `cardloader.exe` imports llama.cpp's DLLs at load time, so one of them needing
+  a DLL that isn't on the PC stops the app before `main` (and `cardloader mcp` with it: Claude Desktop shows
+  "Server disconnected"). llama.cpp's build links what it finds on the build machine: v0.6.0 to v0.8.0 shipped a
+  `llama-common.dll` needing the runner's OpenSSL (`libssl-3-x64.dll`, `libcrypto-3-x64.dll`), for its HTTP client,
+  which Cardloader never uses. `.cargo/config.toml` sets `CMAKE_DISABLE_FIND_PACKAGE_OpenSSL` (llama-cpp-sys-2
+  passes `CMAKE_*` variables on to CMake but doesn't rebuild for one: `cargo clean -p llama-cpp-sys-2`), and
+  `scripts/check-dll-imports.mjs` (CI and releases on Windows; reads PE import tables, runs on any OS) fails for an
+  import that is neither shipped nor part of Windows. The Visual C++ runtime those DLLs need (`msvcp140`,
+  `vcruntime140`, `vcruntime140_1`, `vcomp140`) is shipped beside them: `build.rs` (`vc_runtime`) takes it from
+  Visual Studio's redistributable folder (found through `vswhere`) and only warns when there is none, so the check
+  is what fails. Those are 64-bit, and the 32-bit TWAIN sidecar beside them would find them first:
+  `prepare-sidecar.mjs` builds it with `+crt-static` (through `RUSTFLAGS`, which CI sets and which replaces
+  cargo's configured flags), and the check counts a shipped DLL only for programs of its own bitness.
 - `llama-cpp-2`'s `LlamaSampler::sample` already accepts the token; accepting it again corrupts the grammar
   (`GGML_ASSERT(!stacks.empty())`). The llama.cpp backend can be initialised once per process (`OnceLock`).
 - Real-model checks are opt-in (`#[ignore]`): `real_model_reads_cards` (needs `CARDLOADER_MODELS`, `CARDLOADER_CARDS`)

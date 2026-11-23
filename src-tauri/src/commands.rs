@@ -69,17 +69,16 @@ pub async fn mcp_status(mcp: State<'_, Arc<McpServer>>) -> Result<McpStatus> {
 /// Whether Claude Desktop is installed here and already starts Cardloader.
 #[tauri::command]
 pub fn claude_desktop_status() -> Result<ClaudeDesktop> {
-    let path =
-        claude_desktop::config_path().ok_or_else(|| Error::msg("no configuration folder"))?;
-    Ok(claude_desktop::status(&path, &this_program()?))
+    Ok(claude_desktop::status(
+        &claude_desktop::candidates(),
+        &this_program()?,
+    ))
 }
 
 /// Adds Cardloader to Claude Desktop's MCP servers: Claude starts it the next time it opens.
 #[tauri::command]
 pub fn add_to_claude_desktop() -> Result<ClaudeDesktop> {
-    let path =
-        claude_desktop::config_path().ok_or_else(|| Error::msg("no configuration folder"))?;
-    claude_desktop::add(&path, &this_program()?)
+    claude_desktop::add(&claude_desktop::candidates(), &this_program()?)
 }
 
 fn this_program() -> Result<String> {

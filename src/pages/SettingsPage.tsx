@@ -839,12 +839,7 @@ function AgentsTab({
           <div role="tabpanel" className="space-y-5 pb-1">
             {app === "claude" && (
               <>
-                <AddToClaudeDesktop />
-                <Snippet
-                  label="Claude Desktop"
-                  hint={t("settings.agents.connect.claudeDesktopHint", { path: CLAUDE_DESKTOP_CONFIG })}
-                  text={mcpServers}
-                />
+                <ClaudeDesktopSetup snippet={mcpServers} />
                 <Snippet
                   label="Claude Code"
                   hint={t("settings.agents.connect.claudeCodeHint")}
@@ -912,9 +907,11 @@ function agentApps(): [AgentApp, string][] {
   ];
 }
 
-/** Text to copy into another app. */
-/** Adds Cardloader to Claude Desktop's configuration in one click, so nobody edits its JSON by hand. */
-function AddToClaudeDesktop() {
+/**
+ * Claude Desktop: one click adds Cardloader to its configuration, so nobody edits its JSON by hand; below it the
+ * same to do by hand, in the file Cardloader found (on Windows it is in one of several places).
+ */
+function ClaudeDesktopSetup({ snippet }: { snippet: string }) {
   const t = useT();
   const [state, setState] = useState<ClaudeDesktop | null>(null);
   const [busy, setBusy] = useState(false);
@@ -925,9 +922,6 @@ function AddToClaudeDesktop() {
       .then(setState)
       .catch(() => setState(null));
   }, []);
-  if (!state) return null;
-  if (!state.installed)
-    return <p className="text-sm text-slate-500">{t("settings.agents.connect.claudeDesktopMissing")}</p>;
   const add = () => {
     setBusy(true);
     setError(null);
@@ -941,29 +935,47 @@ function AddToClaudeDesktop() {
       .finally(() => setBusy(false));
   };
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-3 rounded-md bg-slate-50 px-3 py-2.5 dark:bg-slate-900" title={state.path}>
-        {state.configured ? (
-          <>
-            <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
-            <span className="flex-1 text-sm">{t("settings.agents.connect.claudeDesktopReady")}</span>
-          </>
-        ) : (
-          <>
-            <span className="flex-1 text-sm text-slate-600 dark:text-slate-300">
-              {t("settings.agents.connect.claudeDesktopAddHint")}
-            </span>
-            <button className="btn btn-primary shrink-0" onClick={add} disabled={busy}>
-              {t("settings.agents.connect.addClaudeDesktop")}
-            </button>
-          </>
-        )}
-      </div>
-      <ErrorNote>{error}</ErrorNote>
-    </div>
+    <>
+      {state && !state.installed && (
+        <p className="text-sm text-slate-500">{t("settings.agents.connect.claudeDesktopMissing")}</p>
+      )}
+      {state?.installed && (
+        <div className="space-y-2">
+          <div
+            className="flex items-center gap-3 rounded-md bg-slate-50 px-3 py-2.5 dark:bg-slate-900"
+            title={state.path}
+          >
+            {state.configured ? (
+              <>
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-green-600" />
+                <span className="flex-1 text-sm">{t("settings.agents.connect.claudeDesktopReady")}</span>
+              </>
+            ) : (
+              <>
+                <span className="flex-1 text-sm text-slate-600 dark:text-slate-300">
+                  {t("settings.agents.connect.claudeDesktopAddHint")}
+                </span>
+                <button className="btn btn-primary shrink-0" onClick={add} disabled={busy}>
+                  {t("settings.agents.connect.addClaudeDesktop")}
+                </button>
+              </>
+            )}
+          </div>
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
+      <Snippet
+        label="Claude Desktop"
+        hint={t("settings.agents.connect.claudeDesktopHint", {
+          path: state?.installed ? state.path : CLAUDE_DESKTOP_CONFIG,
+        })}
+        text={snippet}
+      />
+    </>
   );
 }
 
+/** Text to copy into another app. */
 function Snippet({ label, hint, text }: { label: string; hint?: string; text: string }) {
   const t = useT();
   const copy = () =>
@@ -974,7 +986,7 @@ function Snippet({ label, hint, text }: { label: string; hint?: string; text: st
   return (
     <div>
       <div className="label">{label}</div>
-      {hint && <p className="mb-1 text-xs text-slate-500">{hint}</p>}
+      {hint && <p className="mb-1 text-xs break-words text-slate-500">{hint}</p>}
       <div className="flex items-start gap-2">
         <pre className="selectable min-w-0 flex-1 overflow-x-auto rounded-md bg-slate-100 px-3 py-2 font-mono text-xs dark:bg-slate-900">
           {text}
@@ -1138,7 +1150,10 @@ function UpdateNotice() {
   );
 }
 
-/** Claude Desktop's MCP configuration, where its own settings no longer show an editor for it. */
+/**
+ * Claude Desktop's MCP configuration, where its own settings no longer show an editor for it: the documented
+ * place, named until Cardloader has found the file (`ClaudeDesktop.path`).
+ */
 const CLAUDE_DESKTOP_CONFIG = IS_MAC
   ? "~/Library/Application Support/Claude/claude_desktop_config.json"
   : /Win/.test(navigator.platform || navigator.userAgent)

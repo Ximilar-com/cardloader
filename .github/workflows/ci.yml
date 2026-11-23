@@ -61,6 +61,13 @@ jobs:
       - run: cargo clippy --workspace --all-targets ${{ env.CARGO_FEATURES }} -- -D warnings
       - run: cargo test --workspace ${{ env.CARGO_FEATURES }}
 
+      # llama.cpp's shared libraries with the Visual C++ runtime, as build.rs gathered them for the bundle, and the
+      # sidecar: none may need a DLL that is neither shipped nor part of Windows (the runner has more installed
+      # than a user's PC, so the tests can't tell).
+      - name: The DLLs and the sidecar need nothing we don't ship (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/check-dll-imports.mjs src-tauri/llama src-tauri/binaries
+
       - name: Clippy the 32-bit TWAIN sidecar
         if: runner.os == 'Windows'
         run: cargo clippy -p cardloader-twain --target i686-pc-windows-msvc -- -D warnings
