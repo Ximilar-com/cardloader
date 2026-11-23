@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "aprox. {count} llamadas a la API (Magic AI puede añadir más)",
     },
     localGrade: "gradadas en este ordenador, sin llamadas a la API",
+    none: "sin llamadas a la API",
     agent: "identificadas por tu agente de IA, sin llamadas a la API",
   },
   scanner: {
@@ -193,6 +194,7 @@ const messages: Messages<typeof en> = {
   },
   task: "Tarea",
   gradeWith: "Gradar con",
+  cropWith: "Recortar con",
   crop: {
     folder: "Guardar los recortes en",
     choose: "Elige la carpeta donde se guardan las cartas recortadas.",
@@ -207,6 +209,7 @@ const messages: Messages<typeof en> = {
       jpg: "Pequeño, se abre en todas partes",
       png: "Sin pérdida, archivos más grandes",
       webp: "Tal como lo envía Ximilar: el más pequeño",
+      webpCut: "Sin pérdida: nítido, archivos más grandes",
     },
   },
   needsAgents:
@@ -245,9 +248,17 @@ const messages: Messages<typeof en> = {
   needsEbay: "Añade tu keyset de eBay en Ajustes para que Cardloader pueda buscar precios en los anuncios de eBay.",
   needsAgentsPrices:
     "Activa los agentes de IA, con «Ejecutar y revisar», en Ajustes para que tu agente pueda poner precio a las cartas.",
+  needsAgentsCrop:
+    "Activa los agentes de IA, con «Ejecutar y revisar», en Ajustes para que tu agente pueda recortar las cartas.",
   gradeWhat: "Qué gradar",
   sameModel: "El mismo modelo identifica las cartas.",
-  cropNote: "Los recortes siempre se hacen con la API de Ximilar.",
+  cropNotes: {
+    ximilar: "Ximilar recorta cada carta de su escaneo y la endereza: una llamada más a la API por carta.",
+    local:
+      "El modelo de este ordenador encuentra las esquinas de cada carta y Cardloader la recorta y la endereza. Sin llamadas a la API; lo bien que encaje el recorte depende del modelo.",
+    agent:
+      "Tu agente de IA encuentra las esquinas de cada carta y Cardloader la recorta y la endereza: pídele, p. ej. en Claude, que recorte las cartas de esta sesión en Cardloader.",
+  },
   missing: {
     csv: "Elige el archivo CSV que quieres importar.",
     csvUnreadable: "No se puede leer el archivo CSV.",

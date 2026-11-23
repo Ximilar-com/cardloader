@@ -19,13 +19,14 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::commands::AppState;
+use crate::crop::Quad;
 use crate::ebay::listing::CardCondition;
 use crate::ebay::sync::DraftItem;
 use crate::error::{Error, Result};
 use crate::imaging;
 use crate::market::{shopify, whatnot, PricedItem};
 use crate::model::*;
-use crate::runner::{AgentAnswer, AgentTask};
+use crate::runner::{AgentAnswer, AgentTask, SideCorners};
 use crate::settings::{McpSettings, Settings};
 use crate::source::{self, csv_file};
 use crate::ximilar::recognition::{self, ALPHABETS, SPORTS, TCG_GAMES};
@@ -41,12 +42,20 @@ reads the images and hands you each card's pictures through next_cards_to_identi
 identify_cards. Both next_cards_to_identify and next_cards_to_price say whether the user lets you search the web \
 (webSearch): when not, use only the cards' pictures and Cardloader's tools. To price identified cards yourself, create the session with prices \"agent\": next_cards_to_price \
 hands you each identified card, and you answer with price_cards. For what an identified card asks on eBay now, call \
-find_ebay_listings, then keep_ebay_listings with the listings that are the card. Cards you accept are marked as accepted by AI in the app, with your note; the \
+find_ebay_listings, then keep_ebay_listings with the listings that are the card. To crop cards yourself (each \
+card cut out of its picture, straightened), create the session with crop_engine \"agent\" (task crop, or \
+save_crops): next_cards_to_crop hands you each card's pictures, you find the card's four corners in them, \
+preview_crop shows the cut they give, and you answer with crop_cards. Cards you accept are marked as accepted by AI in the app, with your note; the \
 user sees everything you do live. Tools you may not use are left out: the user allows them in Cardloader → Settings → AI \
 agents.";
 
 /// The long edge of card pictures sent to agents: enough to read the name and number, few tokens.
 const PICTURE_LONG_EDGE: u32 = 1024;
+/// The long edge of the cut `preview_crop` shows: enough to see whether the card's edges are in it.
+const CUT_PREVIEW_LONG_EDGE: u32 = 768;
+/// How far the shape of the picture an agent says its corners are in may be from the picture's own (its width
+/// over its height): a client may have shrunk the picture, which rounds its sides.
+const SHAPE_TOLERANCE: f64 = 0.03;
 /// How long `wait_for_session` waits by default, and at most (some clients give up on a call after a minute).
 const WAIT_DEFAULT: u64 = 50;
 pub(super) const WAIT_MAX: u64 = 120;
@@ -200,13 +209,18 @@ struct CreateSession {
     /// condition: only its condition (e.g. Near Mint); crop: only cut each card out of its image, straightened, into
     /// pictures in `crop_folder`. Default: the user's default.
     task: Option<Task>,
-    /// Also save each card cropped (one more call per card) while identifying or grading it. Default: the user's
-    /// default. A crop task always does.
+    /// Also save each card cropped while identifying or grading it. Default: the user's default. A crop task
+    /// always does.
     save_crops: Option<bool>,
+    /// What crops the cards: ximilar (default: it cuts, evens out and sharpens them; one more call per card),
+    /// local (the model on this computer finds each card's corners), or agent: you find them
+    /// (next_cards_to_crop, then crop_cards). Cardloader cuts the card out at the corners found.
+    crop_engine: Option<Engine>,
     /// For crops: an absolute folder for the pictures, not the one the cards are read from. Default: the session's
     /// own folder (see cropsFolder in the result).
     crop_folder: Option<String>,
-    /// For crops: the file type, jpg (default: the user's last), png (lossless, large) or webp (as Ximilar sends it).
+    /// For crops: the file type, jpg (default: the user's last), png (lossless, large) or webp (as Ximilar sends
+    /// it; lossless and larger when the card is cut here).
     crop_format: Option<CropFormat>,
     /// What the cards are: tcg (trading card games), sport, comics, slab (graded slabs), or auto (detected per
     /// card). Default: the user's default.
@@ -251,7 +265,7 @@ struct RunSession {
 
 #[derive(Deserialize, JsonSchema)]
 struct NextCards {
-    /// A session identified or priced by an AI agent (its id, its name, or "latest"); empty for any.
+    /// A session identified, priced or cropped by an AI agent (its id, its name, or "latest"); empty for any.
     session_id: Option<String>,
     /// Cards to return at most (default 3, at most 10): each comes with its pictures.
     max: Option<usize>,
@@ -279,6 +293,56 @@ struct AddToCardsArgs {
     condition_scale: Option<String>,
     /// For prices: the eBay site (EBAY_US, EBAY_GB, EBAY_DE, …). Default: the session's, else the user's.
     ebay_site: Option<String>,
+    /// Save each card cropped: cut out of its picture, straightened.
+    crops: Option<bool>,
+    /// What crops: ximilar, local (the model on this computer finds the corners) or agent (you find them:
+    /// next_cards_to_crop, then crop_cards). Default: the session's, else ximilar.
+    crop_engine: Option<Engine>,
+    /// For crops: an absolute folder for the pictures. Default: the session's (see cropsFolder in the result).
+    crop_folder: Option<String>,
+    /// For crops: jpg, png or webp. Default: the session's.
+    crop_format: Option<CropFormat>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CropCards {
+    cards: Vec<CardCorners>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct CardCorners {
+    item_id: i64,
+    /// Where the card is in its front picture. Leave out with uncropped.
+    front: Option<PictureCorners>,
+    /// Where the card is in its back picture, for a card that came with one.
+    back: Option<PictureCorners>,
+    /// Instead of `back`: why the back picture has no card to cut out. The front is still cropped.
+    no_back: Option<String>,
+    /// What you saw, in a few words (shown to the user).
+    note: Option<String>,
+    /// The front picture has no card to cut out: the card's crop fails with your note.
+    uncropped: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct PictureCorners {
+    /// The width and height, in pixels, of the picture the corners are in: as given with the picture.
+    size: [f64; 2],
+    /// The card's four corners as [x, y] pixels from the picture's top-left, clockwise, starting at the card's
+    /// own top-left corner (where its top-left is when the card is read upright): a card lying sideways or
+    /// upside down then comes out upright.
+    corners: [[f64; 2]; 4],
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct PreviewCrop {
+    item_id: i64,
+    /// front (default) or back.
+    side: Option<String>,
+    /// The width and height, in pixels, of the picture the corners are in: as given with the picture.
+    size: [f64; 2],
+    /// The card's four corners as [x, y] pixels, clockwise from the card's own top-left corner.
+    corners: [[f64; 2]; 4],
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -596,7 +660,10 @@ fn specs() -> Vec<Spec> {
         spec::<SessionArg>(Run, "stop_session", "Stop a session", "Stops a running session."),
         spec::<NextCards>(Run, "next_cards_to_identify", "Cards to identify", "Cards of sessions with engine agent that wait for you to identify them, each with its front (and back) picture. Waits while the next cards are scanned; says finished when no more can come. Answer with identify_cards."),
         spec::<IdentifyCards>(Run, "identify_cards", "Identify cards", "Your identification of cards from next_cards_to_identify: name, set, number, year, variant, game. The session then goes on with them (grading, crops, Cards Cloud) and the user reviews them."),
-        spec::<AddToCardsArgs>(Run, "add_to_cards", "Add prices or grading", "Adds prices (from eBay's listings, or priced by you) or grading (a grade, centering or the condition, by Ximilar or the local model) to a finished session's identified cards, without identifying them again, and runs them. The session keeps the task for cards it gets later."),
+        spec::<AddToCardsArgs>(Run, "add_to_cards", "Add prices, grading or crops", "Adds prices (from eBay's listings, or priced by you), grading (a grade, centering or the condition, by Ximilar or the local model) or crops (by Ximilar, the local model, or with corners you find) to a finished session's identified cards, without identifying them again, and runs them. The session keeps the task for cards it gets later."),
+        spec::<NextCards>(Run, "next_cards_to_crop", "Cards to crop", "Cards of sessions with crop_engine agent that wait for you to find them in their pictures: each card's front (and back) picture with its size in pixels. Waits while the next cards are scanned; says finished when no more can come. Answer with crop_cards."),
+        spec::<PreviewCrop>(Run, "preview_crop", "Preview a crop", "Shows the picture that four corners would cut out of one side of a card, without saving anything: check that the whole card is in it and nothing else, correct the corners, then send them with crop_cards."),
+        spec::<CropCards>(Run, "crop_cards", "Crop cards", "Where the cards from next_cards_to_crop are in their pictures: each side's four corners in the picture's pixels. Cardloader cuts each card out of its full scan, straightened, into the session's crop folder."),
         spec::<NextCards>(Run, "next_cards_to_price", "Cards to price", "Identified cards of sessions with prices agent that wait for you to price them: their name, set, number, year, variant, game, slab grade, any eBay range already found, and their front (and back) picture. Waits while the next cards are identified; says finished when no more can come. Answer with price_cards."),
         spec::<PriceCards>(Run, "price_cards", "Price cards", "Your price of cards from next_cards_to_price (in US dollars unless you give each one's currency), with a note on how you got it. find_ebay_listings and keep_ebay_listings can help when the user has an eBay keyset."),
         spec::<FindEbayListings>(Run, "find_ebay_listings", "Find eBay listings", "Searches eBay for an identified card's active fixed-price listings (by its name, set and number, or your query) and keeps them on the card with their price range: min, max, average and median. Then call keep_ebay_listings with the listings that are this card. Needs the user's eBay keyset."),
@@ -809,9 +876,13 @@ impl Handler {
             "identify_cards" => self.identify_cards(args(a)?),
             "next_cards_to_price" => self.next_cards(args(a)?, AgentTask::Price).await,
             "price_cards" => self.price_cards(args(a)?),
+            "next_cards_to_crop" => self.next_cards(args(a)?, AgentTask::Crop).await,
+            "preview_crop" => self.preview_crop(args(a)?).await,
+            "crop_cards" => self.crop_cards(args(a)?),
             "add_to_cards" => {
                 let a: AddToCardsArgs = args(a)?;
                 let id = self.session_id(&a.session_id)?;
+                let crops = a.crops.unwrap_or(false);
                 let add = AddToCards {
                     prices: a.prices,
                     grading: a.grading,
@@ -819,16 +890,35 @@ impl Handler {
                     condition_mode: a.condition_scale,
                     local_model: None,
                     ebay_site: a.ebay_site,
+                    crops,
+                    crop_engine: a.crop_engine,
+                    crop_folder: match a.crop_folder.as_deref().map(str::trim) {
+                        Some(folder) if crops && !folder.is_empty() => {
+                            Some(self.crop_folder(folder)?)
+                        }
+                        _ => None,
+                    },
+                    crop_format: a.crop_format,
+                    crop_level: None,
                 };
                 let n = self.state.add_to_cards(&id, a.item_ids.as_deref(), &add)?;
-                let mut v = self.session_json(&self.state.db.session(&id)?, false);
+                let session = self.state.db.session(&id)?;
+                let mut v = self.session_json(&session, false);
                 v["cardsAdded"] = json!(n);
+                if crops {
+                    v["cropsFolder"] = json!(self.state.runner.crop_dir(&session));
+                }
+                let by_agent = SessionOptions {
+                    // Only what was added is the agent's to do now: the cards are identified already.
+                    engine: Engine::Ximilar,
+                    prices: a.prices.filter(|p| *p == Prices::Agent),
+                    save_crops: crops,
+                    ..session.options.clone()
+                };
                 v["next"] = json!(if n == 0 {
-                    "no finished identified card to add to"
-                } else if a.prices == Some(Prices::Agent) {
-                    "call next_cards_to_price and price the cards with price_cards until it says finished"
+                    "no finished identified card to add to".to_string()
                 } else {
-                    "call wait_for_session until it finishes"
+                    next_for(&by_agent)
                 });
                 out(v)
             }
@@ -1059,6 +1149,7 @@ impl Handler {
             "engine": s.options.engine,
             "gradeEngine": s.options.grade_engine(),
             "prices": s.options.prices(),
+            "cropEngine": s.options.crops().then(|| s.options.crop_engine()),
             "cardType": s.id_mode,
             "game": s.options.subcategory,
             "storeInCardsCloud": s.options.sync_remote,
@@ -1091,6 +1182,13 @@ impl Handler {
                 .state
                 .runner
                 .agent_waiting(Some(&s.id), AgentTask::Price)
+                .len());
+        }
+        if s.options.crops_by_agent() {
+            v["counts"]["waitingForCrop"] = json!(self
+                .state
+                .runner
+                .agent_waiting(Some(&s.id), AgentTask::Crop)
                 .len());
         }
         if options {
@@ -1183,21 +1281,23 @@ impl Handler {
         v["analyzedAt"] = json!(item.analyzed_at);
         let mut content = out(v)?;
         if images {
-            content.extend(pictures(&item, PICTURE_LONG_EDGE).await?);
+            content.extend(pictures(&item, PICTURE_LONG_EDGE).await?.0);
         }
         Ok(content)
     }
 
-    /// The cards waiting for the agent to identify or price them (`task`), with their pictures; long-polls while
-    /// a session that may still offer some runs.
+    /// The cards waiting for the agent to identify, price or crop them (`task`), with their pictures; long-polls
+    /// while a session that may still offer some runs.
     async fn next_cards(&self, a: NextCards, task: AgentTask) -> Result<Vec<ContentBlock>> {
         let offers = |o: &SessionOptions| match task {
             AgentTask::Identify => o.agent(),
             AgentTask::Price => o.prices_by_agent(),
+            AgentTask::Crop => o.crops_by_agent(),
         };
         let (tool, answer) = match task {
             AgentTask::Identify => ("next_cards_to_identify", "identify_cards"),
             AgentTask::Price => ("next_cards_to_price", "price_cards"),
+            AgentTask::Crop => ("next_cards_to_crop", "crop_cards"),
         };
         let session = match a.session_id.as_deref().map(str::trim) {
             Some(given) if !given.is_empty() => {
@@ -1211,6 +1311,10 @@ impl Handler {
                         ),
                         AgentTask::Price => format!(
                             "session \"{}\" isn't priced by an AI agent (create one with prices \"agent\")",
+                            s.name
+                        ),
+                        AgentTask::Crop => format!(
+                            "session \"{}\" isn't cropped by an AI agent (create one with crop_engine \"agent\")",
                             s.name
                         ),
                     }));
@@ -1240,6 +1344,7 @@ impl Handler {
                 let what = match task {
                     AgentTask::Identify => "identified",
                     AgentTask::Price => "priced",
+                    AgentTask::Crop => "cropped",
                 };
                 return out(json!({"cards": [], "finished": true,
                     "next": format!("no session {what} by an AI agent is running: nothing more will come")}));
@@ -1284,8 +1389,13 @@ impl Handler {
                     .filter(|site| !site.is_empty())
                     .unwrap_or_else(|| self.state.settings.get().ebay.search_marketplace));
             }
+            let (shown, sizes) = pictures(&item, long_edge).await?;
+            if task == AgentTask::Crop {
+                // The frame the corners are given in: these pictures' own pixels.
+                card["pictures"] = sizes;
+            }
             cards.push(card);
-            pics.extend(pictures(&item, long_edge).await?);
+            pics.extend(shown);
         }
         // Whether the agent may look beyond the pictures is the user's choice (Settings → AI agents), said with
         // every batch: Cardloader can't switch off an agent's own web search.
@@ -1307,6 +1417,12 @@ impl Handler {
             (AgentTask::Price, true) => format!(
                 "price each card as it is (raw, or the slab's grade); you may search the web for recent sales (the \
                  user allows it), and find_ebay_listings helps too. Then send the prices with {answer}"
+            ),
+            (AgentTask::Crop, _) => format!(
+                "find the card in each picture below: its four corners as [x, y] pixels of that picture (its size \
+                 is given with it), clockwise from the card's own top-left corner, on the card's edge and not \
+                 inside it. preview_crop shows what corners cut out, before anything is saved. Then send them with \
+                 {answer}: front, and back for a card that has a back picture"
             ),
         };
         let mut content = out(json!({
@@ -1352,6 +1468,122 @@ impl Handler {
             "results": results,
             "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Price).len(),
         }))
+    }
+
+    /// One side's corners as an agent gives them, read as fractions of the picture it was shown.
+    fn quad(item: &ItemDetail, side: &str, size: [f64; 2], corners: [[f64; 2]; 4]) -> Result<Quad> {
+        let path = shown(item, side)
+            .ok_or_else(|| Error::msg(format!("card {} has no {side} picture", item.summary.id)))?;
+        // Previews are plain JPEGs, their header says their size. A scan shown for want of a preview may be
+        // turned by its EXIF data, so its shape isn't checked.
+        let previewed = match side {
+            "back" => item.back_preview_path.is_some(),
+            _ => item.preview_path.is_some(),
+        };
+        if let Some((w, h)) = image::image_dimensions(&path).ok().filter(|_| previewed) {
+            let shape = (size[0] / size[1]) / (f64::from(w) / f64::from(h));
+            if !shape.is_finite() || (shape - 1.0).abs() > SHAPE_TOLERANCE {
+                return Err(Error::msg(format!(
+                    "{side}: size {}×{} isn't the shape of the picture: give the width and height of the \
+                     picture the corners are in, as given with it",
+                    size[0], size[1]
+                )));
+            }
+        }
+        Quad::from_pixels((size[0], size[1]), corners)
+            .map_err(|why| Error::msg(format!("{side}: {why}")))
+    }
+
+    /// What an agent's answer about one card's corners means for the card.
+    fn crop_answer(&self, card: CardCorners) -> Result<AgentAnswer> {
+        let note = card.note.unwrap_or_default().trim().to_string();
+        if card.uncropped == Some(true) {
+            return Ok(AgentAnswer::Uncropped {
+                note: if note.is_empty() {
+                    "no card found in the picture".into()
+                } else {
+                    note
+                },
+            });
+        }
+        let item = self.state.db.item(card.item_id)?;
+        let front = card
+            .front
+            .ok_or_else(|| Error::msg("give the front's corners, or uncropped with a note"))?;
+        let mut sides: Vec<SideCorners> = vec![(
+            "front",
+            Ok(Self::quad(&item, "front", front.size, front.corners)?),
+        )];
+        // A back left out can't be told from one forgotten, so a card with a back gets an answer about it.
+        if shown(&item, "back").is_some() {
+            let why = card.no_back.map(|w| w.trim().to_string());
+            sides.push((
+                "back",
+                match (card.back, why) {
+                    (Some(back), _) => Ok(Self::quad(&item, "back", back.size, back.corners)?),
+                    (None, Some(why)) if !why.is_empty() => Err(why),
+                    _ => {
+                        return Err(Error::msg(
+                            "this card has a back picture: give back's corners too, or no_back with why not",
+                        ))
+                    }
+                },
+            ));
+        }
+        Ok(AgentAnswer::Cropped { sides, note })
+    }
+
+    fn crop_cards(&self, a: CropCards) -> Result<Vec<ContentBlock>> {
+        let mut results = Vec::new();
+        for card in a.cards {
+            let item_id = card.item_id;
+            // Checked here, where the agent can correct it: once handed over, the card no longer waits.
+            let result = self
+                .crop_answer(card)
+                .and_then(|answer| self.state.runner.answer_agent(item_id, answer));
+            results.push(match result {
+                Ok(()) => json!({"itemId": item_id, "ok": true}),
+                Err(e) => json!({"itemId": item_id, "ok": false, "error": e.to_string()}),
+            });
+        }
+        out(json!({
+            "results": results,
+            "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Crop).len(),
+        }))
+    }
+
+    /// The cut that corners give, from the picture the agent was shown: nothing is saved.
+    async fn preview_crop(&self, a: PreviewCrop) -> Result<Vec<ContentBlock>> {
+        let item = self.state.db.item(a.item_id)?;
+        let side = match a.side.as_deref().map(str::trim) {
+            None | Some("") | Some("front") => "front",
+            Some("back") => "back",
+            Some(other) => return Err(Error::msg(format!("side is front or back, not {other}"))),
+        };
+        let quad = Self::quad(&item, side, a.size, a.corners)?;
+        let path = shown(&item, side)
+            .ok_or_else(|| Error::msg(format!("card {} has no {side} picture", a.item_id)))?;
+        let (data, (w, h)) = tokio::task::spawn_blocking(move || -> Result<_> {
+            let cut = crate::crop::cut(&imaging::open(Path::new(&path))?, &quad);
+            let cut = imaging::fit_long_edge(&cut, CUT_PREVIEW_LONG_EDGE);
+            Ok((
+                imaging::b64(&imaging::jpeg_bytes(&cut, 85)?),
+                (cut.width(), cut.height()),
+            ))
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))??;
+        let mut content = out(json!({
+            "itemId": a.item_id,
+            "side": side,
+            "width": w,
+            "height": h,
+            "saved": false,
+            "next": "the cut these corners give is below: when the whole card is in it, upright, with no more than \
+                     a sliver of background, send them with crop_cards; else correct the corners and look again",
+        }))?;
+        content.push(ContentBlock::image(data, "image/jpeg"));
+        Ok(content)
     }
 
     async fn find_ebay_listings(&self, a: FindEbayListings) -> Result<Vec<ContentBlock>> {
@@ -1581,6 +1813,7 @@ impl Handler {
                 Prices::Off
             })),
             grade_engine: a.grade_engine,
+            crop_engine: a.crop_engine,
             ebay_site: a.ebay_site.clone().unwrap_or_default(),
             grading: a.grading.unwrap_or(settings.default_grading),
             condition_mode: settings.default_condition_mode.clone(),
@@ -1639,18 +1872,7 @@ impl Handler {
             v["cropsFolder"] = json!(self.state.runner.crop_dir(&session));
         }
         if start {
-            v["next"] = json!(
-                if session.options.agent() && session.options.prices_by_agent() {
-                    "call next_cards_to_identify and identify the cards with identify_cards, then next_cards_to_price and \
-                 price_cards, until both say finished"
-                } else if session.options.agent() {
-                    "call next_cards_to_identify and identify the cards with identify_cards until it says finished"
-                } else if session.options.prices_by_agent() {
-                    "call next_cards_to_price and price the cards with price_cards until it says finished"
-                } else {
-                    "call wait_for_session until it finishes"
-                }
-            );
+            v["next"] = json!(next_for(&session.options));
         }
         out(v)
     }
@@ -1855,39 +2077,72 @@ impl Handler {
     }
 }
 
-/// A card's front and back pictures for an agent, each after a line naming it.
-async fn pictures(item: &ItemDetail, long_edge: u32) -> Result<Vec<ContentBlock>> {
-    let item_id = item.summary.id;
+/// What the agent does after a session starts or gets tasks added: the loops of the tasks that are its own.
+fn next_for(o: &SessionOptions) -> String {
+    let loops: Vec<&str> = [
+        (
+            o.agent(),
+            "next_cards_to_identify and identify the cards with identify_cards",
+        ),
+        (
+            o.prices_by_agent(),
+            "next_cards_to_price and price the cards with price_cards",
+        ),
+        (
+            o.crops_by_agent(),
+            "next_cards_to_crop and give the cards' corners with crop_cards",
+        ),
+    ]
+    .into_iter()
+    .filter_map(|(on, what)| on.then_some(what))
+    .collect();
+    match loops.as_slice() {
+        [] => "call wait_for_session until it finishes".into(),
+        [one] => format!("call {one} until it says finished"),
+        several => format!(
+            "call {}, each until it says finished",
+            several.join(", then ")
+        ),
+    }
+}
+
+/// The picture of a card's side ("front", "back") an agent is shown: its preview, else the scan.
+fn shown(item: &ItemDetail, side: &str) -> Option<String> {
     let s = &item.summary;
-    let sides = [
-        (
-            "Front",
-            item.preview_path.clone().or(Some(s.front_path.clone())),
-        ),
-        (
-            "Back",
-            item.back_preview_path.clone().or(s.back_path.clone()),
-        ),
-    ];
+    match side {
+        "back" => item.back_preview_path.clone().or(s.back_path.clone()),
+        _ => item.preview_path.clone().or(Some(s.front_path.clone())),
+    }
+    .filter(|p| !p.is_empty())
+}
+
+/// A card's front and back pictures for an agent, each after a line naming it and its size, and those sizes
+/// by side (`{"front": {"width", "height"}, …}`): the frame of coordinates found on them.
+async fn pictures(item: &ItemDetail, long_edge: u32) -> Result<(Vec<ContentBlock>, Value)> {
+    let item_id = item.summary.id;
     let mut content = Vec::new();
-    for (label, path) in sides {
-        let Some(path) = path.filter(|p| !p.is_empty()) else {
+    let mut sizes = json!({});
+    for (label, side) in [("Front", "front"), ("Back", "back")] {
+        let Some(path) = shown(item, side) else {
             continue;
         };
         let picture = tokio::task::spawn_blocking(move || {
-            imaging::encode_for_upload(Path::new(&path), long_edge, 85)
+            imaging::encode_sized(Path::new(&path), long_edge, 85)
         })
         .await
         .map_err(|e| Error::msg(e.to_string()))?;
         match picture {
-            Ok(data) => {
-                content.push(ContentBlock::text(format!("{label} of card {item_id}:")));
+            Ok((data, (w, h))) => {
+                content.push(ContentBlock::text(format!(
+                    "{label} of card {item_id} ({w}×{h} px):"
+                )));
                 content.push(ContentBlock::image(data, "image/jpeg"));
+                sizes[side] = json!({"width": w, "height": h});
             }
             Err(e) => content.push(ContentBlock::text(format!("{label}: no picture ({e})"))),
         }
     }
-    Ok(content)
+    Ok((content, sizes))
 }
 
 fn agent(note: Option<String>) -> Reviewer {

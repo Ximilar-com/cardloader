@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "environ {count} appels API (Magic AI peut en ajouter)",
     },
     localGrade: "gradées sur cet ordinateur, sans appel API",
+    none: "sans appel API",
     agent: "identifiées par votre agent IA, sans appel API",
   },
   scanner: {
@@ -194,6 +195,7 @@ const messages: Messages<typeof en> = {
   },
   task: "Tâche",
   gradeWith: "Grader avec",
+  cropWith: "Recadrer avec",
   crop: {
     folder: "Enregistrer les recadrages dans",
     choose: "Choisissez le dossier où enregistrer les cartes détourées.",
@@ -208,6 +210,7 @@ const messages: Messages<typeof en> = {
       jpg: "Léger, s’ouvre partout",
       png: "Sans perte, fichiers plus lourds",
       webp: "Tel que Ximilar l’envoie : le plus léger",
+      webpCut: "Sans perte : net, fichiers plus lourds",
     },
   },
   needsAgents:
@@ -243,9 +246,17 @@ const messages: Messages<typeof en> = {
     "Ajoutez votre keyset eBay dans les Réglages pour que Cardloader puisse chercher les prix dans les annonces eBay.",
   needsAgentsPrices:
     "Activez les agents IA, avec « Lancer et vérifier », dans les Réglages pour que votre agent puisse fixer le prix des cartes.",
+  needsAgentsCrop:
+    "Activez les agents IA, avec « Lancer et vérifier », dans les Réglages pour que votre agent puisse recadrer les cartes.",
   gradeWhat: "Que grader",
   sameModel: "Le même modèle identifie les cartes.",
-  cropNote: "Les recadrages passent toujours par l’API Ximilar.",
+  cropNotes: {
+    ximilar: "Ximilar détoure chaque carte dans son scan et la redresse : un appel API de plus par carte.",
+    local:
+      "Le modèle de cet ordinateur trouve les coins de chaque carte, puis Cardloader la détoure et la redresse. Aucun appel API ; la précision du recadrage dépend du modèle.",
+    agent:
+      "Votre agent IA trouve les coins de chaque carte, puis Cardloader la détoure et la redresse : demandez-lui, p. ex. dans Claude, de recadrer les cartes de cette session dans Cardloader.",
+  },
   missing: {
     csv: "Choisissez le fichier CSV à importer.",
     csvUnreadable: "Le fichier CSV ne peut pas être lu.",

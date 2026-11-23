@@ -6,6 +6,7 @@ import type { Engine, GradingMode, Prices, SessionOptions, Stage } from "./api";
 import {
   agentOf,
   basename,
+  cropEngineOf,
   cropsOf,
   defaultSessionName,
   duration,
@@ -126,6 +127,7 @@ describe("format", () => {
       // Only identifying can be an agent's.
       expect(engineOf(o) === "agent", what).toBe(c.agent);
       expect(gradeEngineOf(o), what).toBe(c.gradeEngine as Engine);
+      expect(cropEngineOf(o), what).toBe(c.cropEngine as Engine);
       expect(pricesOf(o), what).toBe(c.prices as Prices);
       expect(stagesOf(o), what).toEqual(c.stages as Stage[]);
     }

@@ -13,6 +13,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "ximilar",
     "stages": ["identify"]
   },
@@ -30,6 +31,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify", "grade"]
   },
@@ -47,6 +49,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify"]
   },
@@ -64,6 +67,7 @@
     "agent": false,
     "crops": true,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify", "crop"]
   },
@@ -81,6 +85,7 @@
     "agent": true,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify"]
   },
@@ -98,6 +103,7 @@
     "agent": true,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify", "grade"]
   },
@@ -115,6 +121,7 @@
     "agent": true,
     "crops": true,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify", "crop"]
   },
@@ -132,6 +139,7 @@
     "agent": true,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify"]
   },
@@ -149,6 +157,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -166,6 +175,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -183,6 +193,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -200,6 +211,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -217,6 +229,7 @@
     "agent": false,
     "crops": true,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade", "crop"]
   },
@@ -234,6 +247,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -251,6 +265,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -268,6 +283,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -285,6 +301,7 @@
     "agent": false,
     "crops": true,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["crop"]
   },
@@ -302,6 +319,7 @@
     "agent": false,
     "crops": true,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["crop"]
   },
@@ -319,6 +337,7 @@
     "agent": false,
     "crops": true,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["crop"]
   },
@@ -337,6 +356,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "ximilar",
     "stages": ["identify", "grade"]
   },
@@ -355,6 +375,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify", "grade"]
   },
@@ -373,6 +394,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "ebay",
     "stages": ["identify", "price"]
   },
@@ -391,6 +413,7 @@
     "agent": true,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "agent",
     "stages": ["identify", "price"]
   },
@@ -409,6 +432,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify"]
   },
@@ -428,6 +452,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "agent",
     "stages": ["identify", "price", "grade"]
   },
@@ -446,6 +471,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -464,6 +490,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["grade"]
   },
@@ -481,6 +508,7 @@
     "agent": false,
     "crops": false,
     "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
     "prices": "off",
     "stages": ["identify"]
   },
@@ -500,7 +528,122 @@
     "agent": true,
     "crops": true,
     "gradeEngine": "local",
+    "cropEngine": "ximilar",
     "prices": "ebay",
     "stages": ["identify", "price", "grade", "crop"]
+  },
+  {
+    "options": {
+      "task": "crop",
+      "engine": "ximilar",
+      "cropEngine": "agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": false,
+    "crops": true,
+    "gradeEngine": "ximilar",
+    "cropEngine": "agent",
+    "prices": "off",
+    "stages": ["crop"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "cropEngine": "local",
+      "grading": "off",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": false,
+    "crops": true,
+    "gradeEngine": "local",
+    "cropEngine": "local",
+    "prices": "off",
+    "stages": ["identify", "crop"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "cropEngine": "ximilar",
+      "grading": "off",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true,
+    "gradeEngine": "local",
+    "cropEngine": "ximilar",
+    "prices": "off",
+    "stages": ["identify", "crop"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "cropEngine": "agent",
+      "grading": "off",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true,
+    "gradeEngine": "ximilar",
+    "cropEngine": "agent",
+    "prices": "ximilar",
+    "stages": ["identify", "crop"]
+  },
+  {
+    "options": {
+      "task": "grade",
+      "engine": "local",
+      "cropEngine": "local",
+      "grading": "grade",
+      "saveCrops": true,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": false,
+    "agent": false,
+    "crops": true,
+    "gradeEngine": "local",
+    "cropEngine": "local",
+    "prices": "off",
+    "stages": ["grade", "crop"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "cropEngine": "local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": true,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "cropEngine": "local",
+    "prices": "off",
+    "stages": ["identify"]
   }
 ]

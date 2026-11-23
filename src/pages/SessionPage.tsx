@@ -67,6 +67,7 @@ import {
   engineLabels,
   eta,
   agentOf,
+  cropEngineOf,
   cropsOf,
   gradeEngineOf,
   gradingOf,
@@ -318,6 +319,9 @@ function SessionView({ id }: { id: string }) {
   const gradeEngine = gradeEngineOf(session.options);
   const gradedElsewhere = gradeEngine !== (identifies ? session.options.engine : "ximilar");
   const savesCrops = cropsOf(session.options);
+  // The local model or an AI agent finds the cards' corners, and Cardloader cuts them out.
+  const cropEngine = cropEngineOf(session.options);
+  const agentCrops = savesCrops && cropEngine === "agent";
   // A card waiting only for its crop shows "Cropping", not "Grading".
   const cropping = savesCrops && gradingOf(session.options) === "off";
 
@@ -404,6 +408,14 @@ function SessionView({ id }: { id: string }) {
                     </span>
                   </>
                 )}
+                {savesCrops && cropEngine !== "ximilar" && (
+                  <>
+                    <span>·</span>
+                    <span>
+                      {t("status.stageBy", { stage: t("newSession.tasks.crop"), by: engineLabels()[cropEngine] })}
+                    </span>
+                  </>
+                )}
                 <span>·</span>
                 <span>{t("session.created", { date: dateTime(session.createdAt) })}</span>
               </p>
@@ -477,7 +489,7 @@ function SessionView({ id }: { id: string }) {
               </span>
               {counts.inProgress > 0 && (
                 <span className="text-accent">
-                  {agent
+                  {agent || (agentCrops && cropOnly)
                     ? t("session.progress.waitingForAgent", { count: counts.inProgress })
                     : t("session.progress.inProgress", { count: counts.inProgress })}
                 </span>
@@ -547,6 +559,13 @@ function SessionView({ id }: { id: string }) {
             {prices === "agent" && active && counts.pricing > 0 && (
               <AgentBanner prompt={t("session.agentPrompt.price", { name: session.name, id: session.id })}>
                 {rich(t("session.agentPricing", { count: counts.pricing, name: session.name, id: session.id }), {
+                  b: (s) => <b>{s}</b>,
+                })}
+              </AgentBanner>
+            )}
+            {agentCrops && active && counts.cropping > 0 && (
+              <AgentBanner prompt={t("session.agentPrompt.crop", { name: session.name, id: session.id })}>
+                {rich(t("session.agentCropping", { count: counts.cropping, name: session.name, id: session.id }), {
                   b: (s) => <b>{s}</b>,
                 })}
               </AgentBanner>

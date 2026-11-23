@@ -192,10 +192,10 @@ const messages: Messages<typeof en> = {
     },
   },
   addTo: {
-    menu: "価格またはグレーディングを追加…",
-    menuTitle: "識別済みのカードに、eBayやAIエージェントの価格、グレードや状態を追加（再識別はしません）",
-    bulk: "価格またはグレーディングを追加…",
-    title: "価格またはグレーディングを追加",
+    menu: "価格、グレーディング、切り抜きを追加…",
+    menuTitle: "識別済みのカードに、eBayやAIエージェントの価格、グレードや状態、切り抜き画像を追加（再識別はしません）",
+    bulk: "価格、グレーディング、切り抜きを追加…",
+    title: "価格、グレーディング、切り抜きを追加",
     introAll:
       "このセッションの識別済みカードすべてに選んだ内容を追加します。カードの識別とレビューはそのままで、追加した処理だけを実行します。今後追加されるカードにも適用されます。",
     intro: {
@@ -210,7 +210,12 @@ const messages: Messages<typeof en> = {
   agentPrompt: {
     identify: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを識別して",
     price: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードに価格を付けて",
+    crop: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを切り抜いて",
     copy: "プロンプトをコピー",
+  },
+  agentCropping: {
+    other:
+      "<b>{count}枚のカード</b>がAIエージェントによる四隅の検出を待っています。Claudeなどで「MCP経由でCardloaderのセッション {name}（ID {id}）のカードを切り抜いて」と頼んでください。",
   },
   agentPricing: {
     other:

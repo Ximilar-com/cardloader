@@ -32,7 +32,7 @@ export type Stage = "identify" | "price" | "grade" | "crop";
 /** What a session does with each card: identify it (and grade, price…), or only grade it, tell its condition or crop
  * it. */
 export type Task = "identify" | "grade" | "condition" | "crop";
-/** The file type cropped pictures are saved as (WebP: Ximilar's file as it is). */
+/** The file type cropped pictures are saved as (WebP: Ximilar's file as it is, lossless when cut here). */
 export type CropFormat = "jpg" | "png" | "webp";
 export type Pairing = "single" | "front_back";
 export type SessionStatus = "draft" | "running" | "paused" | "stopped" | "completed" | "failed";
@@ -59,7 +59,7 @@ export interface SessionOptions {
   saveCrops: boolean;
   /** Where the cropped pictures go; empty = `crops` in the session's own folder. */
   cropFolder: string;
-  /** Ximilar evens out the levels and sharpens the crop. */
+  /** Ximilar evens out the levels and sharpens the crop (only its crops). */
   cropLevel: boolean;
   cropFormat: CropFormat;
   priceStats: boolean;
@@ -91,20 +91,28 @@ export interface SessionOptions {
   gradeEngine?: Engine | null;
   /** Where prices come from; null (older sessions) = Ximilar's when `priceStats`. */
   prices?: Prices | null;
+  /** What crops the cards; null (older sessions) = Ximilar. The local model or an agent gives the corners. */
+  cropEngine?: Engine | null;
   /** The eBay site its cards are priced on (`EBAY_SITES`); empty = Settings' search site. */
   ebaySite?: string;
   localModel: string;
 }
 
-/** Prices or grading added to a finished session's identified cards, and what does it. */
+/** Prices, grading or crops added to a finished session's identified cards, and what does it. */
 export interface AddToCards {
   /** "ebay" or "agent": Ximilar's prices come only with its identification. */
   prices?: Prices | null;
   grading?: GradingMode | null;
   gradeEngine?: Engine | null;
   conditionMode?: string | null;
-  /** The local model that grades; default: the session's. */
+  /** The local model that grades or crops; default: the session's. */
   localModel?: string | null;
+  crops?: boolean;
+  cropEngine?: Engine | null;
+  /** Where the crops go; default: the session's. */
+  cropFolder?: string | null;
+  cropFormat?: CropFormat | null;
+  cropLevel?: boolean | null;
   /** The eBay site prices come from; default: the session's. */
   ebaySite?: string | null;
 }
@@ -130,6 +138,8 @@ export interface SessionCounts {
   calls: number;
   /** Identified cards in their price stage (searching eBay, or waiting for an AI agent's price). */
   pricing: number;
+  /** Cards in their crop stage: being cut here, or waiting for an AI agent's corners. */
+  cropping: number;
 }
 
 export interface Session {

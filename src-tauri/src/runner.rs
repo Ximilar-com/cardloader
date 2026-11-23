@@ -4,7 +4,8 @@
 //! One task per running session, controlled by a pause flag and a cancellation token:
 //! * the **ingest** task turns source units into queued items (thumbnail + preview made first);
 //! * the **dispatcher** claims queued items in order, up to `concurrency` at a time, while not paused;
-//! * the **grading poller** waits for async grading and crop jobs (they survive pause, stop and restarts);
+//! * the **grading poller** waits for Ximilar's async grading and crop jobs (they survive pause, stop and
+//!   restarts);
 //! * the **sync** task mirrors finished items to Cards Cloud (see [`crate::sync`]).
 
 use std::collections::HashMap;
@@ -18,6 +19,7 @@ use tokio::sync::{mpsc, watch, Notify, Semaphore};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
+use crate::crop::{self, Quad};
 use crate::db::{Db, JobKind};
 use crate::ebay::sync::{EbayProgress, Job};
 use crate::ebay::EbayAuth;
@@ -112,7 +114,8 @@ pub struct Runner {
     pub ebay: EbayAuth,
     /// On-device models (downloads, the loaded model).
     pub local: Arc<LocalModels>,
-    /// Cards waiting for an AI agent to identify or price them, by item id (a card waits for one thing at a time).
+    /// Cards waiting for an AI agent to identify, price or crop them, by item id (a card waits for one thing at a
+    /// time).
     agent_waits: Mutex<HashMap<i64, AgentWait>>,
 }
 
@@ -123,9 +126,26 @@ pub enum AgentTask {
     Identify,
     /// Price it, once identified (`next_cards_to_price` / `price_cards`).
     Price,
+    /// Find its corners, for the crop (`next_cards_to_crop` / `crop_cards`).
+    Crop,
 }
 
-/// What an AI agent says about a card it was shown (MCP `identify_cards`, `price_cards`).
+impl AgentTask {
+    /// What the card waits to be.
+    fn done(self) -> &'static str {
+        match self {
+            AgentTask::Identify => "identified",
+            AgentTask::Price => "priced",
+            AgentTask::Crop => "cropped",
+        }
+    }
+}
+
+/// One side of a card to cut ("front", "back"): its corners on the picture of it that was shown, or why it has
+/// none.
+pub type SideCorners = (&'static str, std::result::Result<Quad, String>);
+
+/// What an AI agent says about a card it was shown (MCP `identify_cards`, `price_cards`, `crop_cards`).
 #[derive(Debug, Clone)]
 pub enum AgentAnswer {
     Identified {
@@ -145,6 +165,13 @@ pub enum AgentAnswer {
     },
     /// It found no price: only the card's price fails, with the note.
     Unpriced { note: String },
+    /// Where the card's sides are in their pictures: Cardloader cuts them out.
+    Cropped {
+        sides: Vec<SideCorners>,
+        note: String,
+    },
+    /// It found no card to cut out: only the card's crop fails, with the note.
+    Uncropped { note: String },
 }
 
 impl AgentAnswer {
@@ -154,6 +181,7 @@ impl AgentAnswer {
                 AgentTask::Identify
             }
             AgentAnswer::Priced { .. } | AgentAnswer::Unpriced { .. } => AgentTask::Price,
+            AgentAnswer::Cropped { .. } | AgentAnswer::Uncropped { .. } => AgentTask::Crop,
         }
     }
 }
@@ -304,6 +332,11 @@ impl Runner {
         let s = &item.summary;
         if s.status == ItemStatus::Recognizing {
             return Err(Error::msg("wait until the card has been analysed"));
+        }
+        // An agent is finding its corners on the picture as it is now.
+        if matches!(self.agent_waits.lock().unwrap().get(&item_id), Some(w) if w.task == AgentTask::Crop)
+        {
+            return Err(Error::msg("wait until the card has been cropped"));
         }
         let preview = item
             .preview_path
@@ -791,11 +824,11 @@ impl Runner {
             tokio::spawn(async move { runner.ingest(&id, keyed, unit_rx, notify).await })
         };
 
-        // Grading (and crop) results arrive independently of the dispatcher.
+        // Ximilar's grading and crop results arrive independently of the dispatcher.
         let (dispatch_done_tx, dispatch_done_rx) = watch::channel(false);
         let grades = (session.options.grading_mode() != GradingMode::Off
             && !session.options.grades_locally())
-            || session.options.crops();
+            || session.options.crops_by_ximilar();
         let poller = client
             .clone()
             .filter(|_| grades || !self.db.jobs(&id).unwrap_or_default().is_empty())
@@ -1198,6 +1231,8 @@ impl Runner {
             Stage::Price => self.price_on_ebay(session, item, cancel).await,
             Stage::Grade if o.grades_locally() => self.grade_locally(session, item).await,
             Stage::Grade => self.submit_grading(session, api()?, item, cancel).await,
+            Stage::Crop if o.crops_by_agent() => self.crop_by_agent(session, item, cancel).await,
+            Stage::Crop if o.crops_locally() => self.crop_locally(session, item).await,
             Stage::Crop => self.submit_crop(session, api()?, item, cancel).await,
         }
     }
@@ -1374,6 +1409,113 @@ impl Runner {
         }
     }
 
+    /// Waits until an AI agent says where the card is in its pictures, then cuts it out there.
+    async fn crop_by_agent(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let item_id = item.summary.id;
+        match self
+            .wait_for_agent(session, item_id, AgentTask::Crop, cancel)
+            .await?
+        {
+            AgentAnswer::Cropped { sides, note } => {
+                // The card as it is now: the wait may have been long.
+                let item = self.db.item(item_id)?;
+                let by = json!({"engine": "agent", "note": note.trim()});
+                self.cut_and_save(session, &item, sides, by).await
+            }
+            AgentAnswer::Uncropped { note } => {
+                Err(Error::msg(format!("AI agent: {}", note.trim())))
+            }
+            _ => Err(Error::msg("AI agent: no corners")),
+        }
+    }
+
+    /// Asks the on-device model where the card is in each of its pictures, then cuts it out there.
+    async fn crop_locally(&self, session: &Session, item: &ItemDetail) -> Result<()> {
+        let front = item
+            .preview_path
+            .clone()
+            .unwrap_or_else(|| item.summary.front_path.clone());
+        let back = item
+            .back_preview_path
+            .clone()
+            .or_else(|| item.summary.back_path.clone());
+        let shown: Vec<PathBuf> = [Some(front), back]
+            .into_iter()
+            .flatten()
+            .map(PathBuf::from)
+            .collect();
+        let found = self
+            .local
+            .crop(&session.options.local_model, &shown)
+            .await?;
+        let sides = ["front", "back"].into_iter().zip(found.corners).collect();
+        self.cut_and_save(session, item, sides, found.raw).await
+    }
+
+    /// Cuts the card's sides out of its scans at the corners found on their previews, and saves the pictures as
+    /// Ximilar's crops are saved. `by`: who found the corners and what it said, kept in the card's crop record.
+    async fn cut_and_save(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        sides: Vec<SideCorners>,
+        mut by: Value,
+    ) -> Result<()> {
+        let sources: Vec<_> = sides
+            .into_iter()
+            .map(|(side, corners)| {
+                let (scan, preview) = match side {
+                    "back" => (
+                        item.summary.back_path.clone(),
+                        item.back_preview_path.clone(),
+                    ),
+                    _ => (
+                        Some(item.summary.front_path.clone()),
+                        item.preview_path.clone(),
+                    ),
+                };
+                (side, corners, scan, preview)
+            })
+            .collect();
+        let cuts = tokio::task::spawn_blocking(move || {
+            sources
+                .into_iter()
+                .map(|(side, corners, scan, preview)| (side, cut_side(corners, scan, preview)))
+                .collect::<Vec<_>>()
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))?;
+        let mut records = Vec::new();
+        let mut crops = Vec::new();
+        for (side, cut) in cuts {
+            match cut {
+                Ok(cut) => {
+                    // The corners as they were found: on the preview, whichever way up the scan is.
+                    records.push(json!({
+                        "_id": side,
+                        "corners": cut.corners.points(),
+                        "turned": cut.turned,
+                        "_width": cut.picture.width(),
+                        "_height": cut.picture.height(),
+                    }));
+                    crops.push((side.to_string(), Ok(Cropped::Picture(cut.picture))));
+                }
+                Err(why) => {
+                    records.push(json!({"_id": side, "_status": {"text": why}}));
+                    crops.push((side.to_string(), Err(why)));
+                }
+            }
+        }
+        by["endpoint"] = json!(CUT_ENDPOINT);
+        by["response"] = json!({"records": records});
+        self.save_crops(session, item, crops, &by).await
+    }
+
     /// Prices the identified card from its active eBay listings: the median of those that are the card. A card
     /// eBay has no listings of keeps no price, which isn't an error.
     async fn price_on_ebay(
@@ -1471,14 +1613,11 @@ impl Runner {
             let mut waits = self.agent_waits.lock().unwrap();
             match waits.get(&item_id) {
                 Some(w) if w.task != answer.task() => {
-                    return Err(Error::msg(match w.task {
-                        AgentTask::Identify => {
-                            format!("card {item_id} waits to be identified, not priced")
-                        }
-                        AgentTask::Price => {
-                            format!("card {item_id} waits to be priced, not identified")
-                        }
-                    }))
+                    return Err(Error::msg(format!(
+                        "card {item_id} waits to be {}, not {}",
+                        w.task.done(),
+                        answer.task().done()
+                    )))
                 }
                 _ => waits.remove(&item_id),
             }
@@ -1487,6 +1626,9 @@ impl Runner {
             Error::msg(match answer.task() {
                 AgentTask::Identify => format!("card {item_id} isn't waiting for an AI agent"),
                 AgentTask::Price => format!("card {item_id} isn't waiting for an AI agent's price"),
+                AgentTask::Crop => {
+                    format!("card {item_id} isn't waiting for an AI agent's corners")
+                }
             })
         })?;
         wait.answer
@@ -1710,8 +1852,7 @@ impl Runner {
         )
     }
 
-    /// Saves a crop job's pictures in the session's file type, named after the card's files (Ximilar's are
-    /// temporary WebPs).
+    /// Saves a crop job's pictures (Ximilar's are temporary WebPs).
     async fn store_crop(
         &self,
         session: &Session,
@@ -1722,32 +1863,52 @@ impl Runner {
     ) -> Result<()> {
         let response = grading::result(client, job, cancel).await?;
         let item = self.db.item(item_id)?;
+        let mut sides = Vec::new();
+        for side in grading::crop_sides(&response) {
+            let crop = match side.url {
+                Ok(url) => Ok(Cropped::Webp(client.download(&url).await?.to_vec())),
+                Err(why) => Err(why),
+            };
+            sides.push((side.side, crop));
+        }
+        let raw = json!({"endpoint": grading::CROP_ENDPOINT, "response": response});
+        self.save_crops(session, &item, sides, &raw).await
+    }
+
+    /// Saves a card's crops, whoever cut them, in the session's file type and named after the card's files; a
+    /// side without one is the crop's error, beside the sides that have one.
+    async fn save_crops(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        sides: Vec<(String, std::result::Result<Cropped, String>)>,
+        raw: &Value,
+    ) -> Result<()> {
         let dir = self.crop_dir(session);
         std::fs::create_dir_all(&dir)?;
+        let format = session.options.crop_format;
         let mut images = Vec::new();
         let mut errors = Vec::new();
-        for side in grading::crop_sides(&response) {
-            let url = match side.url {
-                Ok(url) => url,
+        for (side, crop) in sides {
+            let crop = match crop {
+                Ok(crop) => crop,
                 Err(why) => {
-                    errors.push(format!("{}: {why}", side.side));
+                    errors.push(format!("{side}: {why}"));
                     continue;
                 }
             };
-            let source = match side.side.as_str() {
+            let source = match side.as_str() {
                 "back" => item.summary.back_path.as_deref(),
                 _ => Some(item.summary.front_path.as_str()),
             };
             let stem = source
                 .and_then(|p| Path::new(p).file_stem())
                 .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_else(|| format!("card_{}_{}", item.summary.seq, side.side));
-            let bytes = client.download(&url).await?;
-            let format = session.options.crop_format;
+                .unwrap_or_else(|| format!("card_{}_{}", item.summary.seq, side));
             let path = crop_path(&dir, &stem, format, &item.crop_images, &images);
             let target = path.clone();
             tokio::task::spawn_blocking(move || -> Result<()> {
-                std::fs::write(&target, crop_file(bytes.to_vec(), format)?)?;
+                std::fs::write(&target, crop.file(format)?)?;
                 Ok(())
             })
             .await
@@ -1758,12 +1919,8 @@ impl Runner {
             errors.push("the crop job returned no pictures".into());
         }
         let error = (!errors.is_empty()).then(|| format!("crop: {}", errors.join("; ")));
-        self.db.save_crop(
-            item_id,
-            &json!({"endpoint": grading::CROP_ENDPOINT, "response": response}),
-            &images,
-            error.as_deref(),
-        )
+        self.db
+            .save_crop(item.summary.id, raw, &images, error.as_deref())
     }
 }
 
@@ -1809,22 +1966,72 @@ async fn scans_b64(item: &ItemDetail) -> Result<(String, Option<String>)> {
 
 /// The crops are what gets listed and shared: kept close to Ximilar's own quality.
 const CROP_QUALITY: u8 = 95;
+/// The `endpoint` of a crop record Cardloader cut itself (Ximilar's is `grading::CROP_ENDPOINT`).
+pub const CUT_ENDPOINT: &str = "crop";
 
-/// A crop as the file to save: Ximilar's WebP as it is, else decoded and encoded again.
-fn crop_file(webp: Vec<u8>, format: CropFormat) -> Result<Vec<u8>> {
-    if format == CropFormat::Webp {
-        return Ok(webp);
+/// A crop to save: Ximilar's WebP as downloaded, or a picture cut here.
+enum Cropped {
+    Webp(Vec<u8>),
+    Picture(image::DynamicImage),
+}
+
+impl Cropped {
+    /// The file to save: Ximilar's WebP as it is when that is the type wanted, else encoded.
+    fn file(self, format: CropFormat) -> Result<Vec<u8>> {
+        let img = match self {
+            Cropped::Webp(webp) if format == CropFormat::Webp => return Ok(webp),
+            Cropped::Webp(webp) => {
+                image::load_from_memory(&webp).map_err(|e| Error::msg(e.to_string()))?
+            }
+            Cropped::Picture(img) => img,
+        };
+        encode_crop(&img, format)
     }
-    let img = image::load_from_memory(&webp).map_err(|e| Error::msg(e.to_string()))?;
-    match format {
-        CropFormat::Png => {
-            let mut out = Vec::new();
-            img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
-                .map_err(|e| Error::msg(e.to_string()))?;
-            Ok(out)
-        }
-        _ => imaging::jpeg_bytes(&img, CROP_QUALITY),
-    }
+}
+
+/// A picture as a crop file. WebP is lossless here (the `image` crate writes no other), so larger than Ximilar's.
+fn encode_crop(img: &image::DynamicImage, format: CropFormat) -> Result<Vec<u8>> {
+    let lossless = match format {
+        CropFormat::Jpeg => return imaging::jpeg_bytes(img, CROP_QUALITY),
+        CropFormat::Png => image::ImageFormat::Png,
+        CropFormat::Webp => image::ImageFormat::WebP,
+    };
+    let mut out = Vec::new();
+    image::DynamicImage::ImageRgb8(img.to_rgb8())
+        .write_to(&mut std::io::Cursor::new(&mut out), lossless)
+        .map_err(|e| Error::msg(e.to_string()))?;
+    Ok(out)
+}
+
+/// One side cut out of its scan.
+struct Cut {
+    picture: image::DynamicImage,
+    corners: Quad,
+    /// The scan lies the other way up than the preview the corners were found on.
+    turned: bool,
+}
+
+/// Cuts a side out of its scan at the corners found on its preview. A scan in the user's folder stays as it was
+/// when its card was turned upright, so the corners are turned to it.
+fn cut_side(
+    corners: std::result::Result<Quad, String>,
+    scan: Option<String>,
+    preview: Option<String>,
+) -> std::result::Result<Cut, String> {
+    let corners = corners?;
+    let scan = scan
+        .filter(|s| !s.is_empty())
+        .ok_or("the card has no picture of this side")?;
+    let scan = imaging::open(Path::new(&scan)).map_err(|e| format!("cannot read {scan}: {e}"))?;
+    let turned = preview
+        .and_then(|p| imaging::open(Path::new(&p)).ok())
+        .is_some_and(|preview| crop::turned(&scan, &preview));
+    let on_scan = if turned { corners.turned() } else { corners };
+    Ok(Cut {
+        picture: crop::cut(&scan, &on_scan),
+        corners,
+        turned,
+    })
 }
 
 /// `<stem>.<ext>` in the crop folder, unless another file has that name (scans are `scan_0001` in every session):
@@ -1892,7 +2099,7 @@ async fn encode(path: PathBuf, long_edge: u32) -> Result<String> {
 const IDENTIFICATION_DPI: u32 = 300;
 
 fn scan_settings(options: &SessionOptions) -> ScanSettings {
-    // A crop is as sharp as the scan it is cut from.
+    // A crop is as sharp as the scan it is cut from, whoever cuts it.
     let grades = (options.grading_mode() != GradingMode::Off && !options.grades_locally())
         || options.crops();
     ScanSettings {
@@ -2102,7 +2309,7 @@ pub(crate) mod tests {
         assert_eq!(scan_settings(&options).dpi, 600);
         options.engine = Engine::Local;
         assert_eq!(scan_settings(&options).dpi, 300);
-        // A crop session calls Ximilar whatever its engine says, and wants the sharpest scan.
+        // A crop is cut from the scan, whoever cuts it: it wants the sharpest one.
         options.task = Task::Crop;
         options.grading = GradingMode::Off;
         assert_eq!(scan_settings(&options).dpi, 600);
@@ -4202,9 +4409,159 @@ pub(crate) mod tests {
         assert_eq!(detail.calls, 2);
     }
 
-    /// WebP crops are Ximilar's file as it is; the other types are encoded from it.
+    /// A crop session of the local model: it says where the card is, Cardloader cuts it out of the scan,
+    /// straightened. Nothing calls Ximilar, so no token is needed.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn local_crop_session_without_a_token() {
+        use crate::crop::tests::{card_on_table, quarters};
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        // A card lying tilted on a table.
+        let (picture, corners) = card_on_table(400, 300, 20.0);
+        picture.save(cards.join("table.png")).unwrap();
+        let db = Db::memory().unwrap();
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            Settings {
+                api_base_url: "http://127.0.0.1:9".into(),
+                ..Settings::default()
+            },
+            "",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let out = dir.path().join("out");
+        let options = SessionOptions {
+            task: Task::Crop,
+            crop_engine: Some(Engine::Local),
+            crop_folder: out.to_string_lossy().into_owned(),
+            crop_format: CropFormat::Png,
+            ..SessionOptions::default()
+        };
+        assert!(!options.uses_api() && options.uses_local());
+        let session = db
+            .create_session(&NewSession {
+                name: "Cut here".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Auto,
+                options,
+            })
+            .unwrap();
+        let err = runner.start(&session.id).unwrap_err();
+        assert!(err.to_string().contains("isn't downloaded"), "{err}");
+
+        // In thousandths of the picture, and with the corners' names mixed up, as a small model gives them.
+        let at = |n: usize| {
+            let [x, y] = corners[n];
+            format!("[{}, {}]", (x / 0.4).round(), (y / 0.3).round())
+        };
+        crate::local::testing::install_fake(
+            &runner.local,
+            &format!(
+                r#"{{"top_left": {}, "top_right": {}, "bottom_right": {}, "bottom_left": {}}}"#,
+                at(2),
+                at(3),
+                at(0),
+                at(1)
+            ),
+        );
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Completed, "{s:?}");
+        let item = db.item(db.items(&session.id).unwrap()[0].id).unwrap();
+        assert_eq!(item.summary.status, ItemStatus::Done, "{:?}", item.summary);
+        assert_eq!(item.calls, 0);
+        assert_eq!(item.summary.id_type, None, "cropped, never identified");
+        let file = out.join("table.png");
+        assert_eq!(item.crop_images, [file.to_string_lossy().into_owned()]);
+        let cut = image::open(&file).unwrap();
+        assert!(
+            cut.width().abs_diff(100) <= 2 && cut.height().abs_diff(140) <= 2,
+            "{}×{}",
+            cut.width(),
+            cut.height()
+        );
+        // The card as it lies, straightened: its own quarters, none of the table.
+        let want = [[220, 30, 30], [30, 200, 30], [30, 30, 220], [240, 240, 240]];
+        for (got, want) in quarters(&cut).into_iter().zip(want) {
+            assert!(
+                got.iter().zip(want).all(|(a, b)| a.abs_diff(b) < 12),
+                "{got:?} for {want:?}"
+            );
+        }
+        let record = item.crop.clone().unwrap();
+        assert_eq!(record["endpoint"], CUT_ENDPOINT);
+        let engine = format!("local/{}", crate::local::catalog::DEFAULT_MODEL);
+        assert_eq!(record["engine"], engine.as_str());
+        let side = &record["response"]["records"][0];
+        assert_eq!(side["_id"], "front");
+        assert_eq!(side["corners"].as_array().unwrap().len(), 4);
+        assert_eq!(side["turned"], false);
+        assert_eq!(record["answers"].as_array().unwrap().len(), 1);
+    }
+
+    /// Corners are found on the preview. Turning a card upright turns that, but never a scan in the user's own
+    /// folder: the cut is still the picture the preview shows.
+    #[test]
+    fn a_turned_card_is_cut_from_its_scan() {
+        use crate::crop::tests::{card_on_table, quarters};
+        let dir = tempfile::tempdir().unwrap();
+        // The card lies upside down in the scan; its preview was turned upright.
+        let (upright, corners) = card_on_table(400, 300, 10.0);
+        let (scan, preview) = (dir.path().join("scan.png"), dir.path().join("preview.png"));
+        upright.rotate180().save(&scan).unwrap();
+        upright.thumbnail(200, 150).save(&preview).unwrap();
+        let text = |p: &Path| Some(p.to_string_lossy().into_owned());
+        let quad = Quad::from_pixels((400.0, 300.0), corners).unwrap();
+        let cut = cut_side(Ok(quad), text(&scan), text(&preview)).unwrap();
+        assert!(cut.turned);
+        assert_eq!(cut.corners, quad, "kept as they were found");
+        let want = quarters(&crop::cut(&upright, &quad));
+        assert_eq!(quarters(&cut.picture), want);
+        // The scan the same way up as its preview, or no preview to compare with: cut as it is.
+        upright.save(&scan).unwrap();
+        let same = cut_side(Ok(quad), text(&scan), text(&preview)).unwrap();
+        assert!(!same.turned);
+        assert_eq!(quarters(&same.picture), want);
+        assert!(!cut_side(Ok(quad), text(&scan), None).unwrap().turned);
+        // What can't be cut says why.
+        let why = |cut: std::result::Result<Cut, String>| cut.err().unwrap();
+        assert_eq!(
+            why(cut_side(Err("no card".into()), text(&scan), None)),
+            "no card"
+        );
+        assert!(why(cut_side(Ok(quad), None, None)).contains("no picture"));
+        let missing = text(&dir.path().join("gone.png"));
+        assert!(why(cut_side(Ok(quad), missing, None)).contains("cannot read"));
+    }
+
+    /// WebP crops are Ximilar's file as it is; the other types are encoded from it. A picture cut here is encoded
+    /// in every type.
     #[test]
     fn crops_in_each_file_type() {
+        let crop_file = |webp: Vec<u8>, format| Cropped::Webp(webp).file(format);
+        let cut = || {
+            Cropped::Picture(image::DynamicImage::ImageRgba8(
+                image::RgbaImage::from_pixel(8, 11, image::Rgba([10, 120, 200, 255])),
+            ))
+        };
+        for (format, kind) in [
+            (CropFormat::Jpeg, image::ImageFormat::Jpeg),
+            (CropFormat::Png, image::ImageFormat::Png),
+            (CropFormat::Webp, image::ImageFormat::WebP),
+        ] {
+            let file = cut().file(format).unwrap();
+            assert_eq!(image::guess_format(&file).unwrap(), kind);
+            assert_eq!(image::load_from_memory(&file).unwrap().height(), 11);
+        }
         let mut webp = Vec::new();
         image::DynamicImage::ImageRgb8(RgbImage::from_pixel(8, 11, Rgb([10, 120, 200])))
             .write_to(

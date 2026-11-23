@@ -57,6 +57,7 @@ const messages: Messages<typeof en> = {
       other: "API 호출 약 {count}회(Magic AI 사용 시 늘어날 수 있음)",
     },
     localGrade: "이 컴퓨터에서 그레이딩, API 호출 없음",
+    none: "API 호출 없음",
     agent: "AI 에이전트가 식별, API 호출 없음",
   },
   scanner: {
@@ -183,6 +184,7 @@ const messages: Messages<typeof en> = {
   },
   task: "작업",
   gradeWith: "그레이딩 방법",
+  cropWith: "자르기 방법",
   crop: {
     folder: "자른 이미지 저장 위치",
     choose: "잘라낸 카드를 저장할 폴더를 고르세요.",
@@ -192,7 +194,12 @@ const messages: Messages<typeof en> = {
     also: "잘라낸 이미지도 저장",
     alsoHint: "카드마다 이미지에서 잘라내고 똑바로 맞춰 폴더에 이미지로 저장합니다. 카드당 API 호출이 1회 늘어납니다.",
     format: "파일 형식",
-    formats: { jpg: "작고 어디서나 열림", png: "무손실, 파일이 큼", webp: "Ximilar가 보낸 그대로: 가장 작음" },
+    formats: {
+      jpg: "작고 어디서나 열림",
+      png: "무손실, 파일이 큼",
+      webp: "Ximilar가 보낸 그대로: 가장 작음",
+      webpCut: "무손실: 선명함, 파일이 큼",
+    },
   },
   needsAgents: "에이전트가 카드를 식별할 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",
   agentNote:
@@ -224,9 +231,16 @@ const messages: Messages<typeof en> = {
   },
   needsEbay: "Cardloader가 eBay 목록에서 가격을 검색할 수 있도록 설정에서 eBay 키셋을 추가하세요.",
   needsAgentsPrices: "에이전트가 카드 가격을 매길 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",
+  needsAgentsCrop: "에이전트가 카드를 자를 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",
   gradeWhat: "그레이딩 대상",
   sameModel: "같은 모델이 카드를 식별합니다.",
-  cropNote: "자르기는 항상 Ximilar API로 합니다.",
+  cropNotes: {
+    ximilar: "Ximilar가 스캔에서 각 카드를 잘라내고 똑바로 맞춥니다. 카드당 API 호출이 한 번 더 듭니다.",
+    local:
+      "이 컴퓨터의 모델이 각 카드의 네 모서리를 찾고, Cardloader가 잘라내어 똑바로 맞춥니다. API 호출 없음. 자르기의 정확도는 모델에 따라 다릅니다.",
+    agent:
+      "AI 에이전트가 각 카드의 네 모서리를 찾고, Cardloader가 잘라내어 똑바로 맞춥니다. Claude 등에서 ‘Cardloader의 이 세션 카드를 잘라 줘’라고 요청하세요.",
+  },
   missing: {
     csv: "가져올 CSV 파일을 선택하세요.",
     csvUnreadable: "CSV 파일을 읽을 수 없습니다.",

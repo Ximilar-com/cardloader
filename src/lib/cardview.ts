@@ -460,9 +460,10 @@ function viaOf(recognition: Json): string | undefined {
   return parts.length ? parts.join(" · ") : undefined;
 }
 
-/** The nth saved crop is of the nth side that was cropped (a side Ximilar found no card on has none). */
-function cropLabelOf(crop: Json, n: number): string {
-  const sides = ((crop?.response?.records ?? []) as Json[]).filter((r) => r?._img_url);
+/** The nth saved crop is of the nth side that was cropped: one with Ximilar's picture, or with the corners the
+ * local model or an agent found (a side no card was found on has neither). */
+export function cropLabelOf(crop: Json, n: number): string {
+  const sides = ((crop?.response?.records ?? []) as Json[]).filter((r) => r?._img_url || r?.corners);
   return sides[n]?._id === "back" ? t("status.image.cropBack") : t("status.image.cropFront");
 }
 

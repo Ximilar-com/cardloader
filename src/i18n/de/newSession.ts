@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "etwa {count} API-Aufrufe (Magic AI kann mehr verursachen)",
     },
     localGrade: "auf diesem Computer gegradet, keine API-Aufrufe",
+    none: "keine API-Aufrufe",
     agent: "von deinem KI-Agenten erkannt, keine API-Aufrufe",
   },
   scanner: {
@@ -194,6 +195,7 @@ const messages: Messages<typeof en> = {
   },
   task: "Aufgabe",
   gradeWith: "Graden mit",
+  cropWith: "Zuschneiden mit",
   crop: {
     folder: "Zuschnitte speichern in",
     choose: "Wähle den Ordner, in den die zugeschnittenen Karten kommen.",
@@ -208,6 +210,7 @@ const messages: Messages<typeof en> = {
       jpg: "Klein, öffnet sich überall",
       png: "Verlustfrei, größere Dateien",
       webp: "Wie Ximilar es schickt: am kleinsten",
+      webpCut: "Verlustfrei: scharf, größere Dateien",
     },
   },
   needsAgents:
@@ -243,9 +246,17 @@ const messages: Messages<typeof en> = {
     "Füge in den Einstellungen dein eBay-Keyset hinzu, damit Cardloader eBay-Angebote nach Preisen durchsuchen kann.",
   needsAgentsPrices:
     "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten bepreisen kann.",
+  needsAgentsCrop:
+    "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten zuschneiden kann.",
   gradeWhat: "Was graden",
   sameModel: "Dasselbe Modell erkennt die Karten.",
-  cropNote: "Zuschnitte laufen immer über die Ximilar-API.",
+  cropNotes: {
+    ximilar: "Ximilar schneidet jede Karte aus ihrem Scan aus und rückt sie gerade: ein weiterer API-Aufruf pro Karte.",
+    local:
+      "Das Modell auf diesem Computer findet die Ecken jeder Karte, Cardloader schneidet sie aus und rückt sie gerade. Keine API-Aufrufe; wie gut der Zuschnitt sitzt, hängt vom Modell ab.",
+    agent:
+      "Dein KI-Agent findet die Ecken jeder Karte, Cardloader schneidet sie aus und rückt sie gerade: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zuzuschneiden.",
+  },
   missing: {
     csv: "Wähle die CSV-Datei zum Importieren.",
     csvUnreadable: "Die CSV-Datei kann nicht gelesen werden.",

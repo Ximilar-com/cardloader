@@ -294,6 +294,8 @@ impl Db {
                     COALESCE(SUM({TO_REVIEW}), 0),
                     COALESCE(SUM(i.calls), 0),
                     COALESCE(SUM(i.stage = 'price' AND i.status = 'grading'), 0),
+                    COALESCE(SUM(i.stage = 'crop' AND i.status IN ('recognizing', 'grading')), 0),
+                    COALESCE(SUM(i.stage IS NULL AND i.status = 'recognizing'), 0),
                     (SELECT json_group_array(json_object('currency', cur, 'total', total)) FROM (
                         SELECT COALESCE(price_currency, 'USD') AS cur, SUM(price) AS total FROM items
                         WHERE session_id = s.id AND price IS NOT NULL GROUP BY cur ORDER BY total DESC))
@@ -303,13 +305,19 @@ impl Db {
         self.with(|c| {
             let mut stmt = c.prepare(&sql)?;
             let rows = stmt.query_map(args, |r| {
+                let options: SessionOptions =
+                    serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or_default();
+                // A pass's first stage is owed by no name (`items.stage` is of the later ones): where the crop
+                // comes first, the cards being worked on are in it.
+                let crop_first = options.stages().first() == Some(&Stage::Crop);
+                let first_stage: i64 = r.get(30)?;
                 Ok(Session {
                     id: r.get(0)?,
                     name: r.get(1)?,
                     source_kind: SourceKind::parse(&r.get::<_, String>(2)?),
                     source_ref: r.get(3)?,
                     id_mode: IdMode::parse(&r.get::<_, String>(4)?),
-                    options: serde_json::from_str(&r.get::<_, String>(5)?).unwrap_or_default(),
+                    options,
                     status: SessionStatus::parse(&r.get::<_, String>(6)?),
                     error: r.get(7)?,
                     created_at: r.get(8)?,
@@ -334,7 +342,8 @@ impl Db {
                         to_review: r.get(26)?,
                         calls: r.get(27)?,
                         pricing: r.get(28)?,
-                        values: money(r.get(29)?),
+                        cropping: r.get::<_, i64>(29)? + if crop_first { first_stage } else { 0 },
+                        values: money(r.get(31)?),
                     },
                 })
             })?;
@@ -2013,6 +2022,49 @@ mod tests {
             .unwrap();
         db.claim_next(&session.id).unwrap();
         id
+    }
+
+    /// The session's page says how many cards are being cropped (an agent may be asked for their corners): those
+    /// owing the crop stage, and in a session that only crops, those being worked on at all.
+    #[test]
+    fn counts_cards_in_their_crop_stage() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let cropping = |id: &str| db.session(id).unwrap().counts.cropping;
+        let first = queued_card(&db, &s);
+        assert_eq!(cropping(&s.id), 0, "being identified");
+        db.set_stage(first, Stage::Crop).unwrap();
+        assert_eq!(cropping(&s.id), 1);
+        // Identified, waiting for its corners.
+        db.set_item_status(first, ItemStatus::Grading, None)
+            .unwrap();
+        assert_eq!(cropping(&s.id), 1);
+        let second = queued_card(&db, &s);
+        db.set_stage(second, Stage::Grade).unwrap();
+        assert_eq!(cropping(&s.id), 1, "the other is being graded");
+        db.finish_pass(first).unwrap();
+        assert_eq!(cropping(&s.id), 0);
+
+        let only = db
+            .create_session(&NewSession {
+                name: "Crops".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: "/tmp/cards".into(),
+                id_mode: IdMode::Auto,
+                options: SessionOptions {
+                    task: Task::Crop,
+                    ..SessionOptions::default()
+                },
+            })
+            .unwrap();
+        let card = db
+            .insert_item(&only.id, "/b.jpg", None, &ItemImages::default(), None)
+            .unwrap();
+        assert_eq!(cropping(&only.id), 0, "queued");
+        assert_eq!(db.claim_next(&only.id).unwrap(), Some(card));
+        assert_eq!(cropping(&only.id), 1, "its first stage is the crop");
+        db.finish_pass(card).unwrap();
+        assert_eq!(cropping(&only.id), 0);
     }
 
     /// A card's jobs fail apart: a crop without its back leaves the grading out, to be polled and stored, and the

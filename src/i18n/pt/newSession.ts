@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "cerca de {count} chamadas à API (o Magic AI pode somar mais)",
     },
     localGrade: "graduadas neste computador, sem chamadas à API",
+    none: "sem chamadas à API",
     agent: "identificadas pelo seu agente de IA, sem chamadas à API",
   },
   scanner: {
@@ -193,6 +194,7 @@ const messages: Messages<typeof en> = {
   },
   task: "Tarefa",
   gradeWith: "Graduar com",
+  cropWith: "Recortar com",
   crop: {
     folder: "Salvar os recortes em",
     choose: "Escolha a pasta onde salvar as cartas recortadas.",
@@ -207,6 +209,7 @@ const messages: Messages<typeof en> = {
       jpg: "Pequeno, abre em qualquer lugar",
       png: "Sem perda, arquivos maiores",
       webp: "Como a Ximilar envia: o menor",
+      webpCut: "Sem perda: nítido, arquivos maiores",
     },
   },
   needsAgents:
@@ -242,9 +245,17 @@ const messages: Messages<typeof en> = {
     "Adicione seu keyset do eBay nas Configurações para que o Cardloader possa buscar preços nos anúncios do eBay.",
   needsAgentsPrices:
     "Ative os agentes de IA, com “Executar e revisar”, nas Configurações para que seu agente possa definir o preço das cartas.",
+  needsAgentsCrop:
+    "Ative os agentes de IA, com “Executar e revisar”, nas Configurações para que seu agente possa recortar as cartas.",
   gradeWhat: "O que graduar",
   sameModel: "O mesmo modelo identifica as cartas.",
-  cropNote: "Os recortes são sempre feitos com a API da Ximilar.",
+  cropNotes: {
+    ximilar: "A Ximilar recorta cada carta da sua digitalização e a endireita: mais uma chamada à API por carta.",
+    local:
+      "O modelo neste computador encontra os cantos de cada carta, e o Cardloader a recorta e endireita. Sem chamadas à API; a precisão do recorte depende do modelo.",
+    agent:
+      "Seu agente de IA encontra os cantos de cada carta, e o Cardloader a recorta e endireita: peça a ele, ex. no Claude, que recorte as cartas desta sessão no Cardloader.",
+  },
   missing: {
     csv: "Escolha o arquivo CSV a importar.",
     csvUnreadable: "Não é possível ler o arquivo CSV.",

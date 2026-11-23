@@ -203,11 +203,11 @@ const messages: Messages<typeof en> = {
     },
   },
   addTo: {
-    menu: "Ajouter des prix ou une évaluation…",
+    menu: "Ajouter des prix, une évaluation ou des recadrages…",
     menuTitle:
-      "Des prix d’eBay ou de votre agent IA, une note ou l’état, pour des cartes déjà identifiées — sans les identifier à nouveau",
-    bulk: "Ajouter des prix ou une évaluation…",
-    title: "Ajouter des prix ou une évaluation",
+      "Des prix d’eBay ou de votre agent IA, une note ou l’état, ou des images recadrées, pour des cartes déjà identifiées — sans les identifier à nouveau",
+    bulk: "Ajouter des prix, une évaluation ou des recadrages…",
+    title: "Ajouter des prix, une évaluation ou des recadrages",
     introAll:
       "Chaque carte identifiée de cette session reçoit ce que vous choisissez. Les cartes gardent leur identification et votre vérification, et seul ce que vous ajoutez est exécuté. La session le garde pour les cartes qu’elle recevra ensuite.",
     intro: {
@@ -223,7 +223,13 @@ const messages: Messages<typeof en> = {
   agentPrompt: {
     identify: "Identifie les cartes de la session Cardloader {name} (id {id}) via MCP.",
     price: "Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP.",
+    crop: "Recadre les cartes de la session Cardloader {name} (id {id}) via MCP.",
     copy: "Copier le prompt",
+  },
+  agentCropping: {
+    one: "<b>{count} carte</b> attend que votre agent IA trouve ses coins. Demandez-lui, p. ex. dans Claude : « Recadre les cartes de la session Cardloader {name} (id {id}) via MCP. »",
+    other:
+      "<b>{count} cartes</b> attendent que votre agent IA trouve leurs coins. Demandez-lui, p. ex. dans Claude : « Recadre les cartes de la session Cardloader {name} (id {id}) via MCP. »",
   },
   agentPricing: {
     one: "<b>{count} carte</b> attend le prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP. »",

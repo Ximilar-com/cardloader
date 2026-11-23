@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   byAgent,
   candidates,
+  cropLabelOf,
   filterRows,
   matchOf,
   needsReview,
@@ -171,5 +172,50 @@ describe("rotationOf", () => {
     expect(rotationOf(response("rotation_ok"))).toBeNull();
     expect(rotationOf({ records: [{ _objects: [{ name: "Card" }] }] })).toBeNull();
     expect(rotationOf(null)).toBeNull();
+  });
+});
+
+describe("crops", () => {
+  it("names each saved crop by the side it is of", () => {
+    // Ximilar's: a side it found no card on has no picture, so the only crop saved is the back's.
+    const ximilar = {
+      endpoint: "crop_level",
+      response: {
+        records: [
+          { _id: "front", _status: { code: 404, text: "No card detected" } },
+          { _id: "back", _status: { code: 200 }, _img_url: "https://example.com/back.webp" },
+        ],
+      },
+    };
+    expect(cropLabelOf(ximilar, 0)).toBe("Cropped back");
+    // Cut here at corners the local model or an agent found: the sides that have corners.
+    const corners = [
+      [0.1, 0.1],
+      [0.9, 0.1],
+      [0.9, 0.9],
+      [0.1, 0.9],
+    ];
+    const cut = {
+      endpoint: "crop",
+      engine: "agent",
+      response: {
+        records: [
+          { _id: "front", corners },
+          { _id: "back", corners },
+        ],
+      },
+    };
+    expect([cropLabelOf(cut, 0), cropLabelOf(cut, 1)]).toEqual(["Cropped front", "Cropped back"]);
+    const backOnly = {
+      endpoint: "crop",
+      response: {
+        records: [
+          { _id: "front", _status: { text: "no card" } },
+          { _id: "back", corners },
+        ],
+      },
+    };
+    expect(cropLabelOf(backOnly, 0)).toBe("Cropped back");
+    expect(cropLabelOf(null, 0)).toBe("Cropped front");
   });
 });

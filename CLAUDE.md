@@ -48,6 +48,7 @@ src-tauri/src/
   model.rs        serde types shared with the UI (camelCase on the wire)
   settings.rs     settings.json + secrets (API token, eBay Cert ID and login) in the OS keychain (keyring)
   imaging.rs      decode, EXIF orientation, thumbnails/previews, JPEG/base64 for upload
+  crop.rs         a card cut out of its picture at four corners someone found (`Quad`, `cut`, `turned`)
   export.rs       CSV export
   update.rs       in-app updates from GitHub releases (tauri-plugin-updater: check, download + install, restart)
   source/         folder, watch folder (notify), csv_file.rs (import parser), scanner/{sane.rs, twain.rs}
@@ -65,7 +66,8 @@ src-tauri/src/
                   file it can't parse)
   local/          on-device identification: catalog.rs (pinned model files + SHA-256, each model's `Profile`), download.rs
                   (resumable), llama.rs (llama.cpp engine, feature-gated: devices, GPU choice, fitting),
-                  identify.rs (prompts, GBNF grammars, parsing), compare.rs (agreement with Ximilar), mod.rs
+                  identify.rs (prompts, GBNF grammars, parsing), crop.rs (the corners question), compare.rs
+                  (agreement with Ximilar), mod.rs
                   (LocalModels: status, downloads, the loaded model and the device it runs on)
 src/
   lib/api.ts      TypeScript types + wrappers for every command and event
@@ -95,8 +97,8 @@ state from them.
   released migration. A column every row needs goes into `db::ITEM_SUMMARY` and is read by name (`col!("…")`,
   found when compiling), never by its place.
 - **What a session's options mean** (`SessionOptions::grading_mode`, `uses_api`, `agent`, `crops`, `grade_engine`,
-  `prices`, `stages` and their mirrors `gradingOf`, `usesApi`, `agentOf`, `cropsOf`, `gradeEngineOf`, `pricesOf`,
-  `stagesOf` in `format.ts`) is checked on both sides against `src/lib/session-options.cases.json`: a changed rule
+  `crop_engine`, `prices`, `stages` and their mirrors `gradingOf`, `usesApi`, `agentOf`, `cropsOf`, `gradeEngineOf`,
+  `cropEngineOf`, `pricesOf`, `stagesOf` in `format.ts`) is checked on both sides against `src/lib/session-options.cases.json`: a changed rule
   changes the cases.
 - **Pipeline changes** (runner, sync, sources, Ximilar clients) need a test; extend the wiremock end-to-end tests in
   `runner.rs` (`folder_session_end_to_end`, `csv_import_end_to_end`) rather than calling real APIs.
@@ -161,11 +163,12 @@ state from them.
   `needsReview`) and the Cards page; they never sync to Cards Cloud, and the session page drops review, sell and
   turn actions for them. `settings.default_task` is where the setup wizard's first question lands. A session with
   cards can't change between identifying and not (`commands::keeps_its_kind`; the dialog disables those tasks).
-- **Crops** (`crop_level`, `grading::build_crop_request`: both sides as records with `level`; always the API, also in
-  a local session): a crop-only session, or any other with `options.save_crops` (`SessionOptions::crops`,
-  `cropsOf`). The crop is the card's second async job, submitted after its identification/grading
-  (`Runner::submit_crop`). `Runner::store_crop` downloads each side's WebP and writes `<file stem>.<ext>` into
-  `options.crop_folder` in `options.crop_format` (`crop_file`: WebP as it came, JPEG q95 or PNG encoded from it; empty folder =
+- **Crops**: a crop-only session, or any other with `options.save_crops` (`SessionOptions::crops`, `cropsOf`), by
+  `options.crop_engine` (`None` = Ximilar whatever `engine` is: older sessions, and a local session's crops were
+  always Ximilar's). Ximilar's (`crop_level`, `grading::build_crop_request`: both sides as records with `level`) is
+  the card's second async job, submitted after its identification/grading (`Runner::submit_crop`);
+  `Runner::store_crop` downloads each side's WebP. Whoever cut it, `Runner::save_crops` writes `<file stem>.<ext>` into
+  `options.crop_folder` in `options.crop_format` (`Cropped::file`: Ximilar's WebP as it came, else JPEG q95, PNG or lossless WebP; empty folder =
   `<session>/crops`, deleted with the session, so the dialog asks for a folder; `settings.default_crop_folder` and
   `default_crop_format` remember the last); a taken name gets `_2`, `_3`… but a card cropped again
   overwrites its own (`crop_path`). Paths are `items.crop_images` (apart from grading overlays; deleting a card
@@ -173,13 +176,34 @@ state from them.
   outside the app's folders (`tools::crop_folder`). The webview is served only the app's own folder
   (`assetProtocol.scope`), so `get_item` allows the folders of a card's crops (`commands::show_crops`); the folder
   picker allows a picked one too, but only until the app quits.
+- **Crops cut here** (`crop_engine` local or agent; `crate::crop`): someone else finds the card's four corners and
+  Cardloader cuts, inside the card's pass (no job, no poller, no token: `crops_by_ximilar` is what `uses_api` and the
+  poller ask). A `Quad` is the corners as fractions of the picture, clockwise from the corner that becomes the
+  cut's top-left, so corners found on a preview cut the full scan (`Runner::cut_and_save` → `cut_side` →
+  `crop::cut`: Heckbert's square-to-quad mapping, bilinear, sized by the shape's sides, capped at
+  `GRADING_LONG_EDGE`). `Quad::new` refuses what would cut wrongly: counter-clockwise (mirrored), folded, tiny,
+  outside the picture (2% over is the edge). **Turned cards**: "Turn upright" turns the preview but never a scan
+  in the user's folder, and nothing records which was turned (`mark_upright`'s `found` is lost on the next
+  recognition), so `crop::turned` compares small grey copies of scan and preview and the corners are turned to the
+  scan (`Quad::turned`). The stored record is `{"endpoint": "crop"` (`CUT_ENDPOINT`)`, "engine": "agent" |
+  "local/<id>", note | answers + seconds, "response": {"records": [{"_id", "corners", "turned"} | {"_id",
+  "_status": {"text"}}]}}`; `cardview::cropLabelOf` counts a side with `_img_url` or `corners` as saved.
+  `crop_level` is Ximilar's only (the dialogs hide it). **Local** (`local::crop`, `LocalModels::crop`,
+  `Runner::crop_locally`): one question per picture for its corners in thousandths of the picture (the frame is
+  the prompt's, since Rust can't see how a model resizes or tiles), a GBNF of four `[n, n]` points named
+  `top_left`… (not `corners`: `FakeVision` gives every question one JSON, and grading reads `corners`); the names
+  aren't trusted, the points are ordered as the card lies (`Quad::in_picture_order`), so the cut isn't turned
+  upright. Every model gets the same question and none is gated or measured (the user's decision). **Agent**
+  (`AgentTask::Crop`, `Runner::crop_by_agent`): see the AI agent engine below. `SessionCounts.cropping` counts
+  cards owing the crop stage (and, where the crop is the first stage, those being worked on): the session page's
+  banner.
 - **Each task by its own engine**: the New session dialog's "What to do" tiles (Identify, Prices, Grade, Crop:
   `tasksOf` / `withTasks` in `format.ts`) map onto `task`, `grading` and `save_crops` as before (Condition is a
   grading mode in the Grade tab; without Identify it is `task: condition`), and each chosen task gets a tab with its
   engine: `engine` identifies (Ximilar, local, agent), `grade_engine` grades (Ximilar or local; `None` in older
   sessions = `engine`, an agent never grades), `prices` (`Prices`: Ximilar's price statistics, which come only with
-  Ximilar's identification, eBay listings, or an agent; `None` = `price_stats`), crops are always Ximilar's. One
-  `local_model` serves both local tasks. Run checks: `uses_local` needs the model downloaded, `uses_ebay` the eBay
+  Ximilar's identification, eBay listings, or an agent; `None` = `price_stats`), `crop_engine` crops (Ximilar, local or
+  agent; `None` = Ximilar). One `local_model` serves every local task. Run checks: `uses_local` needs the model downloaded, `uses_ebay` the eBay
   keyset; `uses_agent` runs `AGENT_BATCH` cards at once, else `uses_local` runs one.
 - **A card's pass** (`Runner::recognize_item`): the stages its session has, in order (`SessionOptions::stages`:
   identify, price, grade, crop; `run_stage` picks what does each by the options). The price stage is
@@ -193,8 +217,8 @@ state from them.
   `Db::requeue` (retry, Analyse again) is a pass from the start.
 - **Adding to finished cards** (`AppState::add_to_cards`, Tauri command and MCP tool `add_to_cards`; the dialog
   `AddToCards.tsx` from the session's ⋯ menu or the selection bar): prices (eBay or an agent; Ximilar's come only
-  with its identification, so they're refused) or grading (Ximilar or local) for a session's identified, finished
-  cards. The session takes the task on with that engine (its later cards get it too), `Db::add_stages` queues the
+  with its identification, so they're refused), grading (Ximilar or local) or crops (Ximilar, local or an agent:
+  `save_crops` with the crop engine, folder and file type given) for a session's identified, finished cards. The session takes the task on with that engine (its later cards get it too), `Db::add_stages` queues the
   cards owing the first stage with `items.only_stages` (migration 012) limiting the pass to those stages, and the
   queue is run (`analyse_queued`): no identification again, review and everything else kept. `Runner::can_run`
   (model, eBay keyset) and the token are checked before a card is touched.
@@ -238,7 +262,8 @@ state from them.
   Config" opens `%APPDATA%\Claude` regardless), so `targets` is the likeliest folder that exists plus every other
   that already has a configuration, and `add` writes them all. The places come from users' reports
   (anthropics/claude-code#26073), not from documentation.
-- **AI agent engine** (`Engine::Agent`, `SessionOptions::agent()`: identify task only, other tasks use Ximilar): the
+- **AI agent engine** (`Engine::Agent`, `SessionOptions::agent()`: identify task only; prices and crops are an
+  agent's by `prices` and `crop_engine`, and it never grades): the
   worker that claimed a card registers a oneshot waiter (`Runner::agent_waits`, `identify_by_agent`) and waits; the
   MCP tools `next_cards_to_identify` (long-polls `Runner::agent_waiting`, returns the cards with their pictures,
   `pictures()` in `tools.rs`) and `identify_cards` (`Runner::answer_agent`) answer it. Then it is
@@ -250,7 +275,14 @@ state from them.
   same waiter with `AgentTask::Price` (a card waits for one thing at a time; `answer_agent` refuses an answer of the
   other kind): `next_cards_to_price` / `price_cards` (USD, a note kept in `items.price_note`, migration 011, cleared
   with `OTHER_CARD`; `unpriced` fails only the price), prompt `price_session`; `counts.pricing` is the session page's
-  banner.
+  banner. Cropping by an agent (`crop_engine: agent`, `AgentTask::Crop`): `next_cards_to_crop` gives each picture
+  with its size (`pictures()` returns the sizes; the server is stateless, so `crop_cards` gets the `size` its
+  corners are in echoed back and `Quad::from_pixels` divides: any frame works, also a picture the client
+  enlarged), `preview_crop` shows the cut from the preview and saves nothing, and `crop_cards` is checked in the
+  tool (`Handler::crop_answer`: the quad, the size's shape against the picture's, a card with a back needs `back`
+  or `no_back` with why), because an answer handed over ends the wait; `uncropped` fails the crop with the note.
+  The corners start at the card's own top-left, so the cut is upright however the card lies. `turn_item` refuses a
+  card waiting for its corners; prompt `crop_session`.
 - **Price currencies**: `items.price_currency` (migration 013; NULL = USD, every older price) read as
   `ItemSummary.price_currency`. Ximilar's, picks and edits keep/write USD; the eBay price stage writes the range's
   currency, an agent's `price_cards` its `currency`, a CSV its currency column (or €/£ in the price). Totals are by
@@ -425,7 +457,8 @@ state from them.
 ## Not verified automatically
 
 Real Ximilar API calls, real eBay calls (use a sandbox keyset), real updates (need a published signed release), real scanners (SANE/TWAIN), signed release builds,
-the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), real GPUs (Vulkan/CUDA: CI has
+the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), how well a local model or an
+agent finds a card's corners (nothing measures the crops they give; the fake never runs the corners grammar), real GPUs (Vulkan/CUDA: CI has
 none, so it builds the backend and runs on the CPU), the llama.cpp libraries in the Windows/Linux bundles, and real MCP clients (Claude Desktop,
 Claude Code; the tests speak JSON-RPC over HTTP and through the bridge, and `npx @modelcontextprotocol/inspector`
 can call the tools by hand). Say so when a change depends on

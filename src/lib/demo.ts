@@ -179,6 +179,7 @@ function counts(id: string) {
     toReview: list.filter(needsReview).length,
     calls: list.reduce((a, i) => a + i.calls, 0),
     pricing: 0,
+    cropping: 0,
   };
 }
 
@@ -1472,8 +1473,8 @@ export function installDemo() {
         case "run_session":
           return simulate(a.id);
         case "add_to_cards": {
-          // The finished identified cards get a price or a grade, as a run of only those stages would give.
-          const add = a.add as { prices?: string | null; grading?: string | null };
+          // The finished identified cards get a price, a grade or a crop, as a run of only those stages would give.
+          const add = a.add as { prices?: string | null; grading?: string | null; crops?: boolean };
           const wanted = a.itemIds as number[] | null;
           const list = (items.get(a.id) ?? []).filter(
             (i) => i.idType && (i.status === "done" || i.status === "error") && (!wanted || wanted.includes(i.id)),
@@ -1481,6 +1482,28 @@ export function installDemo() {
           for (const i of list) {
             if (add.prices) i.price = i.price ?? 19.99;
             if (add.grading && add.grading !== "off") i.grade = i.grade ?? 8.5;
+            if (add.crops && i.previewPath) {
+              // As a card cut here is kept: the corners someone found, no picture of Ximilar's.
+              i.crop = {
+                endpoint: "crop",
+                engine: "agent",
+                response: {
+                  records: [
+                    {
+                      _id: "front",
+                      corners: [
+                        [0.04, 0.03],
+                        [0.96, 0.03],
+                        [0.96, 0.97],
+                        [0.04, 0.97],
+                      ],
+                      turned: false,
+                    },
+                  ],
+                },
+              };
+              i.cropImages = [i.previewPath];
+            }
             void emit("item-updated", summary(i));
           }
           void emit("session-updated", session(a.id));

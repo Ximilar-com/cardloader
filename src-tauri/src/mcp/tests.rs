@@ -9,7 +9,7 @@ use super::*;
 use crate::db::Db;
 use crate::model::{Engine, GradingMode, Prices, Reviewer};
 use crate::runner::tests::{mock_ximilar, Recorder};
-use crate::runner::Runner;
+use crate::runner::{AgentTask, Runner};
 use crate::settings::{McpSettings, Settings, SettingsStore};
 
 struct Agent {
@@ -155,6 +155,9 @@ async fn agent_runs_and_reviews_a_folder() {
         .filter_map(|t| t["name"].as_str())
         .collect();
     assert!(names.contains(&"create_session") && names.contains(&"get_card"));
+    for tool in ["next_cards_to_crop", "preview_crop", "crop_cards"] {
+        assert!(names.contains(&tool), "{tool}");
+    }
     assert!(!names.contains(&"delete_session") && !names.contains(&"ebay_publish"));
     let (refusal, failed) = agent
         .tool("delete_session", json!({"session_id": "x"}))
@@ -313,6 +316,23 @@ async fn agent_runs_and_reviews_a_folder() {
     // Prompts.
     let prompts = agent.rpc("prompts/list", json!({})).await;
     assert_eq!(prompts["prompts"][0]["name"], "review_session");
+    assert!(prompts["prompts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|p| p["name"] == "crop_session"));
+    let prompt = agent
+        .rpc(
+            "prompts/get",
+            json!({"name": "crop_session", "arguments": {"session": "Binder"}}),
+        )
+        .await;
+    let text = prompt["messages"][0]["content"]["text"].as_str().unwrap();
+    assert!(
+        text.contains("next_cards_to_crop with session_id \"Binder\"")
+            && text.contains("preview_crop"),
+        "{text}"
+    );
     let prompt = agent
         .rpc(
             "prompts/get",
@@ -918,6 +938,314 @@ async fn agent_adds_prices_and_grading_to_a_finished_session() {
         (options.prices(), options.grade_engine(), options.grading),
         (Prices::Ebay, Engine::Local, GradingMode::Grade),
         "the session's later cards get them too"
+    );
+
+    // Crops too, here at corners the agent finds: one card, which keeps everything it has.
+    let crops = dir.path().join("crops");
+    let added = agent
+        .ok(
+            "add_to_cards",
+            json!({"session_id": session, "item_ids": [ids[1]], "crops": true, "crop_engine": "agent",
+                   "crop_folder": crops.to_string_lossy(), "crop_format": "png"}),
+        )
+        .await;
+    assert_eq!(added["cardsAdded"], 1, "{added}");
+    assert_eq!(added["cropEngine"], "agent");
+    assert!(
+        added["next"]
+            .as_str()
+            .unwrap()
+            .contains("next_cards_to_crop"),
+        "{added}"
+    );
+    let (waiting, _) = cards_from(&agent, "next_cards_to_crop", &session, 1).await;
+    assert_eq!(waiting.len(), 1);
+    assert_eq!(waiting[0]["itemId"], ids[1]);
+    assert_eq!(
+        waiting[0]["pictures"]["front"],
+        json!({"width": 630, "height": 880})
+    );
+    let cropped = agent
+        .ok(
+            "crop_cards",
+            json!({"cards": [{"item_id": ids[1], "front": {"size": [630, 880],
+                   "corners": [[30, 40], [600, 40], [600, 840], [30, 840]]}}]}),
+        )
+        .await;
+    assert_eq!(cropped["results"][0]["ok"], true, "{cropped}");
+    let started = Instant::now();
+    while !finished(&state) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(
+        identifications(&server.received_requests().await.unwrap()),
+        before,
+        "no card is identified again"
+    );
+    let item = state.db.item(ids[1]).unwrap();
+    assert_eq!(
+        item.summary.status,
+        crate::model::ItemStatus::Done,
+        "{:?}",
+        item.summary
+    );
+    assert_eq!(item.summary.card.name, "Charizard ex");
+    assert_eq!(
+        (item.summary.price, item.summary.grade),
+        (Some(14.0), Some(8.0))
+    );
+    assert_eq!(item.crop_images.len(), 1);
+    let cut = image::open(&item.crop_images[0]).unwrap();
+    assert_eq!((cut.width(), cut.height()), (570, 800));
+    assert!(Path::new(&item.crop_images[0]).starts_with(crops.canonicalize().unwrap()));
+    assert!(state.db.item(ids[0]).unwrap().crop_images.is_empty());
+    let options = state.db.session(&session).unwrap().options;
+    assert!(options.crops_by_agent() && options.grades_locally());
+}
+
+/// An agent crops a session's cards: Cardloader hands each card over with its pictures and their size, the agent
+/// says where the card's corners are (looking at the cut first, if it likes), and Cardloader cuts the card out
+/// of its scan, straightened. Nothing calls Ximilar. An answer that can't be cut leaves the card waiting, a card
+/// with a back needs an answer about it, and a picture with no card fails the card with the agent's note.
+#[tokio::test(flavor = "multi_thread")]
+async fn agent_crops_a_session() {
+    use crate::crop::tests::{card_on_table, quarters};
+    let server = mock_ximilar().await;
+    let dir = tempfile::tempdir().unwrap();
+    let cards = dir.path().join("table");
+    std::fs::create_dir_all(&cards).unwrap();
+    // Two cards, front and back: lying tilted, the second card's front upside down.
+    let lying = [("a1", 20.0), ("a2", -15.0), ("b1", 180.0), ("b2", 0.0)];
+    let mut corners = Vec::new();
+    for (name, degrees) in lying {
+        let (picture, at) = card_on_table(400, 300, degrees);
+        picture.save(cards.join(format!("{name}.png"))).unwrap();
+        corners.push(at);
+    }
+    let crops = dir.path().join("cut");
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), &server.uri(), McpSettings::default()).await;
+    let created = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "task": "crop", "crop_engine": "agent",
+                   "pairing": "front_back", "crop_folder": crops.to_string_lossy(), "crop_format": "png"}),
+        )
+        .await;
+    assert_eq!(created["cropEngine"], "agent");
+    assert!(
+        created["next"]
+            .as_str()
+            .unwrap()
+            .contains("next_cards_to_crop"),
+        "{created}"
+    );
+    let session = created["id"].as_str().unwrap().to_string();
+
+    let (waiting, result) = cards_from(&agent, "next_cards_to_crop", &session, 2).await;
+    let (a, b) = (
+        waiting[0]["itemId"].as_i64().unwrap(),
+        waiting[1]["itemId"].as_i64().unwrap(),
+    );
+    // Each side's picture with the size its corners are given in.
+    let size = json!({"width": 400, "height": 300});
+    assert_eq!(waiting[0]["pictures"], json!({"front": size, "back": size}));
+    let content = result["content"].as_array().unwrap();
+    assert_eq!(content.iter().filter(|c| c["type"] == "image").count(), 4);
+    assert_eq!(
+        content[1]["text"],
+        format!("Front of card {a} (400×300 px):")
+    );
+    let listed = agent
+        .ok("get_session", json!({"session_id": session}))
+        .await;
+    assert_eq!(listed["counts"]["waitingForCrop"], 2);
+    assert_eq!(state.db.session(&session).unwrap().counts.cropping, 2);
+
+    let side = |n: usize| json!({"size": [400, 300], "corners": corners[n]});
+    let sent = |answer: Value| {
+        let agent = &agent;
+        async move { agent.ok("crop_cards", json!({"cards": [answer]})).await["results"][0].clone() }
+    };
+    // What can't be cut is refused, and the card goes on waiting.
+    let refused = [
+        (json!({"item_id": a, "front": side(0)}), "back picture"),
+        (json!({"item_id": a, "back": side(1)}), "front's corners"),
+        (
+            json!({"item_id": a, "front": {"size": [300, 400], "corners": corners[0]}, "back": side(1)}),
+            "shape of the picture",
+        ),
+        (
+            json!({"item_id": a, "back": side(1), "front": {"size": [400, 300],
+                   "corners": [corners[0][1], corners[0][0], corners[0][3], corners[0][2]]}}),
+            "counter-clockwise",
+        ),
+        (
+            json!({"item_id": a, "back": side(1), "front": {"size": [400, 300],
+                   "corners": [[10, 10], [900, 10], [900, 290], [10, 290]]}}),
+            "outside the picture",
+        ),
+    ];
+    for (answer, why) in refused {
+        let result = sent(answer).await;
+        assert_eq!(result["ok"], false, "{why}: {result}");
+        assert!(result["error"].as_str().unwrap().contains(why), "{result}");
+    }
+    let identified = agent
+        .ok(
+            "identify_cards",
+            json!({"cards": [{"item_id": a, "name": "Pikachu"}]}),
+        )
+        .await;
+    assert!(
+        identified["results"][0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("waits to be cropped, not identified"),
+        "{identified}"
+    );
+    assert_eq!(state.runner.agent_waiting(None, AgentTask::Crop).len(), 2);
+    // It waits for corners found on the picture as it is: that picture isn't turned meanwhile.
+    assert!(state.runner.turn_item(a).is_err());
+
+    // The cut the corners give, to look at: nothing is saved.
+    let preview = agent
+        .rpc(
+            "tools/call",
+            json!({"name": "preview_crop", "arguments": {"item_id": a, "size": [400, 300], "corners": corners[0]}}),
+        )
+        .await;
+    assert!(preview["isError"] != true, "{preview}");
+    let said: Value =
+        serde_json::from_str(preview["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        (&said["side"], &said["saved"]),
+        (&json!("front"), &json!(false))
+    );
+    assert!(said["width"].as_u64().unwrap().abs_diff(100) <= 1, "{said}");
+    assert!(
+        said["height"].as_u64().unwrap().abs_diff(140) <= 1,
+        "{said}"
+    );
+    assert_eq!(preview["content"][1]["mimeType"], "image/jpeg");
+    assert!(state.db.item(a).unwrap().crop_images.is_empty());
+    assert!(!crops.join("a1.png").exists());
+
+    // The first card: its back in a frame twice the picture's size (a client may show it enlarged). The
+    // second: its front lies upside down, its back has no card.
+    let doubled: Vec<Value> = corners[1]
+        .iter()
+        .map(|[x, y]| json!([x * 2.0, y * 2.0]))
+        .collect();
+    let answers = agent
+        .ok(
+            "crop_cards",
+            json!({"cards": [
+                {"item_id": a, "front": side(0), "back": {"size": [800, 600], "corners": doubled},
+                 "note": "both sides clear"},
+                {"item_id": b, "front": side(2), "no_back": "only a table"},
+            ]}),
+        )
+        .await;
+    assert_eq!(answers["results"][0]["ok"], true, "{answers}");
+    assert_eq!(answers["results"][1]["ok"], true, "{answers}");
+    assert_eq!(answers["stillWaiting"], 0);
+    let again = sent(json!({"item_id": a, "front": side(0), "back": side(1)})).await;
+    assert!(
+        again["error"].as_str().unwrap().contains("isn't waiting"),
+        "{again}"
+    );
+    let started = Instant::now();
+    while state.runner.is_running(&session) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    let colours = [[220, 30, 30], [30, 200, 30], [30, 30, 220], [240, 240, 240]];
+    let upright = |file: &str| {
+        let cut = image::open(file).unwrap();
+        assert!(
+            cut.width().abs_diff(100) <= 1 && cut.height().abs_diff(140) <= 1,
+            "{file}: {}×{}",
+            cut.width(),
+            cut.height()
+        );
+        for (got, want) in quarters(&cut).into_iter().zip(colours) {
+            assert!(
+                got.iter().zip(want).all(|(g, w)| g.abs_diff(w) < 12),
+                "{file}: {got:?} for {want:?}"
+            );
+        }
+    };
+    let first = state.db.item(a).unwrap();
+    assert_eq!(first.summary.status, crate::model::ItemStatus::Done);
+    let folder = crops.canonicalize().unwrap();
+    let file = |name: &str| folder.join(name).to_string_lossy().into_owned();
+    assert_eq!(first.crop_images, [file("a1.png"), file("a2.png")]);
+    first.crop_images.iter().for_each(|f| upright(f));
+    let record = first.crop.clone().unwrap();
+    assert_eq!(record["endpoint"], "crop");
+    assert_eq!(record["engine"], "agent");
+    assert_eq!(record["note"], "both sides clear");
+    assert_eq!(record["response"]["records"][1]["_id"], "back");
+    assert_eq!(first.calls, 0);
+
+    // Upside down on the table, upright in its picture: the agent started at the card's own top-left.
+    let second = state.db.item(b).unwrap();
+    assert_eq!(second.crop_images, [file("b1.png")]);
+    upright(&second.crop_images[0]);
+    assert_eq!(second.summary.status, crate::model::ItemStatus::Error);
+    assert_eq!(
+        second.summary.error.as_deref(),
+        Some("crop: back: only a table")
+    );
+
+    let (finished, _) = agent
+        .tool("next_cards_to_crop", json!({"session_id": session}))
+        .await;
+    assert_eq!(finished["finished"], true, "{finished}");
+    let (refusal, failed) = agent
+        .tool("next_cards_to_identify", json!({"session_id": session}))
+        .await;
+    assert!(
+        failed && refusal.as_str().unwrap().contains("engine"),
+        "{refusal}"
+    );
+    assert!(
+        server.received_requests().await.unwrap().is_empty(),
+        "an agent's crops need nothing of Ximilar"
+    );
+
+    // A picture with no card in it fails the card with what the agent says.
+    agent
+        .ok(
+            "retry_cards",
+            json!({"session_id": session, "item_ids": [b]}),
+        )
+        .await;
+    cards_from(&agent, "next_cards_to_crop", &session, 1).await;
+    let none = sent(json!({"item_id": b, "uncropped": true, "note": "no card here"})).await;
+    assert_eq!(none["ok"], true, "{none}");
+    let started = Instant::now();
+    while state.runner.is_running(&session) {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "run didn't end"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    let second = state.db.item(b).unwrap();
+    assert_eq!(second.summary.status, crate::model::ItemStatus::Error);
+    assert_eq!(
+        second.summary.error.as_deref(),
+        Some("AI agent: no card here")
     );
 }
 

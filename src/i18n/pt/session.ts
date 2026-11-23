@@ -205,11 +205,11 @@ const messages: Messages<typeof en> = {
     },
   },
   addTo: {
-    menu: "Adicionar preços ou graduação…",
+    menu: "Adicionar preços, graduação ou recortes…",
     menuTitle:
-      "Preços do eBay ou do seu agente de IA, uma nota ou a condição, para cartas já identificadas, sem identificá-las de novo",
-    bulk: "Adicionar preços ou graduação…",
-    title: "Adicionar preços ou graduação",
+      "Preços do eBay ou do seu agente de IA, uma nota ou a condição, ou imagens recortadas, para cartas já identificadas, sem identificá-las de novo",
+    bulk: "Adicionar preços, graduação ou recortes…",
+    title: "Adicionar preços, graduação ou recortes",
     introAll:
       "Cada carta identificada desta sessão recebe o que você escolher. As cartas mantêm a identificação e a sua revisão, e só o que você adiciona é executado. A sessão mantém isso para as cartas que receber depois.",
     intro: {
@@ -225,7 +225,13 @@ const messages: Messages<typeof en> = {
   agentPrompt: {
     identify: "Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.",
     price: "Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.",
+    crop: "Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP.",
     copy: "Copiar o prompt",
+  },
+  agentCropping: {
+    one: "<b>{count} carta</b> aguarda seu agente de IA encontrar os cantos dela. Peça a ele, ex. no Claude: “Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
+    other:
+      "<b>{count} cartas</b> aguardam seu agente de IA encontrar os cantos delas. Peça a ele, ex. no Claude: “Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
   },
   agentPricing: {
     one: "<b>{count} carta</b> aguarda o preço do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.”",

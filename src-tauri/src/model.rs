@@ -54,7 +54,7 @@ str_enum!(
 
 str_enum!(
     /// What a session does with each card: identify it (and grade it, price it…), only grade it, only tell its
-    /// condition, or only cut it out of the image (`crop_level`) into a folder of card pictures.
+    /// condition, or only cut it out of the image into a folder of card pictures.
     Task { Identify = "identify", Grade = "grade", Condition = "condition", Crop = "crop" } default Identify
 );
 
@@ -83,7 +83,7 @@ impl Stage {
 
 str_enum!(
     /// The file type cropped pictures are saved as: JPEG (re-encoded), PNG (lossless, large) or WebP (Ximilar's own
-    /// file, as it comes).
+    /// file as it comes; lossless when Cardloader cuts the card itself).
     CropFormat { Jpeg = "jpg", Png = "png", Webp = "webp" } default Jpeg
 );
 
@@ -228,7 +228,7 @@ pub struct SessionOptions {
     pub save_crops: bool,
     /// Where the cropped pictures go; empty = `crops` in the session's own folder.
     pub crop_folder: String,
-    /// Let Ximilar even out the levels and sharpen the crop (its `level`, on by default).
+    /// Let Ximilar even out the levels and sharpen the crop (its `level`, on by default). Only Ximilar's crops.
     pub crop_level: bool,
     /// The file type the crops are saved as.
     pub crop_format: CropFormat,
@@ -269,9 +269,13 @@ pub struct SessionOptions {
     pub grade_engine: Option<Engine>,
     /// Where prices come from; `None` (older sessions) = Ximilar's price statistics when `price_stats`.
     pub prices: Option<Prices>,
+    /// What crops the cards: Ximilar cuts them itself, the local model or an AI agent gives each card's corners
+    /// and Cardloader cuts it (`crate::crop`). `None` (sessions made before crops had engines) = Ximilar,
+    /// whatever `engine` is.
+    pub crop_engine: Option<Engine>,
     /// The eBay site its cards are priced on (`browse::SEARCH_MARKETS`); empty = Settings' search site.
     pub ebay_site: String,
-    /// The local model (`crate::local::catalog`) when identification or grading is `Local`.
+    /// The local model (`crate::local::catalog`) when identification, grading or cropping is `Local`.
     pub local_model: String,
 }
 
@@ -302,6 +306,7 @@ impl Default for SessionOptions {
             engine: Engine::Ximilar,
             grade_engine: None,
             prices: None,
+            crop_engine: None,
             ebay_site: String::new(),
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
         }
@@ -336,7 +341,8 @@ impl SessionOptions {
     }
 
     /// What happens to each card, in order: its identification, its price (unless Ximilar's identification brought
-    /// it), its grading (a job of the card-grader, or the local model), its crop (always a job of the card-grader).
+    /// it), its grading (a job of the card-grader, or the local model), its crop (a job of the card-grader, or cut
+    /// here at the corners the local model or an AI agent gives).
     pub fn stages(&self) -> Vec<Stage> {
         [
             (self.identifies(), Stage::Identify),
@@ -385,12 +391,32 @@ impl SessionOptions {
         self.grading_mode() != GradingMode::Off && self.grade_engine() == Engine::Local
     }
 
-    /// Identified or graded on this computer (cropping always calls Ximilar).
-    pub fn uses_local(&self) -> bool {
-        self.identifies_locally() || self.grades_locally()
+    /// What crops the cards (unless it says otherwise, Ximilar: also in a local or an agent's session).
+    pub fn crop_engine(&self) -> Engine {
+        self.crop_engine.unwrap_or(Engine::Ximilar)
     }
 
-    /// Identified by an AI agent over MCP. Only identification and prices can be an agent's.
+    /// Cropped by Ximilar: an async job of the card-grader.
+    pub fn crops_by_ximilar(&self) -> bool {
+        self.crops() && self.crop_engine() == Engine::Ximilar
+    }
+
+    /// Cut here at the corners the local model finds.
+    pub fn crops_locally(&self) -> bool {
+        self.crops() && self.crop_engine() == Engine::Local
+    }
+
+    /// Cut here at the corners an AI agent gives over MCP.
+    pub fn crops_by_agent(&self) -> bool {
+        self.crops() && self.crop_engine() == Engine::Agent
+    }
+
+    /// Identified, graded or cropped by the model on this computer.
+    pub fn uses_local(&self) -> bool {
+        self.identifies_locally() || self.grades_locally() || self.crops_locally()
+    }
+
+    /// Identified by an AI agent over MCP. An agent identifies, prices and finds corners; it never grades.
     pub fn agent(&self) -> bool {
         self.engine == Engine::Agent && self.identifies()
     }
@@ -400,9 +426,9 @@ impl SessionOptions {
         self.prices() == Prices::Agent
     }
 
-    /// An AI agent identifies or prices the cards.
+    /// An AI agent identifies, prices or crops the cards.
     pub fn uses_agent(&self) -> bool {
-        self.agent() || self.prices_by_agent()
+        self.agent() || self.prices_by_agent() || self.crops_by_agent()
     }
 
     /// Prices the cards from their active eBay listings.
@@ -413,7 +439,7 @@ impl SessionOptions {
     /// Calls the Ximilar API for something: identifying, grading, cropping or syncing. A session whose stages all
     /// run elsewhere runs without a token.
     pub fn uses_api(&self) -> bool {
-        self.crops()
+        self.crops_by_ximilar()
             || (self.identifies() && (self.sync_remote || self.engine == Engine::Ximilar))
             || (self.grading_mode() != GradingMode::Off && self.grade_engine() == Engine::Ximilar)
     }
@@ -427,8 +453,8 @@ pub struct Money {
     pub total: f64,
 }
 
-/// Prices or grading added to a session's identified cards after its run (`AppState::add_to_cards`): what to add,
-/// and by what.
+/// Prices, grading or crops added to a session's identified cards after its run (`AppState::add_to_cards`): what
+/// to add, and by what.
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AddToCards {
@@ -440,8 +466,18 @@ pub struct AddToCards {
     pub grade_engine: Option<Engine>,
     /// The condition scale (`tcgplayer`, `cardmarket`, `ebay_tcg`, …); default: the session's.
     pub condition_mode: Option<String>,
-    /// The local model that grades; default: the session's.
+    /// The local model that grades or crops; default: the session's.
     pub local_model: Option<String>,
+    /// Save each card cropped.
+    pub crops: bool,
+    /// Ximilar, the local model or an AI agent; default: the session's.
+    pub crop_engine: Option<Engine>,
+    /// Where the crops go; default: the session's (empty = `crops` in its own folder).
+    pub crop_folder: Option<String>,
+    /// Default: the session's.
+    pub crop_format: Option<CropFormat>,
+    /// Ximilar's levels and sharpening; default: the session's.
+    pub crop_level: Option<bool>,
     /// The eBay site prices come from (`EBAY_DE`, …); default: the session's.
     pub ebay_site: Option<String>,
 }
@@ -469,6 +505,8 @@ pub struct SessionCounts {
     pub calls: i64,
     /// Identified cards in their price stage (searching eBay, or waiting for an AI agent's price).
     pub pricing: i64,
+    /// Cards in their crop stage: being cut here, or waiting for an AI agent's corners.
+    pub cropping: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -907,7 +945,7 @@ mod tests {
     }
 
     /// What a session's options mean is written twice, here and in `src/lib/format.ts` (`gradingOf`, `usesApi`,
-    /// `agentOf`, `cropsOf`). Both are checked against the same cases, so neither drifts from the other.
+    /// `agentOf`, `cropsOf`, `cropEngineOf`). Both are checked against the same cases, so neither drifts from the other.
     #[test]
     fn options_mean_what_the_shared_cases_say() {
         #[derive(Deserialize)]
@@ -919,6 +957,7 @@ mod tests {
             agent: bool,
             crops: bool,
             grade_engine: Engine,
+            crop_engine: Engine,
             prices: Prices,
             stages: Vec<Stage>,
         }
@@ -928,14 +967,22 @@ mod tests {
         for case in cases {
             let o = &case.options;
             let what = format!(
-                "{:?} by {:?}, grading {:?} by {:?}, prices {:?}, crops {}, sync {}",
-                o.task, o.engine, o.grading, o.grade_engine, o.prices, o.save_crops, o.sync_remote
+                "{:?} by {:?}, grading {:?} by {:?}, prices {:?}, crops {} by {:?}, sync {}",
+                o.task,
+                o.engine,
+                o.grading,
+                o.grade_engine,
+                o.prices,
+                o.save_crops,
+                o.crop_engine,
+                o.sync_remote
             );
             assert_eq!(o.grading_mode(), case.grading_mode, "{what}");
             assert_eq!(o.uses_api(), case.uses_api, "{what}");
             assert_eq!(o.agent(), case.agent, "{what}");
             assert_eq!(o.crops(), case.crops, "{what}");
             assert_eq!(o.grade_engine(), case.grade_engine, "{what}");
+            assert_eq!(o.crop_engine(), case.crop_engine, "{what}");
             assert_eq!(o.prices(), case.prices, "{what}");
             assert_eq!(o.stages(), case.stages, "{what}");
         }
@@ -984,5 +1031,29 @@ mod tests {
             ..with(Engine::Local, GradingMode::Off, false)
         };
         assert!(agent_prices.uses_agent() && !agent_prices.agent() && !agent_prices.uses_api());
+
+        // Crops are Ximilar's unless they say otherwise, whatever identifies; cut here, they need no token.
+        let crops = |engine, crop_engine| SessionOptions {
+            crop_engine,
+            ..with(engine, GradingMode::Off, true)
+        };
+        assert!(crops(Engine::Local, None).crops_by_ximilar());
+        let cut_here = crops(Engine::Local, Some(Engine::Local));
+        assert!(cut_here.crops_locally() && cut_here.uses_local() && !cut_here.uses_api());
+        let by_agent = crops(Engine::Local, Some(Engine::Agent));
+        assert!(by_agent.crops_by_agent() && by_agent.uses_agent() && !by_agent.agent());
+        assert!(!by_agent.uses_api());
+        assert!(crops(Engine::Ximilar, Some(Engine::Agent)).uses_api());
+        let crop_only = SessionOptions {
+            task: Task::Crop,
+            ..crops(Engine::Ximilar, Some(Engine::Agent))
+        };
+        assert!(crop_only.crops_by_agent() && !crop_only.uses_api());
+        // No crops: the crop engine means nothing.
+        let none = SessionOptions {
+            crop_engine: Some(Engine::Local),
+            ..with(Engine::Ximilar, GradingMode::Off, false)
+        };
+        assert!(!none.uses_local() && !none.crops_locally());
     }
 }

@@ -52,6 +52,7 @@ export default {
   cost: {
     local: "identified on this computer, no API calls",
     localGrade: "graded on this computer, no API calls",
+    none: "no API calls",
     calls: { one: "about {count} API call", other: "about {count} API calls" },
     callsCloud: { one: "about {count} API call for Cards Cloud", other: "about {count} API calls for Cards Cloud" },
     callsMagicAi: {
@@ -74,6 +75,7 @@ export default {
   },
   task: "Task",
   gradeWith: "Grade with",
+  cropWith: "Crop with",
   crop: {
     also: "Also save cropped pictures",
     alsoHint: "Each card cut out of its image and straightened, as pictures in a folder. One more API call per card.",
@@ -87,6 +89,7 @@ export default {
       jpg: "Small, opens everywhere",
       png: "Lossless, larger files",
       webp: "As Ximilar sends it: the smallest",
+      webpCut: "Lossless: sharp, larger files",
     },
   },
   identifyWith: "Identify with",
@@ -238,9 +241,16 @@ export default {
   },
   needsEbay: "Add your eBay keyset in Settings so Cardloader can search eBay’s listings for prices.",
   needsAgentsPrices: "Turn on AI agents, with “Run & review”, in Settings so your agent can price the cards.",
+  needsAgentsCrop: "Turn on AI agents, with “Run & review”, in Settings so your agent can crop the cards.",
   gradeWhat: "What to grade",
   sameModel: "The same model identifies the cards.",
-  cropNote: "Crops are always made with the Ximilar API.",
+  cropNotes: {
+    ximilar: "Ximilar cuts each card out of its scan and straightens it: one more API call per card.",
+    local:
+      "The model on this computer finds each card’s corners, and Cardloader cuts the card out and straightens it. No API calls; how well the cut fits depends on the model.",
+    agent:
+      "Your AI agent finds each card’s corners, and Cardloader cuts the card out and straightens it: ask it, e.g. in Claude, to crop the cards of this session in Cardloader.",
+  },
   missing: {
     csv: "Choose the CSV file to import.",
     csvUnreadable: "The CSV file can’t be read.",

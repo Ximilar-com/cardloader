@@ -139,8 +139,9 @@ export function taskLabels(): Record<Task, string> {
   };
 }
 
-/** What does the session's work. Only identification can be an AI agent's: its other tasks go to Ximilar, whatever
- * the engine says (`SessionOptions::agent`). */
+/** What does the session's work. `engine: agent` means an agent only for identification: a session that doesn't
+ * identify reads it as Ximilar (`SessionOptions::agent`). Prices and crops have their own (`pricesOf`,
+ * `cropEngineOf`). */
 export function engineOf(o: Pick<SessionOptions, "task" | "engine">): Engine {
   return o.engine === "agent" && o.task !== "identify" ? "ximilar" : o.engine;
 }
@@ -154,6 +155,12 @@ export function agentOf(o: Pick<SessionOptions, "task" | "engine">): boolean {
 export function gradeEngineOf(o: Pick<SessionOptions, "engine" | "gradeEngine">): Engine {
   const engine = o.gradeEngine ?? o.engine;
   return engine === "agent" ? "ximilar" : engine;
+}
+
+/** What crops the cards (`SessionOptions::crop_engine`): Ximilar unless the session says otherwise, whatever
+ * identifies. The local model or an AI agent gives the corners and Cardloader cuts the card. */
+export function cropEngineOf(o: Pick<SessionOptions, "cropEngine">): Engine {
+  return o.cropEngine ?? "ximilar";
 }
 
 /** The prices a session asks for, as chosen (an older session's `priceStats` means Ximilar's). */
@@ -184,7 +191,7 @@ export function stagesOf(o: SessionOptions): Stage[] {
 /** Calls the Ximilar API for something (`SessionOptions::uses_api`): a session whose stages all run elsewhere (on
  * this computer, by an AI agent, on eBay) runs without a token. */
 export function usesApi(o: SessionOptions): boolean {
-  if (cropsOf(o)) return true;
+  if (cropsOf(o) && cropEngineOf(o) === "ximilar") return true;
   if (o.task === "identify" && (o.syncRemote || o.engine === "ximilar")) return true;
   return gradingOf(o) !== "off" && gradeEngineOf(o) === "ximilar";
 }

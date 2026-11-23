@@ -7,7 +7,8 @@
 <p align="center">
   Scan trading, sports and comic cards from a folder or a document scanner, identify and grade them with the
   <a href="https://docs.ximilar.com/collectibles/recognition">Ximilar API</a> or a local vision model that runs
-  offline on your computer, and keep every run as a session — on your computer and in Ximilar Cards Cloud.
+  offline on your computer, or let your AI agent (Claude or another, over MCP) identify, price and crop them, and
+  keep every run as a session — on your computer and in Ximilar Cards Cloud.
 </p>
 
 <p align="center">
@@ -43,13 +44,18 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
 - **Grading.** [Card Grading](https://docs.ximilar.com/collectibles/card-grading) can grade each card in full
   (corners, edges, surface, centering, final grade) using both sides, check its condition, or measure centering
   only. The grading overlays are saved alongside the session.
-- **Add to finished sessions.** A session's ⋯ menu (or the selection bar, for ticked cards) adds prices or grading
-  to cards identified already, without identifying them again: prices from eBay's listings or checked by your AI
-  agent, a grade, centering or the condition by Ximilar or the local model. Ximilar's own prices come only with its
-  identification, so they're for new sessions.
+- **Add to finished sessions.** A session's ⋯ menu (or the selection bar, for ticked cards) adds prices, grading
+  or crops to cards identified already, without identifying them again: prices from eBay's listings or checked by
+  your AI agent, a grade, centering or the condition by Ximilar or the local model, cropped pictures by Ximilar, the
+  local model or your AI agent. Ximilar's own prices come only with its identification, so they're for new sessions.
 - **Cropped pictures.** Ximilar can cut each card out of its image, straighten it and even out its colours
   (`crop_level` of Card Grading); Cardloader saves the crops, front and back, named after the card's files in a
   folder you choose, as JPEG, PNG (lossless) or WebP (the file Ximilar sends, unchanged). Any session can **Also save cropped pictures**, next to identifying or grading the cards.
+  The Crop tab's **Crop with** can hand the finding to the **local model** or to your **AI agent** instead: it says
+  where the card's four corners are, and Cardloader cuts the card out of the full scan and straightens it, with no
+  API call. Such a crop is the scan as it is (Ximilar's evening out and sharpening aren't applied), its WebP is
+  lossless, and how well it fits depends on how well the corners were found, which hasn't been measured for any
+  model or agent yet: look at the first crops before relying on them.
 - **Pick what to do, each task by its own engine.** New session's **What to do** chooses any of **Identify**,
   **Prices**, **Grade** and **Crop**, and each chosen task gets a tab with what does it: for example identify with
   Ximilar, grade with the local model and price with your AI agent or from eBay's listings. Without **Identify**, a
@@ -144,7 +150,7 @@ To build and install from source instead, see [Development](#development) and ru
 To bring in cards you already have in a spreadsheet, click **Import CSV** instead (see below).
 
 Every analysed card costs Ximilar API credits: one call per recognition (two in Auto mode), plus one per
-grading and one per crop. A grade-, condition- or crop-only session makes one call per card (two if it also crops). Cards Cloud bills one call per session and one per stored image. See [Ximilar pricing](https://www.ximilar.com/pricing/).
+grading and one per crop by Ximilar. A grade-, condition- or crop-only session makes one call per card (two if it also crops). Cards Cloud bills one call per session and one per stored image. See [Ximilar pricing](https://www.ximilar.com/pricing/).
 
 ## Local model
 
@@ -202,6 +208,10 @@ baseball cards in holders: 47 against 4B's 32 and 450M's 10); elsewhere it reads
   numbers right (the titles missed lost a letter behind the artwork); LFM2.5-VL 450M got 7 titles and 4 numbers, and
   gave a wrong number on 3. Modern covers, which often print the number in the barcode box, weren't measured. The
   back cover is never read.
+- **Crops.** With **Crop with: Local model**, the model is asked where the card's four corners are in each
+  picture (as points in thousandths of the picture) and Cardloader cuts the card out of the full scan there and
+  straightens it, as the card lies in the picture: a card photographed upside down stays upside down. Every model
+  gets the same question, and none has been measured at it: small models in particular may place corners loosely.
 - What it can't do: tell reprints and variants apart, give a match score, other candidates or prices.
   Rows show a **Local** tag instead of High/Medium/Low. Cards Cloud sync still works (with your Ximilar token).
 - **Grading and condition (estimates).** A local session can also grade: each side gets one more question, and
@@ -399,11 +409,12 @@ With **Identify with: AI agent (MCP)** (in New session, or `engine: "agent"` whe
 Cardloader does everything but the identification: it reads the folder, watches it or runs the scanner, pairs
 fronts and backs, and then hands each card to your agent with its pictures (`next_cards_to_identify`). The agent
 reads the name, set, number, year and variant and answers with `identify_cards`, or says it can't tell a card,
-which then fails with its note. The session then goes on as usual: grading and crops through Ximilar if the
-session asks for them, Cards Cloud, exports. Each card the agent identified shows **AI agent** as its confidence,
+which then fails with its note. The session then goes on as usual: grading and crops (through Ximilar unless the
+session says otherwise) if it asks for them, Cards Cloud, exports. Each card the agent identified shows **AI agent** as its confidence,
 with the agent's certainty and note, and waits for your review like any other. While cards wait, the session page
 says so; nothing is identified without the agent. The **Identify cards yourself** prompt (`identify_session`)
-walks an agent through it. An agent session needs no Ximilar token unless it grades, crops or syncs. By default
+walks an agent through it. An agent session needs no Ximilar token unless Ximilar grades or crops for it, or it
+syncs. By default
 the agent is told to read each card from its pictures alone; **Settings → AI agents → Search the internet** lets it
 look up a card's set, number or parallel (and, when pricing, recent sales) online: slower and costlier, but more
 precise.
@@ -412,6 +423,19 @@ An agent can price the cards too: choose **Prices** in New session and price the
 `prices: "agent"` in `create_session`). Once a card is identified, by whatever identifies the session's cards, it
 waits for the agent's price (`next_cards_to_price`, answered with `price_cards` in US dollars and a note shown under
 the card's price). The **Price cards yourself** prompt (`price_session`) walks an agent through it.
+
+### Let your agent crop the cards
+
+With **Crop with: AI agent (MCP)** in New session's Crop tab (or `crop_engine: "agent"` in `create_session`, with
+`task: "crop"` or `save_crops`), your agent finds each card in its pictures and Cardloader does the cutting. Each
+card waits for the agent with its front and back picture and their size in pixels (`next_cards_to_crop`); the agent
+answers with the four corners of the card in each picture (`crop_cards`), clockwise from the card's own top-left
+corner, so a card lying sideways or upside down comes out upright. Cardloader cuts the card out of the full scan at
+those corners, straightened, into the session's crop folder, with no call to Ximilar. `preview_crop` shows the agent
+the cut its corners give before anything is saved, so it can correct them. A card with a back picture needs the
+back's corners too, or the reason it has none; a picture with no card fails the card's crop with the agent's note.
+The **Crop cards yourself** prompt (`crop_session`) walks an agent through it. How closely an agent places the
+corners hasn't been measured: look at the first crops before relying on them.
 
 ### Prices from eBay
 
@@ -551,6 +575,7 @@ src-tauri/src/
   commands.rs             everything the UI can call
   runner.rs               session runner: ingest → recognise → grade (async) → events
   sync.rs                 Cards Cloud mirroring
+  crop.rs                 cutting a card out at four corners (the local model's or an agent's), straightened
   ebay/                   eBay: sign-in, listings (drafts, publish, status), Inventory/Media API client
   market/                 TCGplayer, Whatnot and Shopify CSV exports, ImgBB picture hosting
   ximilar/                HTTP client, recognition, grading, Cards Cloud API

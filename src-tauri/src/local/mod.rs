@@ -3,6 +3,7 @@
 
 pub mod catalog;
 pub mod compare;
+pub mod crop;
 pub mod download;
 pub mod grade;
 pub mod identify;
@@ -644,6 +645,54 @@ impl LocalModels {
             "response": graded.raw,
         });
         Ok(graded)
+    }
+
+    /// Finds the card's corners in each of `sides` (pictures of its front, then its back if there is one) with
+    /// model `id`: one question per picture. The corners are fractions of the picture, so they fit the scan the
+    /// card is cut from whatever size the model saw.
+    pub async fn crop(&self, id: &str, sides: &[PathBuf]) -> Result<crop::LocalCrop> {
+        let spec =
+            catalog::find(id).ok_or_else(|| Error::msg(format!("unknown local model {id}")))?;
+        let edge = spec.profile.card_long_edge;
+        let engine = self.engine(id).await?;
+        let paths = sides.to_vec();
+        let images = tokio::task::spawn_blocking(move || -> Result<Vec<Vec<u8>>> {
+            paths
+                .iter()
+                .map(|p| {
+                    let img = imaging::open(p)?;
+                    imaging::jpeg_bytes(&imaging::fit_long_edge(&img, edge), 90)
+                })
+                .collect()
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))??;
+        let started = Instant::now();
+        let answers = tokio::task::spawn_blocking(move || -> Result<Vec<String>> {
+            let grammar = crop::corners_grammar();
+            images
+                .iter()
+                .map(|jpeg| {
+                    engine.generate(
+                        &[jpeg],
+                        crop::CORNERS_PROMPT,
+                        Some(&grammar),
+                        MAX_ANSWER_TOKENS,
+                    )
+                })
+                .collect()
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))??;
+        let seconds = started.elapsed().as_secs_f64();
+        Ok(crop::LocalCrop {
+            corners: answers.iter().map(|a| crop::parse(a)).collect(),
+            raw: json!({
+                "engine": format!("local/{id}"),
+                "seconds": (seconds * 100.0).round() / 100.0,
+                "answers": answers,
+            }),
+        })
     }
 }
 

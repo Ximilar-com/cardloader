@@ -111,8 +111,16 @@ pub fn listing_jpeg(path: &Path) -> Result<Vec<u8>> {
 
 /// The base64 JPEG of an image with its long edge capped.
 pub fn encode_for_upload(path: &Path, long_edge: u32, quality: u8) -> Result<String> {
-    let img = open(path)?;
-    Ok(b64(&jpeg_bytes(&fit_long_edge(&img, long_edge), quality)?))
+    Ok(encode_sized(path, long_edge, quality)?.0)
+}
+
+/// [`encode_for_upload`] and the width and height of the picture it made: what coordinates found on it are in.
+pub fn encode_sized(path: &Path, long_edge: u32, quality: u8) -> Result<(String, (u32, u32))> {
+    let img = fit_long_edge(&open(path)?, long_edge);
+    Ok((
+        b64(&jpeg_bytes(&img, quality)?),
+        (img.width(), img.height()),
+    ))
 }
 
 #[cfg(test)]

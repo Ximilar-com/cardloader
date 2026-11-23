@@ -56,6 +56,19 @@ pub fn list() -> Vec<Prompt> {
                 .with_required(false)]),
         )
         .with_title("Price cards yourself"),
+        Prompt::new(
+            "crop_session",
+            Some("Find each card in its pictures yourself: Cardloader cuts it out at the corners you give"),
+            Some(vec![
+                PromptArgument::new("path")
+                    .with_description("A folder of card images for a new session; empty to crop a running one")
+                    .with_required(false),
+                PromptArgument::new("session")
+                    .with_description("A running session whose cards wait for your corners; empty for any")
+                    .with_required(false),
+            ]),
+        )
+        .with_title("Crop cards yourself"),
     ]
 }
 
@@ -74,6 +87,7 @@ pub fn get(name: &str, arguments: Option<&JsonObject>) -> Option<GetPromptResult
         "identify_session" => identify(arg("path").as_deref(), arg("session").as_deref()),
         "ebay_prices" => ebay_prices(&arg("session").unwrap_or_else(|| "latest".into())),
         "price_session" => price(arg("session").as_deref()),
+        "crop_session" => crop(arg("path").as_deref(), arg("session").as_deref()),
         _ => return None,
     };
     Some(GetPromptResult::new(vec![PromptMessage::new_text(
@@ -201,5 +215,46 @@ never guess.
 5. Repeat from 2 until next_cards_to_price says finished.
 
 At the end, list the cards you priced with their prices, and the ones you couldn't price with why."
+    )
+}
+
+fn crop(path: Option<&str>, session: Option<&str>) -> String {
+    let start = match (path, session) {
+        (Some(path), _) => format!(
+            "1. Call create_session with path \"{path}\", task \"crop\" and crop_engine \"agent\" (ask the user \
+for a crop_folder if they want the pictures somewhere of their own; pairing front_back when the images alternate \
+front and back)."
+        ),
+        (None, Some(session)) => format!(
+            "1. The session \"{session}\" is waiting for you (start it with run_session if it isn't running)."
+        ),
+        (None, None) => "1. Call list_sessions: a running session cropped by an AI agent counts the cards \
+waitingForCrop. If none runs, ask the user for a folder and create_session with task \"crop\" and crop_engine \
+\"agent\"."
+            .to_string(),
+    };
+    let session_arg = session
+        .map(|s| format!(" with session_id \"{s}\""))
+        .unwrap_or_default();
+    format!(
+        "Find the cards of a Cardloader session in their pictures yourself, so Cardloader can cut them out.
+
+{start}
+2. Call next_cards_to_crop{session_arg}. It returns a few cards, each with its front (and back) picture and that \
+picture's size in pixels.
+3. In each picture, find the card's four corners as [x, y] pixels from the picture's top-left: on the card's own \
+edge (a slab's or sleeve's outer edge when it is in one), not inside its border and not out on the table. Start \
+at the card's own top-left corner (where its top-left is when you read the card upright) and go clockwise: a card \
+lying sideways or upside down then comes out upright. A corner hidden by the picture's edge goes on that edge.
+4. Check a card with preview_crop when you aren't sure: it shows the cut your corners give and saves nothing. \
+The whole card should be in it, upright, with no more than a sliver of background; correct the corners and look \
+again if not. Every picture costs tokens, so don't preview what is plainly right.
+5. Send the corners with crop_cards: several cards per call, each side with the size of its picture as given. A \
+card with a back picture needs the back's corners too, or no_back with why. If a picture shows no card, send the \
+card with uncropped and say why: never guess.
+6. Repeat from 2 until next_cards_to_crop says finished.
+
+At the end, say how many cards you cropped, where the pictures are (cropsFolder), and list the ones you couldn't \
+crop with why."
     )
 }

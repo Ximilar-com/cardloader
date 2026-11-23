@@ -1,4 +1,5 @@
 mod commands;
+mod crop;
 mod db;
 mod ebay;
 mod error;

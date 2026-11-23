@@ -551,8 +551,8 @@ impl AppState {
     }
 }
 
-/// Adds prices or grading to the session's identified cards (`item_ids`, else all), without identifying them
-/// again: how many go through it.
+/// Adds prices, grading or crops to the session's identified cards (`item_ids`, else all), without identifying
+/// them again: how many go through it.
 #[tauri::command]
 pub fn add_to_cards(
     state: S,
@@ -580,7 +580,7 @@ impl AppState {
         let session = self.db.session(id)?;
         if !session.options.identifies() {
             return Err(Error::msg(
-                "only identified cards can get prices or grading added; this session doesn't identify its cards",
+                "only identified cards can get prices, grading or crops added; this session doesn't identify its cards",
             ));
         }
         let mut options = session.options.clone();
@@ -623,8 +623,26 @@ impl AppState {
                 stages.push(Stage::Grade);
             }
         }
+        if add.crops {
+            options.save_crops = true;
+            options.crop_engine = Some(add.crop_engine.unwrap_or(options.crop_engine()));
+            if let Some(model) = add.local_model.as_deref().filter(|m| !m.is_empty()) {
+                options.local_model = model.to_string();
+            }
+            if let Some(folder) = add.crop_folder.as_deref() {
+                options.crop_folder = folder.trim().to_string();
+            }
+            if let Some(format) = add.crop_format {
+                options.crop_format = format;
+            }
+            if let Some(level) = add.crop_level {
+                options.crop_level = level;
+            }
+            valid_crop_folder(&options, session.source_kind, &session.source_ref)?;
+            stages.push(Stage::Crop);
+        }
         if stages.is_empty() {
-            return Err(Error::msg("choose prices or grading to add"));
+            return Err(Error::msg("choose prices, grading or crops to add"));
         }
         // Whatever the run would refuse is refused before any card is touched.
         self.runner.can_run(&options)?;

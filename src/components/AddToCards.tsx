@@ -1,15 +1,18 @@
+import { open } from "@tauri-apps/plugin-dialog";
 import clsx from "clsx";
+import { FolderOpen } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { api, errorText, type Engine, type GradingMode, type Prices, type Session } from "../lib/api";
 import { ebaySiteOptions } from "../lib/ebaySites";
-import { gradeEngineOf } from "../lib/format";
+import { cropEngineOf, gradeEngineOf } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
 import {
   Check,
   conditionOptions,
   conditionScale,
+  cropFormatOptions,
   engineOptions,
   gradeModeOptions,
   localConditionOptions,
@@ -22,8 +25,8 @@ import { toast } from "./Toast";
 type Mode = Exclude<GradingMode, "off">;
 
 /**
- * Prices or grading for a finished session's identified cards (`itemIds`, else all of them): they go through just
- * that, keeping their identification and review, and the session keeps the task for cards it gets later.
+ * Prices, grading or crops for a finished session's identified cards (`itemIds`, else all of them): they go through
+ * just that, keeping their identification and review, and the session keeps the task for cards it gets later.
  * Ximilar's prices aren't offered: they come only with its identification.
  */
 export default function AddToCardsDialog({
@@ -44,6 +47,11 @@ export default function AddToCardsDialog({
   const [mode, setMode] = useState<Mode>(o.grading === "off" ? "grade" : o.grading);
   const [scale, setScale] = useState(o.conditionMode);
   const [model, setModel] = useState(o.localModel);
+  const [crops, setCrops] = useState(false);
+  const [cropBy, setCropBy] = useState<Engine>(cropEngineOf(o));
+  const [cropFolder, setCropFolder] = useState(o.cropFolder);
+  const [cropFormat, setCropFormat] = useState(o.cropFormat);
+  const [cropLevel, setCropLevel] = useState(o.cropLevel);
   const [site, setSite] = useState<string | null>(o.ebaySite || null);
   const [defaultSite, setDefaultSite] = useState("EBAY_US");
   const [ready, setReady] = useState<{ token: boolean; ebay: boolean; agents: boolean } | null>(null);
@@ -57,11 +65,17 @@ export default function AddToCardsDialog({
       .then((s) => {
         setReady({ token: s.tokenSet, ebay: s.ebaySearch, agents: s.mcp.enabled && s.mcp.allowRun });
         setDefaultSite(s.ebay.searchMarketplace || "EBAY_US");
+        // Where the last session's crops went, unless this one has a folder of its own.
+        setCropFolder((folder) => folder || (s.defaultCropFolder ?? ""));
       })
       .catch((e) => setError(errorText(e)));
   }, []);
 
-  const local = grade && gradeBy === "local";
+  const gradesLocally = grade && gradeBy === "local";
+  const cropsLocally = crops && cropBy === "local";
+  const local = gradesLocally || cropsLocally;
+  // Crops go to a folder of the user's: the session's own folder would be deleted with the session.
+  const needsCropFolder = crops && !cropFolder.trim();
   const downloaded = models?.filter((m) => m.state === "ready") ?? [];
   const chosenModel = downloaded.find((m) => m.id === model) ?? downloaded[0];
   // What the run would refuse, said before it is started.
@@ -71,10 +85,36 @@ export default function AddToCardsDialog({
       pricesBy === "agent" &&
       ready &&
       !ready.agents && { text: t("newSession.needsAgentsPrices"), section: "agents" },
+    crops &&
+      cropBy === "agent" &&
+      ready &&
+      !ready.agents && { text: t("newSession.needsAgentsCrop"), section: "agents" },
     local && models && !chosenModel && { text: t("newSession.needsModel"), section: "models" },
-    grade && gradeBy === "ximilar" && ready && !ready.token && { text: t("newSession.needsToken"), section: "ximilar" },
+    ((grade && gradeBy === "ximilar") || (crops && cropBy === "ximilar")) &&
+      ready &&
+      !ready.token && { text: t("newSession.needsToken"), section: "ximilar" },
   ].filter((m): m is { text: string; section: string } => !!m);
   const count = itemIds?.length;
+  const pickCropFolder = async () => {
+    const picked = await open({ directory: true, defaultPath: cropFolder || undefined });
+    if (typeof picked === "string") setCropFolder(picked);
+  };
+  /** One model does whatever runs on this computer. */
+  const modelField = (
+    <div>
+      <label className="label">{t("newSession.model")}</label>
+      <Select
+        value={chosenModel?.id ?? ""}
+        onChange={setModel}
+        placeholder={t("newSession.noModel")}
+        options={(models ?? []).map((m) =>
+          m.state === "ready"
+            ? modelOption(m)
+            : { ...modelOption(m), disabled: true, hint: t("newSession.notDownloaded") },
+        )}
+      />
+    </div>
+  );
 
   const run = () => {
     setBusy(true);
@@ -84,9 +124,14 @@ export default function AddToCardsDialog({
         prices: prices ? pricesBy : null,
         grading: grade ? mode : null,
         gradeEngine: grade ? gradeBy : null,
-        conditionMode: grade ? conditionScale(scale, local) : null,
+        conditionMode: grade ? conditionScale(scale, gradesLocally) : null,
         localModel: local ? (chosenModel?.id ?? null) : null,
         ebaySite: prices ? (site ?? defaultSite) : null,
+        crops,
+        cropEngine: crops ? cropBy : null,
+        cropFolder: crops ? cropFolder.trim() : null,
+        cropFormat: crops ? cropFormat : null,
+        cropLevel: crops ? cropLevel : null,
       })
       .then((n) => {
         toast(n ? t("session.addTo.started", { count: n }) : t("session.addTo.none"));
@@ -110,7 +155,7 @@ export default function AddToCardsDialog({
           <button
             className="btn btn-primary"
             onClick={run}
-            disabled={busy || !ready || (!prices && !grade) || missing.length > 0}
+            disabled={busy || !ready || (!prices && !grade && !crops) || missing.length > 0 || needsCropFolder}
           >
             {t("session.addTo.run")}
           </button>
@@ -146,38 +191,66 @@ export default function AddToCardsDialog({
             <label className="label">{t("newSession.gradeWith")}</label>
             <Select value={gradeBy} onChange={setGradeBy} options={engineOptions(false)} />
           </div>
-          {local ? (
+          {gradesLocally ? modelField : <div />}
+          <div>
+            <label className="label">{t("newSession.gradeWhat")}</label>
+            <Select value={mode} onChange={setMode} options={gradeModeOptions()} />
+          </div>
+          {mode === "condition" || (gradesLocally && mode === "grade") ? (
             <div>
-              <label className="label">{t("newSession.model")}</label>
+              <label className="label">{t("newSession.conditionScale")}</label>
               <Select
-                value={chosenModel?.id ?? ""}
-                onChange={setModel}
-                placeholder={t("newSession.noModel")}
-                options={(models ?? []).map((m) =>
-                  m.state === "ready"
-                    ? modelOption(m)
-                    : { ...modelOption(m), disabled: true, hint: t("newSession.notDownloaded") },
-                )}
+                value={conditionScale(scale, gradesLocally)}
+                onChange={setScale}
+                options={gradesLocally ? localConditionOptions() : conditionOptions()}
               />
             </div>
           ) : (
             <div />
           )}
+        </Part>
+
+        <Part on={crops} onToggle={setCrops} label={t("newSession.tasks.crop")}>
           <div>
-            <label className="label">{t("newSession.gradeWhat")}</label>
-            <Select value={mode} onChange={setMode} options={gradeModeOptions()} />
+            <label className="label">{t("newSession.cropWith")}</label>
+            <Select value={cropBy} onChange={setCropBy} options={engineOptions()} />
           </div>
-          {mode === "condition" || (local && mode === "grade") ? (
-            <div>
-              <label className="label">{t("newSession.conditionScale")}</label>
-              <Select
-                value={conditionScale(scale, local)}
-                onChange={setScale}
-                options={local ? localConditionOptions() : conditionOptions()}
+          {cropsLocally && !gradesLocally ? modelField : <div />}
+          <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.cropNotes.${cropBy}`)}</p>
+          <div className="col-span-2">
+            <label className="label">{t("newSession.crop.folder")}</label>
+            <div className="flex gap-2">
+              <input
+                className={clsx(
+                  "input",
+                  needsCropFolder && "border-amber-400 ring-2 ring-amber-400/25 dark:border-amber-500",
+                )}
+                value={cropFolder}
+                onChange={(e) => setCropFolder(e.target.value)}
+                placeholder="/path/to/cropped"
               />
+              <button className={clsx("btn", needsCropFolder && "btn-primary")} onClick={pickCropFolder}>
+                <FolderOpen className="h-4 w-4" /> {t("newSession.browse")}
+              </button>
             </div>
-          ) : (
-            <div />
+            <p
+              className={clsx(
+                "mt-1 text-xs",
+                needsCropFolder ? "text-amber-700 dark:text-amber-400" : "text-slate-500",
+              )}
+            >
+              {needsCropFolder ? t("newSession.crop.choose") : t("newSession.crop.hint")}
+            </p>
+          </div>
+          <div>
+            <label className="label">{t("newSession.crop.format")}</label>
+            <Select value={cropFormat} onChange={setCropFormat} options={cropFormatOptions(cropBy)} />
+          </div>
+          {cropBy === "ximilar" && (
+            <div className="col-span-2">
+              <Check label={t("newSession.crop.level")} checked={cropLevel} onChange={setCropLevel} />
+              <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.crop.levelHint")}</p>
+            </div>
           )}
         </Part>
 

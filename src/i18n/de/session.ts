@@ -202,11 +202,11 @@ const messages: Messages<typeof en> = {
     },
   },
   addTo: {
-    menu: "Preise oder Bewertung hinzufügen…",
+    menu: "Preise, Bewertung oder Zuschnitte hinzufügen…",
     menuTitle:
-      "Preise von eBay oder deinem KI-Agenten, eine Note oder den Zustand für bereits erkannte Karten – ohne sie erneut zu erkennen",
-    bulk: "Preise oder Bewertung hinzufügen…",
-    title: "Preise oder Bewertung hinzufügen",
+      "Preise von eBay oder deinem KI-Agenten, eine Note oder den Zustand, oder zugeschnittene Bilder für bereits erkannte Karten – ohne sie erneut zu erkennen",
+    bulk: "Preise, Bewertung oder Zuschnitte hinzufügen…",
+    title: "Preise, Bewertung oder Zuschnitte hinzufügen",
     introAll:
       "Jede erkannte Karte dieser Sitzung bekommt, was du wählst. Die Karten behalten ihre Erkennung und deine Prüfung, und nur das Hinzugefügte wird ausgeführt. Die Sitzung behält es für später hinzukommende Karten.",
     intro: {
@@ -222,7 +222,13 @@ const messages: Messages<typeof en> = {
   agentPrompt: {
     identify: "Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.",
     price: "Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.",
+    crop: "Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu.",
     copy: "Prompt kopieren",
+  },
+  agentCropping: {
+    one: "<b>{count} Karte</b> wartet darauf, dass dein KI-Agent ihre Ecken findet. Bitte ihn, z. B. in Claude: „Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu.“",
+    other:
+      "<b>{count} Karten</b> warten darauf, dass dein KI-Agent ihre Ecken findet. Bitte ihn, z. B. in Claude: „Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu.“",
   },
   agentPricing: {
     one: "<b>{count} Karte</b> wartet auf den Preis deines KI-Agenten. Bitte ihn, z. B. in Claude: „Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.“",

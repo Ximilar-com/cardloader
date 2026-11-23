@@ -198,11 +198,11 @@ export default {
   },
   /** What to ask the agent: the copy button of the agentPricing and agentWaiting banners. */
   addTo: {
-    menu: "Add prices or grading…",
+    menu: "Add prices, grading or crops…",
     menuTitle:
-      "Prices from eBay or your AI agent, a grade or the condition, for cards identified already — without identifying them again",
-    bulk: "Add prices or grading…",
-    title: "Add prices or grading",
+      "Prices from eBay or your AI agent, a grade or the condition, or cropped pictures, for cards identified already — without identifying them again",
+    bulk: "Add prices, grading or crops…",
+    title: "Add prices, grading or crops",
     introAll:
       "Every identified card of this session gets what you choose. Cards keep their identification and your review, and only what you add is run. The session keeps it for cards it gets later.",
     intro: {
@@ -218,7 +218,13 @@ export default {
   agentPrompt: {
     identify: "Identify the cards of the Cardloader session {name} (id {id}) via MCP.",
     price: "Price the cards of the Cardloader session {name} (id {id}) via MCP.",
+    crop: "Crop the cards of the Cardloader session {name} (id {id}) via MCP.",
     copy: "Copy the prompt",
+  },
+  agentCropping: {
+    one: "<b>{count} card</b> waits for your AI agent to find its corners. Ask it, e.g. in Claude: “Crop the cards of the Cardloader session {name} (id {id}) via MCP.”",
+    other:
+      "<b>{count} cards</b> wait for your AI agent to find their corners. Ask it, e.g. in Claude: “Crop the cards of the Cardloader session {name} (id {id}) via MCP.”",
   },
   agentPricing: {
     one: "<b>{count} card</b> waits for your AI agent’s price. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name} (id {id}) via MCP.”",

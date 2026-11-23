@@ -202,11 +202,11 @@ const messages: Messages<typeof en> = {
     },
   },
   addTo: {
-    menu: "Aggiungi prezzi o gradazione…",
+    menu: "Aggiungi prezzi, gradazione o ritagli…",
     menuTitle:
-      "Prezzi da eBay o dal tuo agente IA, un voto o la condizione, per carte già identificate, senza identificarle di nuovo",
-    bulk: "Aggiungi prezzi o gradazione…",
-    title: "Aggiungi prezzi o gradazione",
+      "Prezzi da eBay o dal tuo agente IA, un voto o la condizione, o immagini ritagliate, per carte già identificate, senza identificarle di nuovo",
+    bulk: "Aggiungi prezzi, gradazione o ritagli…",
+    title: "Aggiungi prezzi, gradazione o ritagli",
     introAll:
       "Ogni carta identificata di questa sessione riceve ciò che scegli. Le carte mantengono la loro identificazione e la tua revisione, e viene eseguito solo ciò che aggiungi. La sessione lo mantiene per le carte che riceverà in seguito.",
     intro: {
@@ -222,7 +222,13 @@ const messages: Messages<typeof en> = {
   agentPrompt: {
     identify: "Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.",
     price: "Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.",
+    crop: "Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP.",
     copy: "Copia il prompt",
+  },
+  agentCropping: {
+    one: "<b>{count} carta</b> attende che il tuo agente IA ne trovi gli angoli. Chiedigli, ad es. in Claude: “Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
+    other:
+      "<b>{count} carte</b> attendono che il tuo agente IA ne trovi gli angoli. Chiedigli, ad es. in Claude: “Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
   },
   agentPricing: {
     one: "<b>{count} carta</b> attende il prezzo del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.”",

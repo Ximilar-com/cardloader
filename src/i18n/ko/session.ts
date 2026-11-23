@@ -192,10 +192,11 @@ const messages: Messages<typeof en> = {
     },
   },
   addTo: {
-    menu: "가격 또는 그레이딩 추가…",
-    menuTitle: "이미 식별된 카드에 eBay나 AI 에이전트의 가격, 등급 또는 상태를 추가합니다(다시 식별하지 않음)",
-    bulk: "가격 또는 그레이딩 추가…",
-    title: "가격 또는 그레이딩 추가",
+    menu: "가격, 그레이딩 또는 자르기 추가…",
+    menuTitle:
+      "이미 식별된 카드에 eBay나 AI 에이전트의 가격, 등급 또는 상태, 잘라낸 사진을 추가합니다(다시 식별하지 않음)",
+    bulk: "가격, 그레이딩 또는 자르기 추가…",
+    title: "가격, 그레이딩 또는 자르기 추가",
     introAll:
       "이 세션의 식별된 모든 카드에 선택한 항목을 추가합니다. 카드의 식별과 검토는 그대로이며, 추가한 작업만 실행됩니다. 나중에 들어오는 카드에도 적용됩니다.",
     intro: {
@@ -210,7 +211,12 @@ const messages: Messages<typeof en> = {
   agentPrompt: {
     identify: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 식별해 줘",
     price: "MCP로 Cardloader 세션 {name}(ID {id})의 카드 가격을 매겨 줘",
+    crop: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 잘라 줘",
     copy: "프롬프트 복사",
+  },
+  agentCropping: {
+    other:
+      "<b>카드 {count}장</b>이 AI 에이전트가 모서리를 찾기를 기다립니다. Claude 등에서 ‘MCP로 Cardloader 세션 {name}(ID {id})의 카드를 잘라 줘’라고 요청하세요.",
   },
   agentPricing: {
     other:

@@ -57,6 +57,7 @@ const messages: Messages<typeof en> = {
       other: "API呼び出し約{count}回（Magic AIで増える場合があります）",
     },
     localGrade: "このパソコン上でグレーディング、API呼び出しなし",
+    none: "API呼び出しなし",
     agent: "AIエージェントが識別、API呼び出しなし",
   },
   scanner: {
@@ -185,6 +186,7 @@ const messages: Messages<typeof en> = {
   },
   task: "タスク",
   gradeWith: "グレーディング方法",
+  cropWith: "切り抜き方法",
   crop: {
     folder: "切り抜きの保存先",
     choose: "切り抜いたカードを保存するフォルダーを選んでください。",
@@ -199,6 +201,7 @@ const messages: Messages<typeof en> = {
       jpg: "小さく、どこでも開ける",
       png: "劣化なし、ファイルは大きめ",
       webp: "Ximilarから届いたまま：最も小さい",
+      webpCut: "劣化なし：鮮明、ファイルは大きめ",
     },
   },
   needsAgents:
@@ -233,9 +236,17 @@ const messages: Messages<typeof en> = {
   needsEbay: "CardloaderがeBayの出品から価格を検索できるよう、「設定」でeBayキーセットを追加してください。",
   needsAgentsPrices:
     "エージェントがカードに価格を付けられるよう、「設定」でAIエージェントを「実行とレビュー」付きでオンにしてください。",
+  needsAgentsCrop:
+    "エージェントがカードを切り抜けるよう、「設定」でAIエージェントを「実行とレビュー」付きでオンにしてください。",
   gradeWhat: "グレーディングの内容",
   sameModel: "同じモデルがカードを識別します。",
-  cropNote: "切り抜きは常にXimilar APIで行います。",
+  cropNotes: {
+    ximilar: "Ximilarがスキャンから各カードを切り抜いてまっすぐにします。カード1枚につきAPI呼び出しが1回増えます。",
+    local:
+      "このパソコン上のモデルが各カードの四隅を見つけ、Cardloaderが切り抜いてまっすぐにします。API呼び出しなし。切り抜きの精度はモデル次第です。",
+    agent:
+      "AIエージェントが各カードの四隅を見つけ、Cardloaderが切り抜いてまっすぐにします。Claudeなどで「Cardloaderのこのセッションのカードを切り抜いて」と頼んでください。",
+  },
   missing: {
     csv: "インポートするCSVファイルを選んでください。",
     csvUnreadable: "CSVファイルを読み込めません。",

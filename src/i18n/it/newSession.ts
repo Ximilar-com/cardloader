@@ -65,6 +65,7 @@ const messages: Messages<typeof en> = {
       other: "circa {count} chiamate API (Magic AI può aggiungerne altre)",
     },
     localGrade: "gradate su questo computer, nessuna chiamata API",
+    none: "nessuna chiamata API",
     agent: "identificate dal tuo agente IA, nessuna chiamata API",
   },
   scanner: {
@@ -192,6 +193,7 @@ const messages: Messages<typeof en> = {
   },
   task: "Attività",
   gradeWith: "Gradazione con",
+  cropWith: "Ritaglio con",
   crop: {
     folder: "Salva i ritagli in",
     choose: "Scegli la cartella in cui salvare le carte ritagliate.",
@@ -206,6 +208,7 @@ const messages: Messages<typeof en> = {
       jpg: "Leggero, si apre ovunque",
       png: "Senza perdita, file più grandi",
       webp: "Come lo invia Ximilar: il più leggero",
+      webpCut: "Senza perdita: nitido, file più grandi",
     },
   },
   needsAgents:
@@ -241,9 +244,17 @@ const messages: Messages<typeof en> = {
     "Aggiungi il tuo keyset eBay nelle Impostazioni perché Cardloader possa cercare i prezzi nelle inserzioni eBay.",
   needsAgentsPrices:
     "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa dare un prezzo alle carte.",
+  needsAgentsCrop:
+    "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa ritagliare le carte.",
   gradeWhat: "Tipo di gradazione",
   sameModel: "Lo stesso modello identifica le carte.",
-  cropNote: "I ritagli si fanno sempre con l’API di Ximilar.",
+  cropNotes: {
+    ximilar: "Ximilar ritaglia ogni carta dalla sua scansione e la raddrizza: una chiamata API in più per carta.",
+    local:
+      "Il modello su questo computer trova gli angoli di ogni carta e Cardloader la ritaglia e la raddrizza. Nessuna chiamata API; la precisione del ritaglio dipende dal modello.",
+    agent:
+      "Il tuo agente IA trova gli angoli di ogni carta e Cardloader la ritaglia e la raddrizza: chiedigli, ad es. in Claude, di ritagliare le carte di questa sessione in Cardloader.",
+  },
   missing: {
     csv: "Scegli il file CSV da importare.",
     csvUnreadable: "Impossibile leggere il file CSV.",

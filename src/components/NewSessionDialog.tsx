@@ -51,6 +51,7 @@ import {
   gradeEngineOf,
   gradingLabels,
   agentOf,
+  cropEngineOf,
   cropsOf,
   gradingOf,
   idModeLabels,
@@ -282,13 +283,17 @@ export default function NewSessionDialog({
   const needsCropFolder = savesCrops && !options?.cropFolder.trim();
   const sourceMissing = needsFolder || needsCsv || needsCropFolder;
   const grading = options ? gradingOf(options) : "off";
-  // Each task by its own engine; cropping always runs on the Ximilar API.
+  // Each task by its own engine.
   const identifiesLocally = identifies && options?.engine === "local";
   const gradeEngine = options ? gradeEngineOf(options) : "ximilar";
   const gradesLocally = grading !== "off" && gradeEngine === "local";
-  const usesLocal = identifiesLocally || gradesLocally;
+  // Ximilar cuts the cards itself; the local model or an agent finds their corners and Cardloader cuts.
+  const cropEngine = options ? cropEngineOf(options) : "ximilar";
+  const cropsLocally = savesCrops && cropEngine === "local";
+  const agentCrops = savesCrops && cropEngine === "agent";
+  const usesLocal = identifiesLocally || gradesLocally || cropsLocally;
   const prices: Prices = options ? pricesOf(options) : "off";
-  // An AI agent connected over MCP identifies the cards, or prices them.
+  // An AI agent connected over MCP identifies the cards, prices them, or finds them in their pictures.
   const agent = !!options && agentOf(options);
   const agentPrices = prices === "agent";
   const ebayPrices = prices === "ebay";
@@ -339,6 +344,7 @@ export default function NewSessionDialog({
     ({
       ...picked,
       gradeEngine: gradeEngineOf(picked),
+      cropEngine: cropEngineOf(picked),
       // Hidden for trading cards: a Magic AI ticked before switching to them doesn't stay on.
       magicAi: picked.magicAi && sessionIdMode !== "tcg",
       prices: pricesOf(picked),
@@ -350,7 +356,7 @@ export default function NewSessionDialog({
   const canRun =
     (!needsToken || tokenSet) &&
     (!usesLocal || !!model) &&
-    (!(agent || agentPrices) || agentsReady) &&
+    (!(agent || agentPrices || agentCrops) || agentsReady) &&
     (!ebayPrices || ebaySearch);
   // Everything still to fill in or set up, in one list above the buttons, each with the tab it is on.
   const found: (Issue | false | null | undefined)[] = [
@@ -365,7 +371,7 @@ export default function NewSessionDialog({
       models &&
       !model && {
         text: t("newSession.needsModel"),
-        tab: identifiesLocally ? ("identify" as const) : ("grade" as const),
+        tab: identifiesLocally ? ("identify" as const) : gradesLocally ? ("grade" as const) : ("crop" as const),
         settings: "models",
       },
     (agent || agentPrices) &&
@@ -374,6 +380,7 @@ export default function NewSessionDialog({
         tab: agent ? ("identify" as const) : ("prices" as const),
         settings: "agents",
       },
+    agentCrops && !agentsReady && { text: t("newSession.needsAgentsCrop"), tab: "crop" as const, settings: "agents" },
     ebayPrices && !ebaySearch && { text: t("newSession.needsEbay"), tab: "prices" as const, settings: "ebay" },
   ];
   const issues = found.filter((i): i is Issue => !!i);
@@ -456,12 +463,19 @@ export default function NewSessionDialog({
       </div>
       <div>
         <label className="label">{t("newSession.crop.format")}</label>
-        <Select value={options.cropFormat} onChange={(v) => set("cropFormat", v)} options={cropFormatOptions()} />
+        <Select
+          value={options.cropFormat}
+          onChange={(v) => set("cropFormat", v)}
+          options={cropFormatOptions(cropEngine)}
+        />
       </div>
-      <div className="col-span-2">
-        <Check label={t("newSession.crop.level")} checked={options.cropLevel} onChange={(v) => set("cropLevel", v)} />
-        <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.crop.levelHint")}</p>
-      </div>
+      {/* Evening out and sharpening are Ximilar's: a card cut here is the scan as it is. */}
+      {cropEngine === "ximilar" && (
+        <div className="col-span-2">
+          <Check label={t("newSession.crop.level")} checked={options.cropLevel} onChange={(v) => set("cropLevel", v)} />
+          <p className="mt-1 pl-6 text-xs text-slate-500">{t("newSession.crop.levelHint")}</p>
+        </div>
+      )}
     </>
   );
 
@@ -789,9 +803,7 @@ export default function NewSessionDialog({
                         ? prices === "ebay"
                           ? siteName(options.ebaySite || defaultSite)
                           : t(`status.prices.${prices}`)
-                        : k === "grade"
-                          ? engineLabels()[gradeEngine]
-                          : engineLabels().ximilar}
+                        : engineLabels()[k === "grade" ? gradeEngine : cropEngine]}
                   </span>
                 </button>
               ))}
@@ -943,8 +955,13 @@ export default function NewSessionDialog({
 
               {shownTab === "crop" && (
                 <>
+                  <div>
+                    <label className="label">{t("newSession.cropWith")}</label>
+                    <Select value={cropEngine} onChange={(v) => set("cropEngine", v)} options={engineOptions()} />
+                  </div>
+                  {cropsLocally && !identifiesLocally && !gradesLocally ? modelField : <div />}
+                  <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.cropNotes.${cropEngine}`)}</p>
                   {cropFields(options)}
-                  <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.cropNote")}</p>
                 </>
               )}
             </div>
@@ -1241,18 +1258,18 @@ function usesMoreOptions(o: SessionOptions): boolean {
 }
 
 /** Roughly what analysing the folder costs: a call per card to identify it with Ximilar, one more to grade it there
- * and one more to crop it; Cards Cloud bills one per stored image and one for the session. Local, agent and eBay
- * stages cost no API calls. */
+ * and one more for Ximilar to crop it; Cards Cloud bills one per stored image and one for the session. Local,
+ * agent and eBay stages cost no API calls. */
 function costOf(o: SessionOptions, images: number): string {
   const cards = o.pairing === "front_back" ? Math.ceil(images / 2) : images;
   const identifies = o.task === "identify";
   const byXimilar = identifies && o.engine === "ximilar";
-  const crops = cropsOf(o) ? cards : 0;
+  const crops = cropsOf(o) && cropEngineOf(o) === "ximilar" ? cards : 0;
   const graded = gradingOf(o) !== "off" && gradeEngineOf(o) === "ximilar" ? cards : 0;
   const sync = identifies && o.syncRemote ? cards + 1 : 0;
   const calls = (byXimilar ? cards : 0) + graded + crops + sync;
   if (!calls) {
-    if (!identifies) return t("newSession.cost.localGrade");
+    if (!identifies) return t(gradingOf(o) !== "off" ? "newSession.cost.localGrade" : "newSession.cost.none");
     return t(o.engine === "agent" ? "newSession.cost.agent" : "newSession.cost.local");
   }
   if (identifies && o.engine === "local" && calls === sync) return t("newSession.cost.callsCloud", { count: calls });
@@ -1375,23 +1392,27 @@ export function taskOptions(): SelectOption<Task>[] {
   }));
 }
 
-export function cropFormatOptions(): SelectOption<CropFormat>[] {
+/** `by`: what crops. Ximilar's WebP is its own small file; one made here is lossless. */
+export function cropFormatOptions(by: Engine = "ximilar"): SelectOption<CropFormat>[] {
   return [
     { value: "jpg", label: "JPEG", hint: t("newSession.crop.formats.jpg") },
     { value: "png", label: "PNG", hint: t("newSession.crop.formats.png") },
-    { value: "webp", label: "WebP", hint: t("newSession.crop.formats.webp") },
+    {
+      value: "webp",
+      label: "WebP",
+      hint: t(by === "ximilar" ? "newSession.crop.formats.webp" : "newSession.crop.formats.webpCut"),
+    },
   ];
 }
 
-/** `identifies`: an AI agent only identifies, so it is offered for that task alone. */
-export function engineOptions(identifies = true): SelectOption<Engine>[] {
+/** `agent`: whether an AI agent can do the task. It identifies cards and finds them in their pictures; it never
+ * grades. */
+export function engineOptions(agent = true): SelectOption<Engine>[] {
   const labels = engineLabels();
   return [
     { value: "ximilar", label: labels.ximilar, icon: Cloud },
     { value: "local", label: labels.local, icon: Cpu },
-    ...(identifies
-      ? [{ value: "agent" as const, label: labels.agent, icon: Bot, hint: t("newSession.agentHint") }]
-      : []),
+    ...(agent ? [{ value: "agent" as const, label: labels.agent, icon: Bot, hint: t("newSession.agentHint") }] : []),
   ];
 }
 
