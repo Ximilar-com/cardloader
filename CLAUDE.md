@@ -266,7 +266,12 @@ state from them.
   agent's by `prices` and `crop_engine`, and it never grades): the
   worker that claimed a card registers a oneshot waiter (`Runner::agent_waits`, `identify_by_agent`) and waits; the
   MCP tools `next_cards_to_identify` (long-polls `Runner::agent_waiting`, returns the cards with their pictures,
-  `pictures()` in `tools.rs`) and `identify_cards` (`Runner::answer_agent`) answer it. Then it is
+  `pictures()` in `tools.rs`) and `identify_cards` (`Runner::answer_agent`) answer it. One card per call unless the
+  agent asks for more (`max`), and a result's pictures are kept under `PICTURES_BUDGET` (750 kB of base64: Claude
+  Desktop refuses a tool result over 1 MB, "Tool result is too large", which three cards' six 1024 px pictures
+  passed): `tools::fit` leaves cards for the next call while each picture would get less than `PICTURE_MIN_SHARE`,
+  then makes the pictures over their share again (`imaging::encode_within`: quality 85 → 75 → 65, then smaller,
+  never under 512 px); the sizes said with the pictures are the ones sent. `get_card` fits its two the same way. Then it is
   `save_recognition` with confidence `agent` (`AGENT_CONFIDENCE`; raw `{"endpoint": "agent", certainty, note,
   response}`), and grading through Ximilar as after any identification. `unidentified` fails the card with the note.
   Stop cancels the waits (cards back to `queued`); up to `AGENT_BATCH` cards wait at once. `SessionOptions::uses_api`

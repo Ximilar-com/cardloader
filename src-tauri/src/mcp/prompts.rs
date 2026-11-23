@@ -155,13 +155,13 @@ waitingForAgent. If none runs, ask the user for a folder and create_session with
         "Identify the cards of a Cardloader session yourself, from their pictures.
 
 {start}
-2. Call next_cards_to_identify{session_arg}. It returns a few cards with the front (and back) picture of each, and \
+2. Call next_cards_to_identify{session_arg}. It returns the next card (several if you pass max) with the front (and back) picture of each, and \
 waits while the next cards are scanned.
 3. Read each card (from its pictures alone, unless next_cards_to_identify says webSearch is true): the name (the \
 player, character or comic title), the set or product (e.g. \"2023 Panini Prizm\"), \
 the card number as printed (with its letters), the year, the variant or parallel (e.g. \"Silver Prizm\", \
 \"Holo\"), and the game or sport. Sports cards often print the number, year and set only on the back.
-4. Send them with identify_cards: several cards per call, with certainty high, medium or low and a short note of \
+4. Send them with identify_cards: several cards in one call when you have them, with certainty high, medium or low and a short note of \
 what you read. If you can't tell a card, send it with unidentified and say why: never guess a name.
 5. Repeat from 2 until next_cards_to_identify says finished.
 
@@ -204,12 +204,12 @@ If none runs, ask the user for a folder and create_session with prices \"agent\"
         "Price the cards of a Cardloader session yourself, as they are identified.
 
 {start}
-2. Call next_cards_to_price{session_arg}. It returns a few identified cards: name, set, number, year, variant, \
+2. Call next_cards_to_price{session_arg}. It returns the next identified card (several if you pass max): name, set, number, year, variant, \
 game, the slab's grade if the card is graded, an eBay range if one was found, and its pictures.
 3. Work out what each card sells for now, as it is (raw, or in its slab's grade). If you may use them, \
 find_ebay_listings and keep_ebay_listings give its active eBay listings. Search the web only when \
 next_cards_to_price says webSearch is true.
-4. Send the prices with price_cards (in US dollars, or give each price's currency, e.g. EUR for ebay.de): several cards per call, each with a short note of how you got \
+4. Send the prices with price_cards (in US dollars, or give each price's currency, e.g. EUR for ebay.de): several cards in one call when you have them, each with a short note of how you got \
 it (e.g. \"median of 6 listings, no lots\"). If you can't find a price, send the card with unpriced and say why: \
 never guess.
 5. Repeat from 2 until next_cards_to_price says finished.
@@ -240,7 +240,7 @@ waitingForCrop. If none runs, ask the user for a folder and create_session with 
         "Find the cards of a Cardloader session in their pictures yourself, so Cardloader can cut them out.
 
 {start}
-2. Call next_cards_to_crop{session_arg}. It returns a few cards, each with its front (and back) picture and that \
+2. Call next_cards_to_crop{session_arg}. It returns the next card (several if you pass max), each with its front (and back) picture and that \
 picture's size in pixels.
 3. In each picture, find the card's four corners as [x, y] pixels from the picture's top-left: on the card's own \
 edge (a slab's or sleeve's outer edge when it is in one), not inside its border and not out on the table. Start \
@@ -249,7 +249,7 @@ lying sideways or upside down then comes out upright. A corner hidden by the pic
 4. Check a card with preview_crop when you aren't sure: it shows the cut your corners give and saves nothing. \
 The whole card should be in it, upright, with no more than a sliver of background; correct the corners and look \
 again if not. Every picture costs tokens, so don't preview what is plainly right.
-5. Send the corners with crop_cards: several cards per call, each side with the size of its picture as given. A \
+5. Send the corners with crop_cards: several cards in one call when you have them, each side with the size of its picture as given. A \
 card with a back picture needs the back's corners too, or no_back with why. If a picture shows no card, send the \
 card with uncropped and say why: never guess.
 6. Repeat from 2 until next_cards_to_crop says finished.

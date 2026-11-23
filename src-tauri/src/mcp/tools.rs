@@ -51,6 +51,12 @@ agents.";
 
 /// The long edge of card pictures sent to agents: enough to read the name and number, few tokens.
 const PICTURE_LONG_EDGE: u32 = 1024;
+/// What the pictures of one tool result may take, as base64: clients cap a result (Claude Desktop refuses one over
+/// 1 MB, "Tool result is too large"), and this leaves room for its text.
+const PICTURES_BUDGET: usize = 750_000;
+/// The least of that budget a card picture gets: about a 1024 px card at a middling JPEG quality. With more
+/// pictures than that leaves room for, fewer cards are sent rather than pictures too coarse to read.
+const PICTURE_MIN_SHARE: usize = 150_000;
 /// The long edge of the cut `preview_crop` shows: enough to see whether the card's edges are in it.
 const CUT_PREVIEW_LONG_EDGE: u32 = 768;
 /// How far the shape of the picture an agent says its corners are in may be from the picture's own (its width
@@ -267,11 +273,14 @@ struct RunSession {
 struct NextCards {
     /// A session identified, priced or cropped by an AI agent (its id, its name, or "latest"); empty for any.
     session_id: Option<String>,
-    /// Cards to return at most (default 3, at most 10): each comes with its pictures.
+    /// Cards to return at most (default 1, at most 10): each comes with its pictures, front and back, so one card
+    /// at a time gets them at their best. Fewer come than asked for when the pictures of that many wouldn't fit
+    /// one result: the rest come with the next call.
     max: Option<usize>,
     /// How long to wait for a card while the next ones are scanned (default 50, at most 120 seconds).
     wait_seconds: Option<u64>,
-    /// The pictures' long edge in pixels (default 1024; up to 1600 to read small print).
+    /// The pictures' long edge in pixels (default 1024; up to 1600 to read small print). A result holds about
+    /// 750 KB of pictures: with several cards, or large pictures, they are made coarser or smaller to fit.
     long_edge: Option<u32>,
 }
 
@@ -1281,7 +1290,9 @@ impl Handler {
         v["analyzedAt"] = json!(item.analyzed_at);
         let mut content = out(v)?;
         if images {
-            content.extend(pictures(&item, PICTURE_LONG_EDGE).await?.0);
+            let mut shown = vec![pictures(&item, PICTURE_LONG_EDGE).await?];
+            fit(&mut shown, PICTURE_LONG_EDGE).await?;
+            content.extend(blocks(&shown[0]).0);
         }
         Ok(content)
     }
@@ -1359,11 +1370,21 @@ impl Handler {
             .long_edge
             .unwrap_or(PICTURE_LONG_EDGE)
             .clamp(256, imaging::PREVIEW_LONG_EDGE);
-        let max = a.max.unwrap_or(3).clamp(1, 10);
-        let mut cards = Vec::new();
-        let mut pics = Vec::new();
+        // One card by default: its two pictures fit a result as they are, where three cards' rarely do.
+        let max = a.max.unwrap_or(1).clamp(1, 10);
+        let mut items = Vec::new();
+        let mut shown = Vec::new();
         for (session_id, item_id) in waiting.iter().take(max) {
             let item = self.state.db.item(*item_id)?;
+            shown.push(pictures(&item, long_edge).await?);
+            items.push((session_id, item));
+        }
+        // As many of them as one result holds; the others go on waiting and come with the next call.
+        fit(&mut shown, long_edge).await?;
+        let mut cards = Vec::new();
+        let mut pics = Vec::new();
+        for ((session_id, item), shown) in items.iter().zip(&shown) {
+            let item_id = item.summary.id;
             let s = self.state.db.session(session_id)?;
             let mut card = json!({
                 "itemId": item_id,
@@ -1389,7 +1410,7 @@ impl Handler {
                     .filter(|site| !site.is_empty())
                     .unwrap_or_else(|| self.state.settings.get().ebay.search_marketplace));
             }
-            let (shown, sizes) = pictures(&item, long_edge).await?;
+            let (shown, sizes) = blocks(shown);
             if task == AgentTask::Crop {
                 // The frame the corners are given in: these pictures' own pixels.
                 card["pictures"] = sizes;
@@ -2116,33 +2137,95 @@ fn shown(item: &ItemDetail, side: &str) -> Option<String> {
     .filter(|p| !p.is_empty())
 }
 
-/// A card's front and back pictures for an agent, each after a line naming it and its size, and those sizes
-/// by side (`{"front": {"width", "height"}, …}`): the frame of coordinates found on them.
-async fn pictures(item: &ItemDetail, long_edge: u32) -> Result<(Vec<ContentBlock>, Value)> {
+/// One side of a card as an agent is shown it.
+struct Shown {
+    item_id: i64,
+    /// "front" or "back".
+    side: &'static str,
+    path: String,
+    /// The JPEG as base64 with its width and height, or why there is none.
+    picture: std::result::Result<(String, (u32, u32)), String>,
+}
+
+impl Shown {
+    /// What it takes of a result: its base64 characters.
+    fn size(&self) -> usize {
+        self.picture.as_ref().map_or(0, |(data, _)| data.len())
+    }
+}
+
+/// A card's front and back pictures for an agent, at `long_edge` and the quality they are best read at.
+async fn pictures(item: &ItemDetail, long_edge: u32) -> Result<Vec<Shown>> {
     let item_id = item.summary.id;
-    let mut content = Vec::new();
-    let mut sizes = json!({});
-    for (label, side) in [("Front", "front"), ("Back", "back")] {
+    let mut sides = Vec::new();
+    for side in ["front", "back"] {
         let Some(path) = shown(item, side) else {
             continue;
         };
+        let from = path.clone();
         let picture = tokio::task::spawn_blocking(move || {
-            imaging::encode_sized(Path::new(&path), long_edge, 85)
+            imaging::encode_sized(Path::new(&from), long_edge, 85)
         })
         .await
         .map_err(|e| Error::msg(e.to_string()))?;
-        match picture {
+        sides.push(Shown {
+            item_id,
+            side,
+            path,
+            picture: picture.map_err(|e| e.to_string()),
+        });
+    }
+    Ok(sides)
+}
+
+/// Makes the cards' pictures fit one tool result (`PICTURES_BUDGET`). When they don't as they are, cards are left
+/// for the next call first, as long as each picture would get less than `PICTURE_MIN_SHARE` (the first card
+/// always stays), and then the pictures over their share are made again within it: coarser, then smaller.
+async fn fit(cards: &mut Vec<Vec<Shown>>, long_edge: u32) -> Result<()> {
+    let size = |cards: &[Vec<Shown>]| cards.iter().flatten().map(Shown::size).sum::<usize>();
+    let count = |cards: &[Vec<Shown>]| cards.iter().flatten().filter(|s| s.size() > 0).count();
+    while size(cards) > PICTURES_BUDGET
+        && cards.len() > 1
+        && PICTURES_BUDGET / count(cards).max(1) < PICTURE_MIN_SHARE
+    {
+        cards.pop();
+    }
+    if size(cards) <= PICTURES_BUDGET {
+        return Ok(());
+    }
+    let share = PICTURES_BUDGET / count(cards).max(1);
+    for shown in cards.iter_mut().flatten().filter(|s| s.size() > share) {
+        let path = shown.path.clone();
+        let picture = tokio::task::spawn_blocking(move || {
+            imaging::encode_within(Path::new(&path), long_edge, share)
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))?;
+        shown.picture = picture.map_err(|e| e.to_string());
+    }
+    Ok(())
+}
+
+/// A card's pictures as an agent gets them: each after a line naming it and its size, and those sizes by side
+/// (`{"front": {"width", "height"}, …}`), the frame of coordinates found on them.
+fn blocks(shown: &[Shown]) -> (Vec<ContentBlock>, Value) {
+    let mut content = Vec::new();
+    let mut sizes = json!({});
+    for s in shown {
+        let label = if s.side == "back" { "Back" } else { "Front" };
+        match &s.picture {
             Ok((data, (w, h))) => {
                 content.push(ContentBlock::text(format!(
-                    "{label} of card {item_id} ({w}×{h} px):"
+                    "{label} of card {} ({w}×{h} px):",
+                    s.item_id
                 )));
-                content.push(ContentBlock::image(data, "image/jpeg"));
-                sizes[side] = json!({"width": w, "height": h});
+                content.push(ContentBlock::image(data.clone(), "image/jpeg"));
+                sizes[s.side] = json!({"width": w, "height": h});
             }
             Err(e) => content.push(ContentBlock::text(format!("{label}: no picture ({e})"))),
         }
     }
-    Ok((content, sizes))
+    (content, sizes)
 }
 
 fn agent(note: Option<String>) -> Reviewer {

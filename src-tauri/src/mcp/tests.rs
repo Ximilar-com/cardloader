@@ -1007,6 +1007,148 @@ async fn agent_adds_prices_and_grading_to_a_finished_session() {
     assert!(options.crops_by_agent() && options.grades_locally());
 }
 
+/// Clients refuse a tool result over 1 MB (Claude Desktop: "Tool result is too large"), and card pictures are most
+/// of one. A batch whose pictures don't fit holds fewer cards (the others come with the next call), and its
+/// pictures are made coarser or smaller until they do; the sizes said with them are the ones sent.
+#[tokio::test(flavor = "multi_thread")]
+async fn agents_get_pictures_that_fit_a_result() {
+    use base64::Engine as _;
+    let server = mock_ximilar().await;
+    let dir = tempfile::tempdir().unwrap();
+    let cards = dir.path().join("football");
+    std::fs::create_dir_all(&cards).unwrap();
+    // Three cards, front and back, grainy all over: pictures that compress badly, as foil and print do.
+    let mut seed = 11u32;
+    for name in ["a1", "a2", "b1", "b2", "c1", "c2"] {
+        RgbImage::from_fn(1000, 1400, |x, y| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let grain = (seed >> 24) as u8 / 3;
+            Rgb([(x / 8) as u8 + grain, (y / 10) as u8 + grain, 60 + grain])
+        })
+        .save(cards.join(format!("{name}.png")))
+        .unwrap();
+    }
+    let (_mcp, state, agent) =
+        app_with_agent(dir.path(), &server.uri(), McpSettings::default()).await;
+    let created = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "agent", "card_type": "sport",
+                   "pairing": "front_back", "prices": "off"}),
+        )
+        .await;
+    let session = created["id"].as_str().unwrap().to_string();
+    let started = Instant::now();
+    while state.runner.agent_waiting(None, AgentTask::Identify).len() < 3 {
+        assert!(
+            started.elapsed() < Duration::from_secs(30),
+            "cards didn't come"
+        );
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    // What a result holds: its cards, how many wait, and each picture with the size its label says.
+    let batch = |arguments: Value| {
+        let agent = &agent;
+        async move {
+            let name = if arguments.get("item_id").is_some() {
+                "get_card"
+            } else {
+                "next_cards_to_identify"
+            };
+            let result = agent
+                .rpc("tools/call", json!({"name": name, "arguments": arguments}))
+                .await;
+            assert!(result["isError"] != true, "{result}");
+            assert!(
+                result.to_string().len() < 1_000_000,
+                "{} bytes",
+                result.to_string().len()
+            );
+            let content = result["content"].as_array().unwrap().clone();
+            let text: Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+            let mut pictures = Vec::new();
+            for (n, block) in content.iter().enumerate() {
+                if block["type"] != "image" {
+                    continue;
+                }
+                let data = block["data"].as_str().unwrap();
+                let jpeg = base64::engine::general_purpose::STANDARD
+                    .decode(data)
+                    .unwrap();
+                let picture = image::load_from_memory(&jpeg).unwrap();
+                let label = content[n - 1]["text"].as_str().unwrap();
+                let size = format!("({}×{} px)", picture.width(), picture.height());
+                assert!(label.contains(&size), "{label} for {size}");
+                pictures.push((data.len(), picture.height()));
+            }
+            (text, pictures)
+        }
+    };
+    let total = |pictures: &[(usize, u32)]| pictures.iter().map(|(len, _)| len).sum::<usize>();
+
+    // Three cards asked for: six such pictures don't fit, four do, made to.
+    let (text, pictures) = batch(json!({"session_id": session, "max": 3})).await;
+    assert_eq!(text["cards"].as_array().unwrap().len(), 2, "{text}");
+    assert_eq!(text["waiting"], 3);
+    assert_eq!(pictures.len(), 4);
+    assert!(total(&pictures) <= 750_000, "{pictures:?}");
+    assert!(pictures.iter().all(|(_, h)| *h >= 512), "{pictures:?}");
+    let first: Vec<i64> = text["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["itemId"].as_i64().unwrap())
+        .collect();
+
+    // One card at a time, the default: the same budget for two pictures, so they come larger or finer.
+    let (text, one) = batch(json!({"session_id": session})).await;
+    assert_eq!(text["cards"].as_array().unwrap().len(), 1);
+    assert_eq!(one.len(), 2);
+    assert!(total(&one) <= 750_000, "{one:?}");
+    assert!(one[0].0 > pictures[0].0, "{one:?} after {pictures:?}");
+
+    // The cards left out come once the first are answered.
+    let identified: Vec<Value> = first
+        .iter()
+        .map(|id| json!({"item_id": id, "name": "Demo Player"}))
+        .collect();
+    agent
+        .ok("identify_cards", json!({"cards": identified}))
+        .await;
+    let (text, rest) = batch(json!({"session_id": session, "max": 10})).await;
+    assert_eq!(text["cards"].as_array().unwrap().len(), 1, "{text}");
+    assert!(!first.contains(&text["cards"][0]["itemId"].as_i64().unwrap()));
+    assert_eq!(rest.len(), 2);
+
+    // A card looked at on its own fits too.
+    let (_, card) = batch(json!({"item_id": first[0]})).await;
+    assert_eq!(card.len(), 2);
+    assert!(total(&card) <= 750_000, "{card:?}");
+    state.runner.stop(&session).unwrap();
+
+    // Pictures that fit as they are aren't touched.
+    let plain = dir.path().join("plain");
+    std::fs::create_dir_all(&plain).unwrap();
+    for name in ["a", "b", "c", "d", "e", "f"] {
+        RgbImage::from_pixel(630, 880, Rgb([20, 90, 160]))
+            .save(plain.join(format!("{name}.png")))
+            .unwrap();
+    }
+    let created = agent
+        .ok(
+            "create_session",
+            json!({"path": plain.to_string_lossy(), "engine": "agent", "prices": "off"}),
+        )
+        .await;
+    let session = created["id"].as_str().unwrap().to_string();
+    let (waiting, _) = cards_from(&agent, "next_cards_to_identify", &session, 6).await;
+    assert_eq!(waiting.len(), 6);
+    let (_, pictures) = batch(json!({"session_id": session, "max": 10})).await;
+    assert_eq!(pictures.len(), 6);
+    assert!(pictures.iter().all(|(_, h)| *h == 880), "{pictures:?}");
+}
+
 /// An agent crops a session's cards: Cardloader hands each card over with its pictures and their size, the agent
 /// says where the card's corners are (looking at the cut first, if it likes), and Cardloader cuts the card out
 /// of its scan, straightened. Nothing calls Ximilar. An answer that can't be cut leaves the card waiting, a card

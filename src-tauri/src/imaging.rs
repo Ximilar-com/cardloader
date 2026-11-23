@@ -123,6 +123,37 @@ pub fn encode_sized(path: &Path, long_edge: u32, quality: u8) -> Result<(String,
     ))
 }
 
+/// The JPEG qualities a picture that must fit a size is tried at, best first. Below the last, print turns to
+/// blocks: a smaller picture reads better than a coarser one.
+const FITTING_QUALITIES: [u8; 3] = [85, 75, 65];
+/// A picture made to fit a size is never shrunk below this long edge (it is then sent over the size).
+const FITTING_MIN_EDGE: u32 = 512;
+
+/// [`encode_sized`] in at most `max_base64` characters: at a lower quality first, then smaller.
+pub fn encode_within(
+    path: &Path,
+    long_edge: u32,
+    max_base64: usize,
+) -> Result<(String, (u32, u32))> {
+    // Base64 writes three bytes as four characters.
+    let max_bytes = max_base64 / 4 * 3;
+    let mut img = fit_long_edge(&open(path)?, long_edge);
+    loop {
+        let mut jpeg = Vec::new();
+        for quality in FITTING_QUALITIES {
+            jpeg = jpeg_bytes(&img, quality)?;
+            if jpeg.len() <= max_bytes {
+                break;
+            }
+        }
+        let edge = img.width().max(img.height());
+        if jpeg.len() <= max_bytes || edge <= FITTING_MIN_EDGE {
+            return Ok((b64(&jpeg), (img.width(), img.height())));
+        }
+        img = fit_long_edge(&img, (edge * 85 / 100).max(FITTING_MIN_EDGE));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -140,6 +171,47 @@ mod tests {
         let preview = image::open(preview).unwrap();
         assert_eq!((thumb.width(), thumb.height()), (120, 240));
         assert_eq!((preview.width(), preview.height()), (800, 1600));
+    }
+
+    /// A picture that must fit a size keeps its size while a lower quality does it, and is shrunk only then.
+    #[test]
+    fn fits_a_picture_into_a_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("noise.png");
+        // Noise: what JPEG compresses worst.
+        let mut seed = 7u32;
+        RgbImage::from_fn(900, 1260, |_, _| {
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            Rgb([(seed >> 24) as u8, (seed >> 16) as u8, (seed >> 8) as u8])
+        })
+        .save(&src)
+        .unwrap();
+        let (full, size) = encode_sized(&src, 1024, 85).unwrap();
+        assert_eq!(size, (731, 1024));
+        // Room enough: the same picture.
+        let (same, same_size) = encode_within(&src, 1024, full.len()).unwrap();
+        assert_eq!((same.len(), same_size), (full.len(), size));
+        // A little less: coarser, as large.
+        let (coarser, coarser_size) = encode_within(&src, 1024, full.len() * 9 / 10).unwrap();
+        assert!(coarser.len() <= full.len() * 9 / 10);
+        assert_eq!(coarser_size, size);
+        // Much less: smaller too, and a readable JPEG.
+        let (small, (w, h)) = encode_within(&src, 1024, full.len() / 4).unwrap();
+        assert!(
+            small.len() <= full.len() / 4,
+            "{} of {}",
+            small.len(),
+            full.len()
+        );
+        assert!((FITTING_MIN_EDGE..1024).contains(&h), "{w}×{h}");
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&small)
+            .unwrap();
+        let decoded = image::load_from_memory(&bytes).unwrap();
+        assert_eq!((decoded.width(), decoded.height()), (w, h));
+        // Never below the smallest size, whatever is asked.
+        let (_, (_, h)) = encode_within(&src, 1024, 1000).unwrap();
+        assert_eq!(h, FITTING_MIN_EDGE);
     }
 
     #[test]
