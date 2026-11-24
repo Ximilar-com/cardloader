@@ -127,12 +127,12 @@ Download the installer for your platform:
 | Windows 10/11 | [Installer (.exe)][dl-exe] or [.msi][dl-msi] |
 | Linux | [.AppImage][dl-appimage], [.deb][dl-deb] or [.rpm][dl-rpm] |
 
-[dl-dmg]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.2/Cardloader_0.8.2_universal.dmg
-[dl-exe]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.2/Cardloader_0.8.2_x64-setup.exe
-[dl-msi]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.2/Cardloader_0.8.2_x64_en-US.msi
-[dl-appimage]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.2/Cardloader_0.8.2_amd64.AppImage
-[dl-deb]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.2/Cardloader_0.8.2_amd64.deb
-[dl-rpm]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.2/Cardloader-0.8.2-1.x86_64.rpm
+[dl-dmg]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.3/Cardloader_0.8.3_universal.dmg
+[dl-exe]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.3/Cardloader_0.8.3_x64-setup.exe
+[dl-msi]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.3/Cardloader_0.8.3_x64_en-US.msi
+[dl-appimage]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.3/Cardloader_0.8.3_amd64.AppImage
+[dl-deb]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.3/Cardloader_0.8.3_amd64.deb
+[dl-rpm]: https://github.com/Ximilar-com/cardloader/releases/download/v0.8.3/Cardloader-0.8.3-1.x86_64.rpm
 
 Release notes and earlier versions are on the [Releases](https://github.com/Ximilar-com/cardloader/releases) page.
 
