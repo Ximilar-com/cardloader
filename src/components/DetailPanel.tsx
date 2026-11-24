@@ -14,10 +14,13 @@ import {
   RotateCcw,
   RotateCw,
   Search,
+  Settings,
+  Tag,
   Trash2,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
 import { t, useT, type Key } from "../i18n";
 import { api, errorText, MAX_TITLE, type EbayMarket, type ItemEdit, type Json, type TitlePreview } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
@@ -102,7 +105,7 @@ export default function DetailPanel({
       live = false;
     };
   }, [listingId, listingRev]);
-  // A card that can't be listed (a comic) has no title to show or write.
+  // A card that can't be listed (one of no known type) has no title to show or write.
   const title = listing && titled?.itemId === listing.id && !titled.problem ? titled : null;
   // Only upside down is certain to be fixed by turning the picture half way.
   const canTurn = !!onTurn && view.rotation?.tag === "rotated_upside_down";
@@ -137,6 +140,26 @@ export default function DetailPanel({
       <div className="flex items-start gap-2 border-b border-slate-200 px-4 py-3 dark:border-slate-800">
         <div className="min-w-0 flex-1">
           <h2 className="selectable text-base leading-snug font-semibold">{view.title}</h2>
+          {title && (
+            <div className="mt-0.5">
+              {/* One flow of text, so the title wraps under the name's full width with its length after it. */}
+              <div className="text-sm break-words text-slate-600 dark:text-slate-300">
+                <Tag
+                  className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-slate-400"
+                  aria-label={t("titles.listingTitle")}
+                />
+                <span className="selectable" title={t("titles.listingTitle")}>
+                  {title.title}
+                </span>
+                {title.custom && <CustomTitleMark className="ml-1.5 align-[1px]" />}
+                <TitleCount text={title.title} className="ml-1.5" />
+                <TemplatesLink />
+              </div>
+              {!title.custom && title.leftOut.length > 0 && (
+                <div className="mt-0.5 text-xs text-slate-500">{leftOutText(title.leftOut)}</div>
+              )}
+            </div>
+          )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {view.status && <StatusChip status={view.status} cropping={cropping} />}
             {view.idType && <span className="text-[11px] font-medium text-slate-500 uppercase">{view.idType}</span>}
@@ -390,19 +413,6 @@ export default function DetailPanel({
                 <Field label={t("detail.card.location")} value={view.edit?.location} />
                 <Field label={t("detail.card.notes")} value={view.edit?.notes} />
               </dl>
-              {title && (
-                <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
-                  <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-500">
-                    <span className="flex-1">{t("titles.listingTitle")}</span>
-                    {title.custom && <CustomTitleMark />}
-                    <TitleCount text={title.title} />
-                  </div>
-                  <div className="selectable text-sm font-medium break-words">{title.title}</div>
-                  {!title.custom && title.leftOut.length > 0 && (
-                    <div className="mt-0.5 text-xs text-slate-500">{leftOutText(title.leftOut)}</div>
-                  )}
-                </div>
-              )}
             </Section>
           )
         )}
@@ -1149,5 +1159,21 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
       <div className="text-xl font-semibold tabular-nums">{value}</div>
       {sub && <div className="text-xs text-slate-500">{sub}</div>}
     </div>
+  );
+}
+
+/** Opens Settings › Selling at the listing title templates, which make the card's title. */
+function TemplatesLink() {
+  const t = useT();
+  const navigate = useNavigate();
+  return (
+    <button
+      className="ml-1 inline-flex rounded p-0.5 align-[-3px] text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+      onClick={() => navigate("/settings", { state: { section: "ebay", anchor: "titles" } })}
+      title={t("titles.openTemplates")}
+      aria-label={t("titles.openTemplates")}
+    >
+      <Settings className="h-3.5 w-3.5" />
+    </button>
   );
 }

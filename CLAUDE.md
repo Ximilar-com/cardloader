@@ -317,15 +317,24 @@ state from them.
   `session.agentPrompt.identifyPrice`, …, each ending "keep going until no card waits for you"): asked only to
   identify, Claude stopped with the cards waiting for its prices.
 - **Listing titles** (`ebay/title.rs`; eBay, Whatnot and Shopify share the title through `listing::plan(item,
-  titles)`): `settings.titles` are the user's templates (`TitleTemplate`: ordered `TitleField`s for a `kind` of
-  card and `only` graded ones or autographs, i.e. Features with a word starting "auto"), top-level because
-  `settings.ebay` belongs to the connection. The first template that is for a card and has something to say about
-  it makes its title, else `builtin(kind)`, the titles Cardloader always made. `compose` never cuts a title that
-  is too long: name, number and grade stay, the rest is taken while it fits by `BY_IMPORTANCE`, rendered in the
-  template's order (`clip_words` only when those three alone pass `MAX_TITLE`); a part another part says isn't
-  repeated (`CAN_REPEAT`, never the set or a number). A template's enums have `#[serde(other)] Unknown`:
-  `SettingsStore::load` reads a file that doesn't parse as no settings at all, so a value of a newer version must
-  parse. **A card's own title** is `items.title` (migration 014, NULL = automatic; `Listing::custom`), written by
+  titles)`): `settings.titles` are the user's templates (`TitleTemplate`: a `pattern` of `{part}`s and the user's
+  own words, `{name} {year} {set} Auto {printRun} #{number}`, for a `kind` of card (Any, Tcg, Sport, Comics) and
+  `only` graded ones, autographs (Features with a word starting "auto"), parallels (a serial, or a sports card
+  whose series isn't only its brand: `title::parallel`) or regular cards (none of those)), top-level because
+  `settings.ebay` belongs to the connection. The pattern is the template; `fields` (its known parts, in order) is
+  still written for older versions, and a template without a pattern is its `fields` (`title::pattern`, `Number` as
+  `#{number}`). Placeholders are `TitleField`'s serde names (`TitleField::key`), `{{x}}` reads as `{x}`; the editor
+  edits the same string as chips or as text (`src/lib/titlePattern.ts`, which `demo.ts` uses too). `compose` works
+  on the pattern's words (`Title`): a word with parts shows only while every part in it has text and is inside; one
+  with an unknown part never does; a part used twice shows once; the user's own words always stay, a word of them
+  without letters or digits (`|`, `-`) goes at the ends and next to another; `{printRun}` (`/99`, `1/1` stays) goes
+  when `{serial}` is in. The first template that is for a card and has a part to show makes its title, else the
+  built-in pattern of its `Kind` (`TCG`, `SPORT` with series, features and serial, `COMIC`). `compose` never cuts a
+  title that is too long: name, number, grade and the user's words stay, the rest is taken while it fits by
+  `BY_IMPORTANCE`, rendered in the pattern's order (`clip_words` only when those alone pass `MAX_TITLE`); a part
+  another part or the user's words say isn't repeated (`CAN_REPEAT`, never the set or a number). A template's enums
+  have `#[serde(other)] Unknown`: `SettingsStore::load` reads a file that doesn't parse as no settings at all, so a
+  value of a newer version must parse. **A card's own title** is `items.title` (migration 014, NULL = automatic; `Listing::custom`), written by
   the edit form, `edit_card` or a bulk change, at most 80 characters, dropped with `OTHER_CARD` by a new
   recognition or a pick but kept by a typed field; Shopify's grouped product takes `Listing::automatic`.
   **Details**: `brand`, `team`, `serial`, `features` are `CardFields` (same migration) that `Db::save_edit`
@@ -509,14 +518,23 @@ state from them.
   (`EbayAuth`). A card becomes an inventory item (SKU `cl-<session[..8]>-<event_id>`) plus an **unpublished offer =
   a draft**; publishing is a separate job. Bulk calls take ≤ 25 and answer per card (HTTP 207): a card's error stays
   on the card (`items.ebay_error`), login/network failures stop the job (`sessions.ebay_error`). TCG → 183454, sports
-  → 261328, comics not listed; graded only from a slab label (descriptors 27501/27502/27503), else ungraded with
-  40001 (value ids differ per category). Item specific names are not verified against eBay's taxonomy yet.
+  → 261328; graded only from a slab label (descriptors 27501/27502/27503), else ungraded with 40001 (value ids
+  differ per category). **Comics** (`Kind::Comic`: `id_type` comics, or subcategory "Comics" for a slab) → 259104
+  Comics & Graphic Novels (price searches stay in 63, `Kind::search_category`), with no descriptors (eBay documents
+  them for card categories only): the condition enum (raw by the dialog's condition, a slab by its grade) and item
+  specifics Series Title, Issue Number, Publisher, Publication Year (`listing::year_of`: a comic's "year" can be
+  "August 1976"), Era, and a slab's Professional Grader, Grade ("9.8 Near Mint/Mint") and Certification Number;
+  grades keep tenths (`comic_grade`: CGC 9.8 isn't 10). These come from eBay's pages and real listings, not its
+  documentation; `browse::tests::real_ebay_comics_category` (opt-in) prints what eBay says of 259104. Item
+  specific names are not verified against eBay's taxonomy yet.
   Marketplace: EBAY_US only (`listing::MARKETPLACES`). One eBay job per session (`Runner::ebay_start`).
 - **TCGplayer / Whatnot exports** (`market/`): TCGplayer gives no API to new apps and its "Import to Staged" CSV
   matches rows only by its SKU ids (product + condition + printing + language), which we don't have — so the
   TCGplayer export is a list for Seller Portal (product line, set, name, number, TCGplayer condition, price, and the
-  product id from Ximilar's `tcgplayer.com/product/{id}` link). Graded cards (Listings with Photos only) and sports
-  cards (no such line) are left out. Whatnot's CSV is its US template's 21 columns in order, with its exact category,
+  product id from Ximilar's `tcgplayer.com/product/{id}` link). Graded cards (Listings with Photos only), sports
+  cards and comics (no such line) are left out. Whatnot leaves comics out too (`whatnot::plan`: its comics
+  strings aren't known, and a wrong one refuses the row); Shopify lists them as Comic Book / Graded Comic of the
+  publisher in its Comic Books category, handled by publisher, title, issue and year. Whatnot's CSV is its US template's 21 columns in order, with its exact category,
   sub category and condition strings (the condition scale differs for sports singles); prices are whole dollars
   rounded up; no BOM (it would be read into the first header). Pictures must be public URLs: they go to ImgBB with the
   user's key (`Secret::ImgbbKey`) once per card (`items.hosted_images`). Cards whose condition Ximilar graded keep it
@@ -536,7 +554,8 @@ state from them.
 
 ## Not verified automatically
 
-Real Ximilar API calls, real eBay calls (use a sandbox keyset), real updates (need a published signed release), real scanners (SANE/TWAIN), signed release builds,
+Real Ximilar API calls, real eBay calls (use a sandbox keyset), whether eBay takes a comic's category 259104,
+conditions and item specifics (`real_ebay_comics_category` prints what it says), real updates (need a published signed release), real scanners (SANE/TWAIN), signed release builds,
 the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), how well a local model or an
 agent finds a card's corners (nothing measures the crops they give; the fake never runs the corners grammar), the
 `company`, `team` and `serial_number` keys of Ximilar's sports matches (seen in stored answers, in no documentation;

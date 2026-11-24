@@ -70,10 +70,22 @@ pub struct Options {
     pub upload_images: bool,
 }
 
-/// Whatnot's category and sub category for the card, or why it has none.
-pub fn category(item: &ItemSummary, kind: Kind) -> (&'static str, &'static str) {
+/// The card as eBay would list it, unless Whatnot's file can't take it: its comics categories and conditions
+/// aren't known here, and a row whose strings aren't the template's is refused.
+pub fn plan(item: &ItemSummary, titles: &[TitleTemplate]) -> Result<Listing, String> {
+    listing::plan(item, titles)
+        .map_err(|why| why.replace("on eBay ", "on Whatnot "))
+        .and_then(|p| match p.kind {
+            Kind::Comic => Err("Whatnot's comics categories aren't known yet".into()),
+            _ => Ok(p),
+        })
+}
+
+/// Whatnot's category and sub category for the card; none for a comic (see `plan`).
+pub fn category(item: &ItemSummary, kind: Kind) -> Option<(&'static str, &'static str)> {
     let game = item.card.subcategory.as_str();
-    match kind {
+    Some(match kind {
+        Kind::Comic => return None,
         Kind::Sport => (
             "Sports Cards",
             match game {
@@ -108,12 +120,13 @@ pub fn category(item: &ItemSummary, kind: Kind) -> (&'static str, &'static str) 
                 },
             ),
         },
-    }
+    })
 }
 
-/// Whatnot's condition: "Graded" for slabs; raw cards on the sub category's own scale.
-pub fn condition(kind: Kind, graded: bool, raw: CardCondition) -> &'static str {
-    match (graded, kind, raw) {
+/// Whatnot's condition: "Graded" for slabs; raw cards on the sub category's own scale; none for a comic.
+pub fn condition(kind: Kind, graded: bool, raw: CardCondition) -> Option<&'static str> {
+    Some(match (graded, kind, raw) {
+        (_, Kind::Comic, _) => return None,
         (true, _, _) => "Graded",
         (false, Kind::Sport, CardCondition::NearMint) => "Raw - Near Mint or Better",
         (false, Kind::Sport, CardCondition::Excellent) => "Raw - Excellent",
@@ -123,7 +136,7 @@ pub fn condition(kind: Kind, graded: bool, raw: CardCondition) -> &'static str {
         (false, Kind::Tcg, CardCondition::Excellent) => "Light Played",
         (false, Kind::Tcg, CardCondition::VeryGood) => "Moderately Played",
         (false, Kind::Tcg, CardCondition::Poor) => "Heavily Played",
-    }
+    })
 }
 
 /// Whole dollars, rounded up (Whatnot's import takes no cents).
@@ -159,14 +172,17 @@ pub fn description(item: &ItemSummary, plan: &Listing) -> String {
 
 /// `grading`: the card's grading record, which names the scale of its condition.
 pub fn preview(item: &ItemSummary, grading: Option<&Value>, titles: &[TitleTemplate]) -> Preview {
-    let plan = listing::plan(item, titles);
+    let plan = plan(item, titles);
     let (custom_title, left_out) = Preview::titled(&plan);
     let (category, condition) = match &plan {
         Ok(p) => {
-            let (category, sub) = category(item, p.kind);
+            let (category, sub) = category(item, p.kind).unwrap_or_default();
             let condition = match graded_condition(item, grading) {
                 Some(g) if p.graded.is_none() => {
-                    format!("{} (from grading)", condition(p.kind, false, g))
+                    format!(
+                        "{} (from grading)",
+                        condition(p.kind, false, g).unwrap_or_default()
+                    )
                 }
                 _ => p.condition_label(),
             };
@@ -204,7 +220,7 @@ pub fn row(
     images: &[String],
 ) -> Vec<String> {
     let s = &item.summary;
-    let (category, sub) = category(s, plan.kind);
+    let (category, sub) = category(s, plan.kind).unwrap_or_default();
     let raw = graded_condition(s, item.grading.as_ref()).unwrap_or(options.condition);
     let offerable = options.offerable && options.listing_type == ListingType::BuyItNow;
     let mut row = vec![
@@ -218,7 +234,9 @@ pub fn row(
         options.shipping_profile.clone(),
         if offerable { "TRUE" } else { "FALSE" }.into(),
         "Not Hazmat".into(),
-        condition(plan.kind, plan.graded.is_some(), raw).into(),
+        condition(plan.kind, plan.graded.is_some(), raw)
+            .unwrap_or_default()
+            .into(),
         String::new(),
         listing::sku(&s.session_id, &item.event_id),
     ];
@@ -255,11 +273,11 @@ pub async fn export(
             return Err(ApiError::Cancelled.into());
         }
         let item = runner.db.item(priced.item_id)?;
-        match listing::plan(&item.summary, &titles) {
+        match plan(&item.summary, &titles) {
             Ok(_) if !(priced.price.is_finite() && priced.price > 0.0) => {
                 skip(&mut export, &item, "no price")
             }
-            Err(why) => skip(&mut export, &item, &why.replace("on eBay ", "on Whatnot ")),
+            Err(why) => skip(&mut export, &item, &why),
             Ok(plan) => {
                 let images = hosting.urls(runner, &item, cancel).await?;
                 if images.is_empty() {
@@ -352,6 +370,15 @@ mod tests {
     }
 
     #[test]
+    fn comics_are_left_out() {
+        let comic = item("comics", "Comics");
+        let why = plan(&comic.summary, &[]).unwrap_err();
+        assert!(why.contains("comics"), "{why}");
+        assert_eq!(preview(&comic.summary, None, &[]).problem, Some(why));
+        assert_eq!(condition(Kind::Comic, true, CardCondition::NearMint), None);
+    }
+
+    #[test]
     fn slabs_are_graded_and_sports_raw_cards_use_their_scale() {
         let mut slab = item("sport", "Baseball");
         slab.summary.slab = Some(SlabLabel {
@@ -373,11 +400,11 @@ mod tests {
         assert!(row[3].contains("Graded: PSA 10, certificate 87654321"));
         assert_eq!(
             condition(Kind::Sport, false, CardCondition::NearMint),
-            "Raw - Near Mint or Better"
+            Some("Raw - Near Mint or Better")
         );
         assert_eq!(
             category(&item("tcg", "Garbage Pail Kids").summary, Kind::Tcg),
-            ("Entertainment Cards", "Garbage Pail Kids")
+            Some(("Entertainment Cards", "Garbage Pail Kids"))
         );
         assert_eq!(whole_dollars(0.2), 1);
     }

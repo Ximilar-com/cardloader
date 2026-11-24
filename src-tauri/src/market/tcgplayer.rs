@@ -60,6 +60,7 @@ pub fn problem(item: &ItemSummary) -> Option<String> {
     match listing::kind(item) {
         Ok(Kind::Tcg) => {}
         Ok(Kind::Sport) => return Some("TCGplayer doesn't sell sports cards".into()),
+        Ok(Kind::Comic) => return Some("TCGplayer doesn't sell comics".into()),
         Err(why) => return Some(why.replace("eBay", "TCGplayer")),
     }
     slabbed(item)
@@ -172,6 +173,7 @@ mod tests {
             certificate: String::new(),
         });
         let sport = item("sport", "Baseball");
+        let comic = item("comics", "Comics");
         let priced = |id| PricedItem {
             item_id: id,
             price: 0.234,
@@ -182,6 +184,7 @@ mod tests {
                 (played, priced(1)),
                 (slab, priced(1)),
                 (sport, priced(1)),
+                (comic, priced(1)),
             ],
             CardCondition::VeryGood,
         );
@@ -193,9 +196,10 @@ mod tests {
         );
         assert!(lines[2].starts_with("Pokemon,Guilds of Ravnica,Leapfrog,42,Lightly Played,"));
         assert_eq!(export.rows, 2);
-        assert_eq!(export.skipped.len(), 2);
+        assert_eq!(export.skipped.len(), 3);
         assert!(export.skipped[0].reason.contains("Listings with Photos"));
         assert!(export.skipped[1].reason.contains("sports"));
+        assert!(export.skipped[2].reason.contains("comics"));
     }
 
     /// Cardmarket's "Light Played" is below its "Good": a card graded so is Moderately Played. Elsewhere (Whatnot's

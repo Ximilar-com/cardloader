@@ -121,8 +121,11 @@ export default function SettingsPage() {
   const models = useModels();
   const updateAvailable = useUpdate((s) => (s.status === "available" ? s.info?.version : null));
   const showSetup = useSetupWizard((s) => s.show);
-  // Another page can open Settings at a tab: navigate("/settings", { state: { section } }).
-  const section = (useLocation().state as { section?: Tab } | null)?.section;
+  // Another page can open Settings at a tab, and scroll to a part of it: navigate("/settings", { state: { section,
+  // anchor } }).
+  const opened = useLocation().state as { section?: Tab; anchor?: string } | null;
+  const section = opened?.section;
+  const anchor = opened?.anchor;
   const [tab, setTab] = useState<Tab>(() => reopenTab ?? section ?? "ximilar");
   useEffect(() => {
     reopenTab = null;
@@ -133,6 +136,16 @@ export default function SettingsPage() {
   useEffect(() => {
     if (loaded && section === "ximilar") tokenInput.current?.focus();
   }, [loaded, section]);
+
+  useEffect(() => {
+    if (!loaded || !anchor) return;
+    // The sections above it fill in as they load (the eBay account, its policies): scroll once they have.
+    const timer = setTimeout(
+      () => document.getElementById(anchor)?.scrollIntoView({ block: "start", behavior: "smooth" }),
+      400,
+    );
+    return () => clearTimeout(timer);
+  }, [loaded, anchor]);
 
   useEffect(() => {
     api.getSettings().then((v) => {
@@ -572,7 +585,11 @@ export default function SettingsPage() {
             {tab === "ebay" && (
               <>
                 <EbayTab view={view} draft={draft} setEbay={setEbay} applyView={applyView} setError={setError} />
-                <Section title={t("titles.section.title")} text={t("titles.section.text", { max: MAX_TITLE })}>
+                <Section
+                  id="titles"
+                  title={t("titles.section.title")}
+                  text={t("titles.section.text", { max: MAX_TITLE })}
+                >
                   <TitleTemplates templates={draft.titles ?? []} onChange={(titles) => set("titles", titles)} />
                 </Section>
               </>
@@ -1598,11 +1615,14 @@ function EbayTab({
 }
 
 function Section({
+  id,
   title,
   text,
   done,
   children,
 }: {
+  /** Where another page can scroll to (`anchor`). */
+  id?: string;
   title: string;
   text?: ReactNode;
   /** Shows a green check next to the title. */
@@ -1611,7 +1631,7 @@ function Section({
 }) {
   const t = useT();
   return (
-    <section className="card space-y-4 p-5">
+    <section id={id} className="card scroll-mt-4 space-y-4 p-5">
       <div>
         <h2 className="flex items-center gap-1.5 text-base font-semibold">
           {title}

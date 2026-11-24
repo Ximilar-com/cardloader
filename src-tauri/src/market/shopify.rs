@@ -71,6 +71,7 @@ pub const INVENTORY_HEADER: &[&str] = &[
 
 const CATEGORY_ROOT: &str =
     "Arts & Entertainment > Hobbies & Creative Arts > Collectibles > Collectible Trading Cards";
+const COMICS: &str = "Arts & Entertainment > Hobbies & Creative Arts > Collectibles > Comic Books";
 const MAX_HANDLE: usize = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, schemars::JsonSchema)]
@@ -110,6 +111,7 @@ pub struct Options {
 /// Shopify's category for the card (its product taxonomy).
 pub fn category(item: &ItemSummary, kind: Kind) -> String {
     let leaf = match (kind, item.card.subcategory.as_str()) {
+        (Kind::Comic, _) => return COMICS.to_string(),
         (Kind::Sport, _) => "Sports Trading Cards",
         (Kind::Tcg, "Garbage Pail Kids" | "Marvel Universe") => "Entertainment Cards",
         (Kind::Tcg, _) => "Gaming Cards",
@@ -128,6 +130,10 @@ pub fn condition_name(kind: Kind, condition: CardCondition) -> &'static str {
         (Kind::Sport, CardCondition::Excellent) => "Excellent",
         (Kind::Sport, CardCondition::VeryGood) => "Very Good",
         (Kind::Sport, CardCondition::Poor) => "Poor",
+        (Kind::Comic, CardCondition::NearMint) => "Near Mint",
+        (Kind::Comic, CardCondition::Excellent) => "Very Fine",
+        (Kind::Comic, CardCondition::VeryGood) => "Very Good",
+        (Kind::Comic, CardCondition::Poor) => "Poor",
     }
 }
 
@@ -219,8 +225,20 @@ pub fn products(cards: &[Card], grouping: Grouping) -> Vec<Product> {
         let c = &s.card;
         let graded = card.plan.graded.is_some();
         let own = graded || grouping == Grouping::PerCard;
-        // Ungraded copies of a card share a product (and its handle) across sessions.
-        let base = handle(&[&c.subcategory, &c.set_name, &c.name, &c.card_number]);
+        let comic = card.plan.kind == Kind::Comic;
+        // Ungraded copies of a card share a product (and its handle) across sessions. A comic's year tells an
+        // issue from its reprint.
+        let base = if comic {
+            handle(&[
+                "Comics",
+                &c.set_name,
+                &c.name,
+                &c.card_number,
+                &listing::year_of(&c.year),
+            ])
+        } else {
+            handle(&[&c.subcategory, &c.set_name, &c.name, &c.card_number])
+        };
         let handle = match &card.plan.graded {
             Some(g) => {
                 let id = if g.certificate.is_empty() {
@@ -264,9 +282,16 @@ pub fn products(cards: &[Card], grouping: Grouping) -> Vec<Product> {
                     handle: handle.clone(),
                     title,
                     description: listing::description(s, &card.plan),
-                    vendor: c.subcategory.clone(),
+                    // A comic's publisher made it; a card is sold by its game or sport.
+                    vendor: if comic && !c.set_name.trim().is_empty() {
+                        c.set_name.clone()
+                    } else {
+                        c.subcategory.clone()
+                    },
                     category: category(s, card.plan.kind),
                     product_type: match (graded, card.plan.kind) {
+                        (true, Kind::Comic) => "Graded Comic",
+                        (false, Kind::Comic) => "Comic Book",
                         (true, _) => "Graded Card",
                         (false, Kind::Sport) => "Sports Card",
                         (false, Kind::Tcg) => "Trading Card",
@@ -667,6 +692,30 @@ mod tests {
             (&rows[2][2], &rows[2][3], &rows[2][18]),
             ("Title", "Default Title", "1")
         );
+    }
+
+    #[test]
+    fn a_comic_is_a_comic_book_of_its_publisher() {
+        let mut comic = card("e", CardCondition::Excellent, 40.0, None);
+        comic.item.summary.id_type = Some("comics".into());
+        comic.item.summary.card = crate::model::CardFields {
+            name: "Amazing Spider-Man".into(),
+            set_name: "Marvel".into(),
+            card_number: "300".into(),
+            year: "May 1988".into(),
+            subcategory: "Comics".into(),
+            ..Default::default()
+        };
+        comic.plan = listing::plan(&comic.item.summary, &[]).unwrap();
+        let products = products(&[comic], Grouping::ByCard);
+        let p = &products[0];
+        assert_eq!(p.handle, "comics-marvel-amazing-spider-man-300-1988");
+        assert_eq!(
+            (p.vendor.as_str(), p.product_type, p.category.as_str()),
+            ("Marvel", "Comic Book", COMICS)
+        );
+        assert_eq!(p.title, "Amazing Spider-Man #300 1988 Marvel");
+        assert_eq!(p.variants[0].condition, Some("Very Fine"));
     }
 
     #[test]

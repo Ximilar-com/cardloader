@@ -25,6 +25,7 @@ import { MAX_TITLE } from "./api";
 import { matchOf, needsReview, representativePrice, rotationOf, tier } from "./cardview";
 import { EBAY_SITES } from "./ebaySites";
 import { addMoney } from "./format";
+import { patternOf, piecesOf, wordsOf } from "./titlePattern";
 
 const CARDS = [
   ["Charizard ex", "Obsidian Flames", "OBF", "125", "2023", "Pokemon", 0.12, 24.99, 9.0, "Mint", "#f97316"],
@@ -1051,6 +1052,7 @@ async function compareDemo(sessionId: string, runId: string, modelId: string) {
 /** What a title that is too long does without, what it needs most first (`ebay/title.rs`). */
 const TITLE_IMPORTANCE: TitleField[] = [
   "serial",
+  "printRun",
   "features",
   "series",
   "set",
@@ -1061,52 +1063,94 @@ const TITLE_IMPORTANCE: TitleField[] = [
   "team",
 ];
 const TITLE_KEPT: TitleField[] = ["name", "number", "grade"];
+const TITLE_BUILTIN = {
+  tcg: "{year} {game} {set} {name} #{number} {grade}",
+  sport: "{year} {set} {name} {series} {features} {serial} #{number} {grade}",
+  comics: "{name} #{number} {year} {set} {grade}",
+};
+
+/** The card's kind as listings type it (`listing::Kind::of`), roughly. */
+function kindOf(i: ItemSummary): "tcg" | "sport" | "comics" {
+  return i.idType === "sport" || i.idType === "comics" ? i.idType : i.subcategory === "Comics" ? "comics" : "tcg";
+}
 
 /** Roughly the Rust title: the first template for the card, fitted into `room` by leaving out what matters least. */
 function composeTitle(i: ItemSummary, templates: TitleTemplate[], room = MAX_TITLE) {
-  const sport = i.idType === "sport";
+  const kind = kindOf(i);
+  const series = kind !== "comics" && i.series.toLowerCase() !== i.brand.toLowerCase() ? i.series : "";
+  const run = i.serial.split("/");
   const text: Record<TitleField, string> = {
-    year: i.year,
-    game: i.subcategory,
+    year: kind === "comics" ? (i.year.match(/\d{4}/)?.[0] ?? i.year) : i.year,
+    game: kind === "comics" ? "" : i.subcategory,
     brand: i.brand,
     set: i.setName,
     setCode: i.setCode,
     name: i.name,
-    series: i.series,
+    series,
     features: i.features,
     serial: i.serial,
-    number: i.cardNumber ? `#${i.cardNumber}` : "",
+    printRun: run.length > 1 && run.at(-1) ? (run.at(-1) === "1" ? "1/1" : `/${run.at(-1)}`) : i.serial,
+    number: i.cardNumber.replace(/^#/, ""),
     team: i.team,
     grade: i.slab ? `${i.slab.company} ${i.slab.grade}` : "",
   };
-  const own = templates.find(
-    (t) =>
-      (t.kind === "any" || t.kind === (sport ? "sport" : "tcg")) &&
-      (t.only === "any" || (t.only === "graded" ? !!i.slab : /(^|\W)auto/i.test(i.features))) &&
-      t.fields.some((f) => text[f]),
-  );
-  const builtin: TitleField[] = sport
-    ? ["year", "set", "name", "number", "grade"]
-    : ["year", "game", "set", "name", "number", "grade"];
-  const words = (f: TitleField) =>
-    text[f]
+  const auto = /(^|\W)auto/i.test(i.features);
+  const parallel = !!i.serial || (kind === "sport" && !!series);
+  const only: Record<TitleTemplate["only"], boolean> = {
+    any: true,
+    graded: !!i.slab,
+    autograph: auto,
+    parallel,
+    regular: !i.slab && !auto && !parallel,
+  };
+  const words = (t: string) =>
+    t
       .toLowerCase()
       .split(/[^\p{L}\p{N}]+/u)
       .filter(Boolean);
   const says: TitleField[] = ["game", "brand", "set", "series", "name", "team", "features"];
-  let parts = (own?.fields ?? builtin).filter((f) => text[f]);
-  // A part another one already says ("Topps" in "Topps Chrome") isn't repeated; the least important goes first.
-  for (const f of [...TITLE_IMPORTANCE].reverse()) {
-    if (f === "set" || f === "serial" || !parts.includes(f)) continue;
-    const said = parts.some((o) => o !== f && says.includes(o) && words(f).every((w) => words(o).includes(w)));
-    if (said) parts = parts.filter((p) => p !== f);
-  }
+  /** The pattern's words for this card, and the parts that show. */
+  const read = (pattern: string) => {
+    const seen = new Set<TitleField>();
+    const out = wordsOf(pattern).map((word) => {
+      const pieces = piecesOf(word);
+      const fields = pieces.flatMap((p) => ("field" in p && p.field ? [p.field] : []));
+      const hidden = pieces.some((p) => "field" in p && (!p.field || !text[p.field] || seen.has(p.field)));
+      fields.forEach((f) => seen.add(f));
+      const shown = pieces.map((p) => ("text" in p ? p.text : p.field ? text[p.field] : "")).join("");
+      return { text: shown, fields, hidden };
+    });
+    let parts = [...new Set(out.filter((w) => !w.hidden).flatMap((w) => w.fields))];
+    if (parts.includes("serial")) parts = parts.filter((f) => f !== "printRun");
+    const own = out.filter((w) => !w.fields.length).flatMap((w) => words(w.text));
+    // A part another one already says ("Topps" in "Topps Chrome") isn't repeated; the least important goes first.
+    for (const f of [...TITLE_IMPORTANCE].reverse()) {
+      if (f === "set" || f === "serial" || f === "printRun" || !parts.includes(f)) continue;
+      const mine = words(text[f]);
+      const said =
+        mine.every((w) => own.includes(w)) ||
+        parts.some((o) => o !== f && says.includes(o) && mine.every((w) => words(text[o]).includes(w)));
+      if (said && mine.length) parts = parts.filter((p) => p !== f);
+    }
+    return { words: out.map((w) => ({ ...w, hidden: w.hidden || w.fields.some((f) => !parts.includes(f)) })), parts };
+  };
+  const own = templates
+    .filter((t) => (t.kind === "any" || t.kind === kind) && only[t.only])
+    .map((t) => ({ t, title: read(patternOf(t)) }))
+    .find(({ title }) => title.words.some((w) => w.fields.length && !w.hidden));
+  const { words: shown, parts } = own?.title ?? read(TITLE_BUILTIN[kind]);
+  const separator = (w: { text: string; fields: TitleField[] }) => !w.fields.length && !/[\p{L}\p{N}]/u.test(w.text);
   const inside = new Set(parts.filter((f) => TITLE_KEPT.includes(f)));
-  const join = () =>
-    parts
-      .filter((f) => inside.has(f))
-      .map((f) => text[f])
-      .join(" ");
+  const join = () => {
+    const out: typeof shown = [];
+    for (const w of shown) {
+      if (w.hidden || !w.text || !w.fields.every((f) => inside.has(f))) continue;
+      if (separator(w) && (!out.length || separator(out[out.length - 1]))) continue;
+      out.push(w);
+    }
+    while (out.length && separator(out[out.length - 1])) out.pop();
+    return out.map((w) => w.text).join(" ");
+  };
   for (const f of TITLE_IMPORTANCE) {
     if (!parts.includes(f)) continue;
     inside.add(f);
@@ -1114,7 +1158,7 @@ function composeTitle(i: ItemSummary, templates: TitleTemplate[], room = MAX_TIT
   }
   return {
     text: [...join()].slice(0, room).join(""),
-    template: own?.name ?? "",
+    template: own?.t.name ?? "",
     leftOut: parts.filter((f) => !inside.has(f)),
   };
 }
@@ -1208,7 +1252,9 @@ function ebayPreview(i: ItemDetail): EbayPreview {
     title: ebayTitle(i),
     customTitle: !!i.title,
     leftOut: i.title ? [] : composeTitle(i, settings.titles).leftOut,
-    category: i.idType === "sport" ? "Sports Trading Card Singles" : "CCG Individual Cards",
+    category: { sport: "Sports Trading Card Singles", tcg: "CCG Individual Cards", comics: "Comics & Graphic Novels" }[
+      kindOf(i)
+    ],
     condition: i.slab ? `Graded · ${i.slab.company} ${i.slab.grade}` : "Ungraded",
     price,
     ebay: i.ebay,
@@ -1250,7 +1296,8 @@ const ebayJobs = new Map<string, EbayProgress>();
 /** What the Rust previews say for each format, roughly. */
 function exportPreview(i: ItemDetail, format: string): EbayPreview {
   const p = ebayPreview(i);
-  const sport = i.idType === "sport";
+  const kind = kindOf(i);
+  const sport = kind === "sport";
   if (format === "tcgplayer") {
     return {
       ...p,
@@ -1262,13 +1309,25 @@ function exportPreview(i: ItemDetail, format: string): EbayPreview {
       condition: i.condition ? `${i.condition} (from grading)` : "Ungraded",
       problem: sport
         ? "TCGplayer doesn't sell sports cards"
-        : i.slab
-          ? "graded cards are sold as Listings with Photos on TCGplayer, one by one"
-          : null,
+        : kind === "comics"
+          ? "TCGplayer doesn't sell comics"
+          : i.slab
+            ? "graded cards are sold as Listings with Photos on TCGplayer, one by one"
+            : null,
     };
   }
   if (format === "shopify") {
-    return { ...p, ebay: null, category: sport ? "Sports Trading Cards" : "Gaming Cards" };
+    const category = { sport: "Sports Trading Cards", tcg: "Gaming Cards", comics: "Comic Books" }[kind];
+    return { ...p, ebay: null, category };
+  }
+  if (kind === "comics") {
+    return {
+      ...p,
+      ebay: null,
+      category: null,
+      condition: null,
+      problem: "Whatnot's comics categories aren't known yet",
+    };
   }
   const sub = sport ? `Sports Cards › ${i.subcategory} Singles` : `Trading Card Games › ${i.subcategory} Cards`;
   return { ...p, ebay: null, category: sub, price: p.price == null ? null : Math.ceil(p.price) };

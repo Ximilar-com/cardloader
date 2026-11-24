@@ -506,7 +506,7 @@ mod tests {
                 "fields": ["name", "hologram", "serial", "name"], "pinned": ["name"]}]}"#,
         )
         .unwrap();
-        let store = SettingsStore::load(path);
+        let store = SettingsStore::load(path.clone());
         assert_eq!(store.get().concurrency, 2);
         let read = store.get().titles;
         assert_eq!(
@@ -517,6 +517,21 @@ mod tests {
         let stored = &store.get().titles[0];
         assert_eq!(stored.name, "Mine");
         assert_eq!(stored.fields, vec![TitleField::Name, TitleField::Serial]);
+        assert_eq!(stored.pattern, "{name} {serial}");
+
+        // A pattern of a newer version's parts, and a kind this one knows since comics have titles.
+        std::fs::write(
+            &path,
+            r#"{"titles": [{"name": "Comics", "kind": "comics", "only": "regular",
+                "pattern": "{name} #{number} {hologram} Auto"}]}"#,
+        )
+        .unwrap();
+        let read = SettingsStore::load(path).get().titles;
+        assert_eq!(
+            (read[0].kind, read[0].only),
+            (TitleKind::Comics, TitleOnly::Regular)
+        );
+        assert_eq!(read[0].pattern, "{name} #{number} {hologram} Auto");
     }
 
     #[test]

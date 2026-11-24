@@ -4,6 +4,7 @@
 import clsx from "clsx";
 import { t, useT } from "../i18n";
 import { MAX_TITLE, type TitleField } from "../lib/api";
+import { TITLE_FIELDS } from "../lib/titlePattern";
 
 /** Characters as eBay counts them: an emoji or an accented letter is one. */
 export function titleLength(text: string): number {
@@ -30,11 +31,14 @@ export function TitleCount({ text, className }: { text: string; className?: stri
 }
 
 /** Marks a title written for the card: templates don't change it. */
-export function CustomTitleMark() {
+export function CustomTitleMark({ className }: { className?: string }) {
   const t = useT();
   return (
     <span
-      className="shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+      className={clsx(
+        "shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+        className,
+      )}
       title={t("titles.customHint")}
     >
       {t("titles.custom")}
@@ -42,20 +46,7 @@ export function CustomTitleMark() {
   );
 }
 
-export const TITLE_FIELDS: TitleField[] = [
-  "year",
-  "brand",
-  "set",
-  "name",
-  "series",
-  "features",
-  "serial",
-  "number",
-  "team",
-  "grade",
-  "game",
-  "setCode",
-];
+export { TITLE_FIELDS };
 
 export function titleFieldLabel(field: TitleField): string {
   return t(`titles.field.${field}`);

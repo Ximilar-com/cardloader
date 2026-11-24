@@ -2,8 +2,8 @@
 //! title, item specifics, and the inventory item and offer the Inventory API takes.
 //!
 //! Trading cards go to CCG Individual Cards (183454), sports cards to Sports Trading Card Singles
-//! (261328); comics aren't listed yet. A card is "Graded" only when it is in a slab whose label was read —
-//! Ximilar's own grade estimates a condition, it isn't a professional grade.
+//! (261328), comics to Comics & Graphic Novels (259104). A card is "Graded" only when it is in a slab whose label
+//! was read — Ximilar's own grade estimates a condition, it isn't a professional grade.
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -64,13 +64,45 @@ pub fn setup_missing(cfg: &EbaySettings) -> Option<&'static str> {
 pub enum Kind {
     Tcg,
     Sport,
+    /// A single comic issue.
+    Comic,
 }
 
 impl Kind {
+    /// By the card's type as identified, else by its game or sport: a slab's label names neither category.
+    pub fn of(item: &ItemSummary) -> Option<Kind> {
+        match item.id_type.as_deref() {
+            Some("tcg") => return Some(Kind::Tcg),
+            Some("sport") => return Some(Kind::Sport),
+            Some("comics") => return Some(Kind::Comic),
+            _ => {}
+        }
+        let sub = item.card.subcategory.as_str();
+        if TCG_GAMES.iter().any(|g| g.eq_ignore_ascii_case(sub)) {
+            Some(Kind::Tcg)
+        } else if SPORTS.iter().any(|s| s.eq_ignore_ascii_case(sub)) {
+            Some(Kind::Sport)
+        } else if sub.eq_ignore_ascii_case("comics") {
+            Some(Kind::Comic)
+        } else {
+            None
+        }
+    }
+
+    /// EBAY_US's category a listing goes in.
     pub fn category(self) -> &'static str {
         match self {
             Kind::Tcg => "183454",
             Kind::Sport => "261328",
+            Kind::Comic => "259104",
+        }
+    }
+
+    /// EBAY_US's category a price search looks in: comics in all of Comic Books & Memorabilia.
+    pub fn search_category(self) -> &'static str {
+        match self {
+            Kind::Comic => "63",
+            kind => kind.category(),
         }
     }
 
@@ -78,12 +110,14 @@ impl Kind {
         match self {
             Kind::Tcg => "CCG Individual Cards",
             Kind::Sport => "Sports Trading Card Singles",
+            Kind::Comic => "Comics & Graphic Novels",
         }
     }
 
-    /// Descriptor 40001 (Card Condition): the value ids differ between the two categories.
-    fn condition_value(self, condition: CardCondition) -> &'static str {
-        match (self, condition) {
+    /// Descriptor 40001 (Card Condition): the value ids differ between the two card categories; comics have none.
+    fn condition_value(self, condition: CardCondition) -> Option<&'static str> {
+        Some(match (self, condition) {
+            (Kind::Comic, _) => return None,
             (_, CardCondition::NearMint) => "400010",
             (Kind::Tcg, CardCondition::Excellent) => "400015",
             (Kind::Tcg, CardCondition::VeryGood) => "400016",
@@ -91,7 +125,7 @@ impl Kind {
             (Kind::Sport, CardCondition::Excellent) => "400011",
             (Kind::Sport, CardCondition::VeryGood) => "400012",
             (Kind::Sport, CardCondition::Poor) => "400013",
-        }
+        })
     }
 }
 
@@ -188,46 +222,9 @@ pub fn plan(item: &ItemSummary, titles: &[TitleTemplate]) -> Result<Listing, Str
 }
 
 pub fn kind(item: &ItemSummary) -> Result<Kind, String> {
-    match Collectible::of(item) {
-        Some(Collectible::Card(kind)) => Ok(kind),
-        Some(Collectible::Comic) => Err("comics can't be listed on eBay yet".into()),
-        None => Err("unknown card type (only trading and sports cards are listed)".into()),
-    }
-}
-
-/// What an identified card is to eBay: listing and searching (`browse`) type it the same way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Collectible {
-    Card(Kind),
-    Comic,
-}
-
-impl Collectible {
-    /// By the card's type as identified, else by its game or sport: a slab's label names neither category.
-    pub fn of(item: &ItemSummary) -> Option<Self> {
-        match item.id_type.as_deref() {
-            Some("tcg") => return Some(Collectible::Card(Kind::Tcg)),
-            Some("sport") => return Some(Collectible::Card(Kind::Sport)),
-            Some("comics") => return Some(Collectible::Comic),
-            _ => {}
-        }
-        let sub = item.card.subcategory.as_str();
-        if TCG_GAMES.iter().any(|g| g.eq_ignore_ascii_case(sub)) {
-            Some(Collectible::Card(Kind::Tcg))
-        } else if SPORTS.iter().any(|s| s.eq_ignore_ascii_case(sub)) {
-            Some(Collectible::Card(Kind::Sport))
-        } else {
-            None
-        }
-    }
-
-    /// EBAY_US's category: the cards' own, or Comic Books & Memorabilia.
-    pub fn category(self) -> &'static str {
-        match self {
-            Collectible::Card(kind) => kind.category(),
-            Collectible::Comic => "63",
-        }
-    }
+    Kind::of(item).ok_or_else(|| {
+        "unknown card type (only trading cards, sports cards and comics are listed)".into()
+    })
 }
 
 fn graded(item: &ItemSummary, kind: Kind) -> Result<Option<Graded>, String> {
@@ -252,9 +249,29 @@ fn graded(item: &ItemSummary, kind: Kind) -> Result<Option<Graded>, String> {
     } else {
         company
     };
+    let grader = if company.is_empty() {
+        "Graded".to_string()
+    } else {
+        company.clone()
+    };
+    let certificate: String = slab.certificate.trim().chars().take(MAX_CERT).collect();
+    // A comic's grade goes in item specifics, not descriptors, and keeps its tenths: CGC 9.8 is no 10.
+    if kind == Kind::Comic {
+        let Some(grade) = comic_grade(&slab.grade) else {
+            return Err("the slab's grade couldn't be read".into());
+        };
+        return Ok(Some(Graded {
+            grader,
+            grader_id: "",
+            grade: format_grade(grade),
+            grade_id: String::new(),
+            certificate,
+        }));
+    }
     let only_elsewhere = match kind {
         Kind::Tcg => SPORTS_ONLY_GRADERS.contains(&company.as_str()),
         Kind::Sport => TCG_ONLY_GRADERS.contains(&company.as_str()),
+        Kind::Comic => false,
     };
     let grader_id = GRADERS
         .iter()
@@ -273,26 +290,31 @@ fn graded(item: &ItemSummary, kind: Kind) -> Result<Option<Graded>, String> {
         None => return Err("the slab's grade couldn't be read".into()),
     };
     Ok(Some(Graded {
-        grader: if company.is_empty() {
-            "Graded".into()
-        } else {
-            company
-        },
+        grader,
         grader_id,
         grade,
         grade_id,
-        certificate: slab.certificate.trim().chars().take(MAX_CERT).collect(),
+        certificate,
     }))
 }
 
-/// The last number on a slab's grade ("GEM MT 10" → 10), to the nearest half, within 1–10.
-fn grade_number(text: &str) -> Option<f64> {
-    let grade = text
-        .split(|c: char| !(c.is_ascii_digit() || c == '.'))
+/// The last number on a slab's grade ("GEM MT 10" → 10).
+fn last_number(text: &str) -> Option<f64> {
+    text.split(|c: char| !(c.is_ascii_digit() || c == '.'))
         .filter_map(|part| part.trim_matches('.').parse::<f64>().ok())
-        .next_back()?;
-    let grade = (grade * 2.0).round() / 2.0;
+        .next_back()
+}
+
+/// A card's grade to the nearest half, within 1–10.
+fn grade_number(text: &str) -> Option<f64> {
+    let grade = (last_number(text)? * 2.0).round() / 2.0;
     (1.0..=10.0).contains(&grade).then_some(grade)
+}
+
+/// A comic's grade to the tenth, within 0.5–10 (CGC 9.8, 1.8).
+fn comic_grade(text: &str) -> Option<f64> {
+    let grade = (last_number(text)? * 10.0).round() / 10.0;
+    (0.5..=10.0).contains(&grade).then_some(grade)
 }
 
 fn format_grade(grade: f64) -> String {
@@ -354,10 +376,11 @@ fn clip(text: &str, limit: usize) -> String {
     text.trim().chars().take(limit).collect()
 }
 
-/// Item specifics. Grade and certification go in condition descriptors, not here (eBay retired those).
-pub fn aspects(item: &ItemSummary, kind: Kind) -> Map<String, Value> {
+/// Item specifics. A card's grade and certification go in condition descriptors, not here (eBay retired those);
+/// a comic's stay here, as comics have no descriptors.
+pub fn aspects(item: &ItemSummary, listing: &Listing) -> Map<String, Value> {
     let card = &item.card;
-    let pairs: Vec<(&str, String)> = match kind {
+    let pairs: Vec<(&str, String)> = match listing.kind {
         Kind::Tcg => vec![
             ("Game", ebay_game(&card.subcategory)),
             ("Card Name", card.name.clone()),
@@ -372,6 +395,24 @@ pub fn aspects(item: &ItemSummary, kind: Kind) -> Map<String, Value> {
             ("Card Number", card.card_number.clone()),
             ("Year Manufactured", card.year.clone()),
         ],
+        Kind::Comic => {
+            let year = year_of(&card.year);
+            let mut pairs = vec![
+                ("Series Title", card.name.clone()),
+                ("Issue Number", card.card_number.clone()),
+                ("Publisher", card.set_name.clone()),
+                ("Publication Year", year.clone()),
+                ("Era", era(&year).to_string()),
+            ];
+            if let Some(g) = &listing.graded {
+                pairs.extend([
+                    ("Professional Grader", comic_grader(&g.grader)),
+                    ("Grade", comic_grade_name(&g.grade)),
+                    ("Certification Number", g.certificate.clone()),
+                ]);
+            }
+            pairs
+        }
     };
     pairs
         .into_iter()
@@ -380,8 +421,95 @@ pub fn aspects(item: &ItemSummary, kind: Kind) -> Map<String, Value> {
         .collect()
 }
 
-/// eBay's condition and its descriptors.
+/// The four digits of a year in a comic's cover date ("August 1976"), else the date as it is.
+pub(crate) fn year_of(date: &str) -> String {
+    date.split(|c: char| !c.is_ascii_digit())
+        .find(|d| d.len() == 4)
+        .map(str::to_string)
+        .unwrap_or_else(|| date.trim().to_string())
+}
+
+/// eBay's "Era" of a comic by its year.
+fn era(year: &str) -> &'static str {
+    match year.parse::<u32>() {
+        Ok(y) if y < 1938 => "",
+        Ok(y) if y <= 1955 => "Golden Age (1938-55)",
+        Ok(y) if y <= 1969 => "Silver Age (1956-69)",
+        Ok(y) if y <= 1983 => "Bronze Age (1970-83)",
+        Ok(y) if y <= 1991 => "Copper Age (1984-91)",
+        Ok(_) => "Modern Age (1992-Now)",
+        Err(_) => "",
+    }
+}
+
+/// How eBay names a comic grader.
+fn comic_grader(grader: &str) -> String {
+    match grader {
+        "CGC" => "Certified Guaranty Company (CGC)",
+        "CBCS" => "Comic Book Certification Service (CBCS)",
+        "PGX" => "Professional Grading Experts (PGX)",
+        other => other,
+    }
+    .to_string()
+}
+
+/// A comic's grade with its name on the 10-point scale: "9.8 Near Mint/Mint".
+fn comic_grade_name(grade: &str) -> String {
+    const NAMES: &[(f64, &str)] = &[
+        (10.0, "Gem Mint"),
+        (9.9, "Mint"),
+        (9.8, "Near Mint/Mint"),
+        (9.6, "Near Mint+"),
+        (9.4, "Near Mint"),
+        (9.2, "Near Mint-"),
+        (9.0, "Very Fine/Near Mint"),
+        (8.5, "Very Fine+"),
+        (8.0, "Very Fine"),
+        (7.5, "Very Fine-"),
+        (7.0, "Fine/Very Fine"),
+        (6.5, "Fine+"),
+        (6.0, "Fine"),
+        (5.5, "Fine-"),
+        (5.0, "Very Good/Fine"),
+        (4.5, "Very Good+"),
+        (4.0, "Very Good"),
+        (3.5, "Very Good-"),
+        (3.0, "Good/Very Good"),
+        (2.5, "Good+"),
+        (2.0, "Good"),
+        (1.8, "Good-"),
+        (1.5, "Fair/Good"),
+        (1.0, "Fair"),
+        (0.5, "Poor"),
+    ];
+    let Ok(number) = grade.parse::<f64>() else {
+        return grade.to_string();
+    };
+    match NAMES.iter().find(|(n, _)| (n - number).abs() < 0.05) {
+        Some((n, name)) => format!("{n:.1} {name}"),
+        None => format!("{number:.1}"),
+    }
+}
+
+/// eBay's condition and its descriptors (none for a comic).
 pub fn condition(listing: &Listing, ungraded: CardCondition) -> (&'static str, Value) {
+    if listing.kind == Kind::Comic {
+        let condition = match &listing.graded {
+            Some(g) => match g.grade.parse::<f64>().unwrap_or(0.0) {
+                g if g >= 9.0 => "LIKE_NEW",
+                g if g >= 6.0 => "USED_VERY_GOOD",
+                g if g >= 3.0 => "USED_GOOD",
+                _ => "USED_ACCEPTABLE",
+            },
+            None => match ungraded {
+                CardCondition::NearMint => "LIKE_NEW",
+                CardCondition::Excellent => "USED_VERY_GOOD",
+                CardCondition::VeryGood => "USED_GOOD",
+                CardCondition::Poor => "USED_ACCEPTABLE",
+            },
+        };
+        return (condition, json!([]));
+    }
     match &listing.graded {
         Some(g) => {
             let mut descriptors = vec![
@@ -395,7 +523,7 @@ pub fn condition(listing: &Listing, ungraded: CardCondition) -> (&'static str, V
         }
         None => (
             "USED_VERY_GOOD",
-            json!([{"name": "40001", "values": [listing.kind.condition_value(ungraded)]}]),
+            json!([{"name": "40001", "values": [listing.kind.condition_value(ungraded).unwrap_or_default()]}]),
         ),
     }
 }
@@ -409,12 +537,17 @@ fn escape(text: &str) -> String {
 
 pub fn description(item: &ItemSummary, listing: &Listing) -> String {
     let card = &item.card;
+    let comic = listing.kind == Kind::Comic;
+    let labels = if comic {
+        ["Publisher", "Issue", "Cover date"]
+    } else {
+        ["Set", "Number", "Year"]
+    };
     let mut facts = vec![];
-    for (label, value) in [
-        ("Set", &card.set_name),
-        ("Number", &card.card_number),
-        ("Year", &card.year),
-    ] {
+    for (label, value) in labels
+        .into_iter()
+        .zip([&card.set_name, &card.card_number, &card.year])
+    {
         if !value.trim().is_empty() {
             facts.push(format!("<li>{label}: {}</li>", escape(value.trim())));
         }
@@ -432,9 +565,10 @@ pub fn description(item: &ItemSummary, listing: &Listing) -> String {
         ));
     }
     format!(
-        "<p><b>{}</b></p><ul>{}</ul><p>The pictures show the card you will receive.</p>",
+        "<p><b>{}</b></p><ul>{}</ul><p>The pictures show the {} you will receive.</p>",
         escape(&listing.title),
-        facts.join("")
+        facts.join(""),
+        if comic { "comic" } else { "card" }
     )
 }
 
@@ -464,7 +598,7 @@ pub fn inventory_item(
         "product": {
             "title": listing.title,
             "description": description(item, listing),
-            "aspects": aspects(item, listing.kind),
+            "aspects": aspects(item, listing),
             "imageUrls": images,
         },
         "condition": condition,
@@ -674,15 +808,15 @@ mod tests {
             "400011"
         );
         assert_eq!(sport.title, "2023 Obsidian Flames Charizard ex #125");
-        let aspects = aspects(&card("sport", "Baseball", None), Kind::Sport);
+        let aspects = aspects(&card("sport", "Baseball", None), &sport);
         assert_eq!(aspects["Player/Athlete"], json!(["Charizard ex"]));
         assert_eq!(aspects["Sport"], json!(["Baseball"]));
-        let aspects = super::aspects(&card("tcg", "Pokemon", None), Kind::Tcg);
+        let aspects = super::aspects(&card("tcg", "Pokemon", None), &tcg);
         assert_eq!(aspects["Game"], json!(["Pokémon TCG"]));
     }
 
     #[test]
-    fn slab_cards_are_typed_by_their_game_and_comics_are_not_listed() {
+    fn slab_cards_are_typed_by_their_game_and_comics_by_their_type() {
         assert_eq!(
             plan(&card("slab", "Basketball", None)).unwrap().kind,
             Kind::Sport
@@ -691,13 +825,74 @@ mod tests {
             plan(&card("slab", "YuGiOh!", None)).unwrap().kind,
             Kind::Tcg
         );
+        assert_eq!(
+            plan(&card("slab", "Comics", None)).unwrap().kind,
+            Kind::Comic
+        );
         assert!(plan(&card("slab", "", None)).is_err());
-        assert!(plan(&card("comics", "", None))
-            .unwrap_err()
-            .contains("comics"));
+        assert_eq!(plan(&card("comics", "", None)).unwrap().kind, Kind::Comic);
         let mut unknown = card("tcg", "Pokemon", None);
         unknown.card.name.clear();
         assert!(plan(&unknown).is_err());
+    }
+
+    fn comic(slab: Option<(&str, &str, &str)>) -> ItemSummary {
+        let mut item = card("comics", "Comics", slab);
+        item.card = CardFields {
+            name: "Amazing Spider-Man".into(),
+            set_name: "Marvel".into(),
+            card_number: "300".into(),
+            year: "May 1988".into(),
+            series: "1988-05".into(),
+            subcategory: "Comics".into(),
+            ..Default::default()
+        };
+        item
+    }
+
+    #[test]
+    fn comics_list_as_single_issues() {
+        let raw = plan(&comic(None)).unwrap();
+        assert_eq!(raw.title, "Amazing Spider-Man #300 1988 Marvel");
+        assert_eq!(
+            (raw.kind.category(), raw.kind.search_category()),
+            ("259104", "63")
+        );
+        assert_eq!(
+            condition(&raw, CardCondition::VeryGood),
+            ("USED_GOOD", json!([]))
+        );
+        let aspects = aspects(&comic(None), &raw);
+        assert_eq!(aspects["Series Title"], json!(["Amazing Spider-Man"]));
+        assert_eq!(aspects["Issue Number"], json!(["300"]));
+        assert_eq!(aspects["Publisher"], json!(["Marvel"]));
+        assert_eq!(aspects["Publication Year"], json!(["1988"]));
+        assert_eq!(aspects["Era"], json!(["Copper Age (1984-91)"]));
+        assert!(!aspects.contains_key("Grade"));
+        assert!(description(&comic(None), &raw).contains("the comic you will receive"));
+
+        // CGC grades in tenths; the grade goes in item specifics, as comics have no descriptors.
+        let slab = comic(Some(("CGC", "NM/M 9.8", "1234567001")));
+        let graded = plan(&slab).unwrap();
+        assert_eq!(graded.title, "Amazing Spider-Man #300 1988 Marvel CGC 9.8");
+        assert_eq!(graded.condition_label(), "Graded · CGC 9.8");
+        assert_eq!(
+            condition(&graded, CardCondition::Poor),
+            ("LIKE_NEW", json!([]))
+        );
+        let aspects = super::aspects(&slab, &graded);
+        assert_eq!(
+            aspects["Professional Grader"],
+            json!(["Certified Guaranty Company (CGC)"])
+        );
+        assert_eq!(aspects["Grade"], json!(["9.8 Near Mint/Mint"]));
+        assert_eq!(aspects["Certification Number"], json!(["1234567001"]));
+        let low = plan(&comic(Some(("CBCS", "1.8", "")))).unwrap();
+        assert_eq!(low.graded.unwrap().grade, "1.8");
+        assert_eq!(
+            offer(&slab, &graded, "cl-1", &EbaySettings::default(), 300.0)["categoryId"],
+            "259104"
+        );
     }
 
     #[test]

@@ -80,9 +80,10 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   its pictures, title, item specifics and condition (graded slabs with their grader and grade), at Ximilar's price
   or yours. Publish the drafts when they look right; Cardloader then shows which listings sold. See
   [Selling on eBay](#selling-on-ebay).
-- **Listing titles your way.** Choose which parts of a card make its title and in what order, with templates for
-  sports cards, graded cards or autographs; every title shows its length against eBay's 80 characters and leaves
-  out what matters least instead of being cut off. Tick cards to add a text to all their titles at once. See
+- **Listing titles your way.** Choose which parts of a card make its title and in what order, add words of your
+  own (`{name} {year} {set} {series} Auto {printRun} #{number}`), with templates for sports cards, trading cards,
+  comics, graded cards, autographs, parallels or regular cards; every title shows its length against eBay's 80
+  characters and leaves out what matters least instead of being cut off. Tick cards to add a text to all their titles at once. See
   [Listing titles](#listing-titles).
 - **TCGplayer, Whatnot and Shopify.** Export a session's ungraded trading cards as a TCGplayer list (with each card's
   TCGplayer product link), as Whatnot's bulk listing CSV for auctions and Buy it Now, or as Shopify products with
@@ -343,23 +344,35 @@ ship eBay's client secret, and nothing runs on a server in between.
 
 Cards go to eBay US: trading cards to *CCG Individual Cards*, sports cards to *Sports Trading Card Singles*. A card
 in a graded slab is listed as Graded with its grader, grade and certificate number; other cards as Ungraded in the
-condition chosen in the dialog (Ximilar's own grade is an estimate, not a professional grade). Comics aren't listed
-yet. Listing fees and selling limits are eBay's.
+condition chosen in the dialog (Ximilar's own grade is an estimate, not a professional grade). Comics go to *Comics
+& Graphic Novels* with their series title, issue number, publisher, year and era, and a slab's grader, grade (CGC
+9.8 stays 9.8) and certificate number as item specifics; their conditions and item specifics follow eBay's comics
+listings and haven't been tried against eBay yet. Listing fees and selling limits are eBay's.
 
 ### Listing titles
 
-Without any setup a title is *year, game, set, name, #number* and a slab's grader and grade, e.g.
-`2023 Pokemon Obsidian Flames Charizard ex #125 PSA 10`. eBay, Whatnot and Shopify get the same title.
+Without any setup a trading card's title is *year, game, set, name, #number* and a slab's grader and grade, e.g.
+`2023 Pokemon Obsidian Flames Charizard ex #125 PSA 10`; a sports card's is *year, set, name, series (the
+parallel), features, serial number, #number, grade*, e.g. `2023 Prizm Victor Wembanyama Silver Prizm RC #136`; a
+comic's is *title, #issue, year, publisher, grade*, e.g. `Amazing Spider-Man #300 1988 Marvel CGC 9.8`. eBay,
+Whatnot and Shopify get the same title. Every way of identifying (Ximilar, a local model, an AI agent, a CSV) fills
+the same fields, so a template works the same for all of them.
 
-- **Templates** (**Settings → Selling → Listing titles**): add a template, choose its parts (year, brand, set,
-  name, series, features, serial number, card number, team, grade, game or sport, set code) and put them in
-  order. A template is for all cards, sports cards or trading cards, and optionally only for graded cards or for
-  autographs (cards whose Features say *Auto* or *Autograph*). The first template in the list that is for a card
+- **Templates** (**Settings → Selling → Listing titles**, or **Title templates** next to a card's listing title):
+  add a template and put its parts in order as chips, or write it as a pattern, e.g.
+  `{name} {year} {set} {series} Auto {printRun} #{number}` →
+  `Fábio Vieira 2025-26 Topps Chrome Bundesliga Green Wave Auto /99 #BA-FV`. The parts are `{year}`, `{brand}`,
+  `{set}`, `{name}`, `{series}`, `{features}`, `{serial}` (`70/99`), `{printRun}` (`/99`), `{number}`, `{team}`,
+  `{grade}`, `{game}` and `{setCode}`; everything else is your own words, which stay in every title. A part the
+  card doesn't have drops out together with the word it is in (`({team})`, `#{number}`), and a lone `-` or `|`
+  goes with it. A template is for all cards, sports cards, trading cards or comics, and optionally only for graded
+  cards, autographs (Features say *Auto* or *Autograph*), parallels (a serial number, or a sports card whose
+  Series names a parallel) or regular cards (none of those). The first template in the list that is for a card
   makes its title; cards no template is for keep the usual title. The preview below shows your newest cards with
   the templates as you edit them.
 - **80 characters.** Every title shows its length, e.g. `76/80`. A title that would be longer keeps the name, the
-  card number and the grade and then takes the other parts while they fit, in this order of importance: serial
-  number, features, series, set, set code, brand, year, game, team. The preview says what was left out. A part
+  card number, the grade and your own words, and then takes the other parts while they fit, in this order of
+  importance: serial number, print run, features, series, set, set code, brand, year, game, team. The preview says what was left out. A part
   another part already says isn't repeated (`Topps` before the set `Topps Chrome`).
 - **Brand, team, serial number, features** are fields of a card, shown and edited with the others (**E**).
   Ximilar fills in the brand, team and serial number of sports cards; Features (`RC`, `Auto`, `Flagship`, …) is
@@ -383,18 +396,22 @@ graded.
   condition (Near Mint, Lightly Played, …), quantity and price, plus the TCGplayer product id and link from the match.
   TCGplayer doesn't give API access to new apps, and its Seller Portal import takes only its own export files (they
   carry its SKU ids), so add the cards in Seller Portal from this list. Graded cards are sold there only as Listings
-  with Photos, and TCGplayer has no sports cards; both are left out.
+  with Photos, and TCGplayer has no sports cards or comics; they are left out.
 - **Whatnot**: Whatnot's bulk listing CSV (its US template), for Seller Hub → Inventory → **Import from CSV** (draft
   listings) or a show's **Upload CSV**. Choose Auction (the price is the starting bid) or Buy it Now, and a shipping
   profile. Trading cards, sports singles and entertainment cards get Whatnot's categories and conditions; slabs are
   listed as Graded with the grader, grade and certificate in the title and description. Whatnot downloads pictures
   from public links, so with an [ImgBB](https://api.imgbb.com/) API key (Settings → Selling) the export uploads each
-  card's front and back there first, once per card. Without a key, add the photos in Whatnot.
+  card's front and back there first, once per card. Without a key, add the photos in Whatnot. Comics are left out:
+  Whatnot's import refuses a row whose category isn't exactly its template's, and its comics categories aren't
+  known here yet.
 - **Shopify**: Shopify's product CSV (Products → **Import**) or its inventory CSV (Products → Inventory →
   **Import**).
   - *Products*: either one product per card (name, set and number), its conditions (Near Mint, Lightly Played, …) as
     variants with the number of copies and the highest of their prices, or one product per scanned card. A graded slab
-    is always its own product with the grader and grade in its title. Products get Shopify's trading card category,
+    is always its own product with the grader and grade in its title. A comic is a *Comic Book* (or *Graded Comic*)
+    of its publisher, in Shopify's Comic Books category, one product per title, issue and year, its conditions Near
+    Mint, Very Fine, Very Good and Poor. Products get Shopify's trading card category,
     tags (game, set, year, grader), a description, and the pictures (uploaded to ImgBB, as for Whatnot). They are
     drafts unless you choose to publish. Handles are made from the card, so importing again with **Overwrite products
     with matching handles** updates the same products.

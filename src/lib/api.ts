@@ -473,6 +473,7 @@ export type TitleField =
   | "series"
   | "features"
   | "serial"
+  | "printRun"
   | "number"
   | "team"
   | "grade";
@@ -482,10 +483,16 @@ export interface TitleTemplate {
   id: string;
   name: string;
   /** The kind of card it is for. */
-  kind: "any" | "tcg" | "sport";
-  /** Which of them: every one, those in a graded slab, or those whose features name an autograph. */
-  only: "any" | "graded" | "autograph";
+  kind: "any" | "tcg" | "sport" | "comics";
+  /**
+   * Which of them: every one, those in a graded slab, those whose features name an autograph, numbered cards and
+   * sports cards with a parallel, or none of those.
+   */
+  only: "any" | "graded" | "autograph" | "parallel" | "regular";
+  /** The parts `pattern` names, in order; the app writes them for older versions. */
   fields: TitleField[];
+  /** The title with `{part}`s and the user's own words: `{name} {year} Auto {printRun} #{number}`. */
+  pattern: string;
 }
 
 /** One change for many cards: a text added to (or put in place of) their titles or one of their fields. */

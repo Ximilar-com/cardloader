@@ -682,14 +682,63 @@ pub enum TitleField {
     /// The variant, parallel or insert (`CardFields::series`).
     Series,
     Features,
+    /// The copy's serial number: `43/75`.
     Serial,
-    /// `#125`.
+    /// The serial's print run: `/75`.
+    PrintRun,
+    /// The card number as printed (`125`); a template of parts writes it `#125`.
     Number,
     Team,
     /// A slab's grader and grade: `PSA 9.5`.
     Grade,
     #[serde(other)]
     Unknown,
+}
+
+impl TitleField {
+    /// Every part, in the order the editor offers them.
+    pub const ALL: [TitleField; 13] = [
+        TitleField::Year,
+        TitleField::Game,
+        TitleField::Brand,
+        TitleField::Set,
+        TitleField::SetCode,
+        TitleField::Name,
+        TitleField::Series,
+        TitleField::Features,
+        TitleField::Serial,
+        TitleField::PrintRun,
+        TitleField::Number,
+        TitleField::Team,
+        TitleField::Grade,
+    ];
+
+    /// The part's name in a pattern: `{printRun}`.
+    pub fn key(self) -> &'static str {
+        match self {
+            TitleField::Year => "year",
+            TitleField::Game => "game",
+            TitleField::Brand => "brand",
+            TitleField::Set => "set",
+            TitleField::SetCode => "setCode",
+            TitleField::Name => "name",
+            TitleField::Series => "series",
+            TitleField::Features => "features",
+            TitleField::Serial => "serial",
+            TitleField::PrintRun => "printRun",
+            TitleField::Number => "number",
+            TitleField::Team => "team",
+            TitleField::Grade => "grade",
+            TitleField::Unknown => "",
+        }
+    }
+
+    /// The part a pattern's `{key}` names, case aside; `None` for a name no part has.
+    pub fn of_key(key: &str) -> Option<TitleField> {
+        Self::ALL
+            .into_iter()
+            .find(|f| f.key().eq_ignore_ascii_case(key))
+    }
 }
 
 /// The kind of card a title template is for.
@@ -700,6 +749,7 @@ pub enum TitleKind {
     Any,
     Tcg,
     Sport,
+    Comics,
     #[serde(other)]
     Unknown,
 }
@@ -714,6 +764,10 @@ pub enum TitleOnly {
     Graded,
     /// Cards whose features say so ("Auto", "Autograph").
     Autograph,
+    /// Numbered cards, and sports cards whose series names a parallel.
+    Parallel,
+    /// Cards that are none of graded, autographed or a parallel.
+    Regular,
     #[serde(other)]
     Unknown,
 }
@@ -727,7 +781,11 @@ pub struct TitleTemplate {
     pub name: String,
     pub kind: TitleKind,
     pub only: TitleOnly,
+    /// The parts in order, as `pattern` names them; written for older versions, which read only these.
     pub fields: Vec<TitleField>,
+    /// The title with `{part}`s and the user's own words: `{name} {year} {set} Auto {printRun} #{number}`. Empty =
+    /// `fields` with spaces between them (a template of an older version).
+    pub pattern: String,
 }
 
 /// What a change to many cards at once writes to.

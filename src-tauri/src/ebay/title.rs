@@ -4,7 +4,7 @@
 //! lists make the titles Cardloader always made. eBay, Whatnot and Shopify take the same title
 //! (`listing::plan`), unless someone wrote the card its own (`ItemSummary::title`).
 
-use crate::ebay::listing::{self, clip_words, title_game, Graded, Kind, MAX_TITLE};
+use crate::ebay::listing::{self, clip_words, title_game, year_of, Graded, Kind, MAX_TITLE};
 use crate::model::{
     BulkEdit, CardFields, EditField, EditPlace, ItemEdit, ItemStatus, ItemSummary, SlabLabel,
     TitleField, TitleKind, TitleOnly, TitlePreview, TitleTemplate,
@@ -12,13 +12,16 @@ use crate::model::{
 
 use TitleField::*;
 
-const TCG: &[TitleField] = &[Year, Game, Set, Name, Number, Grade];
-const SPORT: &[TitleField] = &[Year, Set, Name, Number, Grade];
+/// The titles without a template of the user's. A sports card's parallel, features and serial are what tells it
+/// from the base card, so they are in.
+const TCG: &str = "{year} {game} {set} {name} #{number} {grade}";
+const SPORT: &str = "{year} {set} {name} {series} {features} {serial} #{number} {grade}";
+const COMIC: &str = "{name} #{number} {year} {set} {grade}";
 
 /// What a title that is too long can do without, what it needs most first. The name, the number and a slab's
 /// grade aren't here: they are never left out.
 const BY_IMPORTANCE: &[TitleField] = &[
-    Serial, Features, Series, Set, SetCode, Brand, Year, Game, Team,
+    Serial, PrintRun, Features, Series, Set, SetCode, Brand, Year, Game, Team,
 ];
 
 /// Parts another part can already say ("Topps" in the set "Topps Chrome", the year in "2023-24 Prizm"), and so
@@ -31,11 +34,11 @@ fn kept(field: TitleField) -> bool {
     matches!(field, Name | Number | Grade)
 }
 
-/// The titles without a template of the user's.
-fn builtin(kind: Kind) -> &'static [TitleField] {
+fn builtin(kind: Kind) -> &'static str {
     match kind {
         Kind::Tcg => TCG,
         Kind::Sport => SPORT,
+        Kind::Comic => COMIC,
     }
 }
 
@@ -51,7 +54,84 @@ pub struct Composed {
     pub clipped: bool,
 }
 
-/// Templates as they are stored: named, with an id, each part once and none this version doesn't know.
+/// One piece of a pattern's word: the user's text, or a part (`None`: a name no part has).
+#[derive(Debug, Clone, PartialEq)]
+enum Piece {
+    Text(String),
+    Part(Option<TitleField>),
+}
+
+/// A pattern's words, each split into its text and `{part}`s; `{{part}}` reads as `{part}`.
+fn words_of(pattern: &str) -> Vec<Vec<Piece>> {
+    pattern
+        .split_whitespace()
+        .map(|word| {
+            let mut pieces = Vec::new();
+            let mut rest = word;
+            while let Some(open) = rest.find('{') {
+                let braces = rest[open..].chars().take_while(|c| *c == '{').count();
+                let inner = &rest[open + braces..];
+                let Some(close) = inner.find('}') else {
+                    break;
+                };
+                if open > 0 {
+                    pieces.push(Piece::Text(rest[..open].to_string()));
+                }
+                pieces.push(Piece::Part(TitleField::of_key(inner[..close].trim())));
+                let after = &inner[close..];
+                let closing = after.chars().take_while(|c| *c == '}').count().min(braces);
+                rest = &after[closing..];
+            }
+            if !rest.is_empty() {
+                pieces.push(Piece::Text(rest.to_string()));
+            }
+            pieces
+        })
+        .collect()
+}
+
+/// The pattern a list of parts makes: a template of an older version, or the built-in order.
+fn pattern_of_fields(fields: &[TitleField]) -> String {
+    let mut seen = Vec::new();
+    fields
+        .iter()
+        .filter(|f| {
+            **f != Unknown && !seen.contains(*f) && {
+                seen.push(**f);
+                true
+            }
+        })
+        .map(|f| match f {
+            Number => "#{number}".to_string(),
+            f => format!("{{{}}}", f.key()),
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The template's pattern, or the one its parts make.
+pub fn pattern(t: &TitleTemplate) -> String {
+    if t.pattern.trim().is_empty() {
+        pattern_of_fields(&t.fields)
+    } else {
+        t.pattern.clone()
+    }
+}
+
+/// The parts a pattern names, each once, in order.
+fn fields_in(pattern: &str) -> Vec<TitleField> {
+    let mut fields = Vec::new();
+    for piece in words_of(pattern).into_iter().flatten() {
+        if let Piece::Part(Some(field)) = piece {
+            if !fields.contains(&field) {
+                fields.push(field);
+            }
+        }
+    }
+    fields
+}
+
+/// Templates as they are stored: named, with an id and a pattern, and the parts it names for older versions.
 pub fn normalized(titles: Vec<TitleTemplate>) -> Vec<TitleTemplate> {
     titles
         .into_iter()
@@ -61,13 +141,8 @@ pub fn normalized(titles: Vec<TitleTemplate>) -> Vec<TitleTemplate> {
             if t.id.is_empty() {
                 t.id = uuid::Uuid::new_v4().to_string();
             }
-            let mut fields = Vec::new();
-            for field in t.fields {
-                if field != Unknown && !fields.contains(&field) {
-                    fields.push(field);
-                }
-            }
-            t.fields = fields;
+            t.pattern = collapsed(&pattern(&t));
+            t.fields = fields_in(&t.pattern);
             t
         })
         .collect()
@@ -78,47 +153,77 @@ fn autographed(card: &CardFields) -> bool {
     words(&card.features).iter().any(|w| w.starts_with("auto"))
 }
 
+/// The card's parallel: its series, unless that is only who made it (Ximilar's answer without a sub-set is read
+/// with the brand as the series). A comic's series is its origin date, no parallel.
+fn parallel(card: &CardFields, kind: Kind) -> &str {
+    let series = card.series.trim();
+    if kind == Kind::Comic || series.eq_ignore_ascii_case(card.brand.trim()) {
+        ""
+    } else {
+        series
+    }
+}
+
+/// A numbered card, or a sports card with a parallel. A trading card's series is its era ("Scarlet & Violet").
+fn is_parallel(card: &CardFields, kind: Kind) -> bool {
+    !card.serial.trim().is_empty() || (kind == Kind::Sport && !parallel(card, kind).is_empty())
+}
+
 fn is_for(t: &TitleTemplate, card: &CardFields, kind: Kind, graded: bool) -> bool {
-    let kind = match t.kind {
+    let kind_fits = match t.kind {
         TitleKind::Any => true,
         TitleKind::Tcg => kind == Kind::Tcg,
         TitleKind::Sport => kind == Kind::Sport,
+        TitleKind::Comics => kind == Kind::Comic,
         TitleKind::Unknown => false,
     };
     let only = match t.only {
         TitleOnly::Any => true,
         TitleOnly::Graded => graded,
         TitleOnly::Autograph => autographed(card),
+        TitleOnly::Parallel => is_parallel(card, kind),
+        TitleOnly::Regular => !graded && !autographed(card) && !is_parallel(card, kind),
         TitleOnly::Unknown => false,
     };
-    kind && only
+    kind_fits && only
+}
+
+/// The serial's print run: "43/75" → "/75". A one of one stays "1/1".
+fn print_run(serial: &str) -> String {
+    let serial = serial.trim();
+    match serial.rsplit_once('/') {
+        Some((_, run)) if run.trim() == "1" => "1/1".into(),
+        Some((_, run)) if !run.trim().is_empty() => format!("/{}", run.trim()),
+        _ => serial.to_string(),
+    }
 }
 
 fn text_of(field: TitleField, card: &CardFields, kind: Kind, graded: Option<&Graded>) -> String {
     let text = match field {
+        Year if kind == Kind::Comic => year_of(&card.year),
         Year => card.year.clone(),
         Game => match kind {
             Kind::Tcg => title_game(&card.subcategory).to_string(),
             Kind::Sport => card.subcategory.clone(),
+            // Always "Comics".
+            Kind::Comic => String::new(),
         },
         Brand => card.brand.clone(),
         Set => card.set_name.clone(),
         SetCode => card.set_code.clone(),
         Name => card.name.clone(),
-        Series => card.series.clone(),
+        Series => parallel(card, kind).to_string(),
         Features => card.features.clone(),
         Serial => card.serial.clone(),
-        Number => match card.card_number.trim() {
-            "" => String::new(),
-            number => format!("#{number}"),
-        },
+        PrintRun => print_run(&card.serial),
+        Number => card.card_number.trim().trim_start_matches('#').to_string(),
         Team => card.team.clone(),
         Grade => graded
             .map(|g| format!("{} {}", g.grader, g.grade))
             .unwrap_or_default(),
         Unknown => String::new(),
     };
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
+    collapsed(&text)
 }
 
 fn words(text: &str) -> Vec<String> {
@@ -128,43 +233,131 @@ fn words(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// The parts of `fields` the card has, without those another part already says.
-fn parts(
-    fields: &[TitleField],
-    card: &CardFields,
-    kind: Kind,
-    graded: Option<&Graded>,
-) -> Vec<(TitleField, String)> {
-    let mut parts: Vec<(TitleField, String)> = Vec::new();
-    for &field in fields {
-        let text = text_of(field, card, kind, graded);
-        if !text.is_empty() && parts.iter().all(|(f, _)| *f != field) {
-            parts.push((field, text));
-        }
-    }
-    // The least important first, so of two parts saying the same the more important stays.
-    for field in BY_IMPORTANCE
-        .iter()
-        .rev()
-        .filter(|f| CAN_REPEAT.contains(f))
-    {
-        let Some(at) = parts.iter().position(|(f, _)| f == field) else {
-            continue;
-        };
-        let mine = words(&parts[at].1);
-        let said = parts.iter().enumerate().any(|(i, (other, text))| {
-            let theirs = words(text);
-            i != at && SAYS.contains(other) && mine.iter().all(|w| theirs.contains(w))
-        });
-        if said && !mine.is_empty() {
-            parts.remove(at);
-        }
-    }
-    parts
+/// A word of the title: the user's own text (`parts` empty) or one with parts in it, shown only while all of
+/// them are.
+struct Word {
+    text: String,
+    parts: Vec<TitleField>,
+    /// It never shows: a part it names is unknown, empty, said elsewhere, or came before.
+    hidden: bool,
 }
 
-/// The card's title in at most `room` characters. Too long, it keeps the name, the number and the grade and then
-/// takes the other parts while they fit, the most important first, instead of losing its end.
+impl Word {
+    /// A word of the user's with no letter or digit: `-`, `|`.
+    fn separator(&self) -> bool {
+        self.parts.is_empty() && !self.text.chars().any(char::is_alphanumeric)
+    }
+}
+
+/// A pattern as words for this card, and the parts that show in it, in the pattern's order.
+struct Title {
+    words: Vec<Word>,
+    parts: Vec<TitleField>,
+}
+
+impl Title {
+    fn new(pattern: &str, card: &CardFields, kind: Kind, graded: Option<&Graded>) -> Title {
+        let mut parts: Vec<(TitleField, String)> = Vec::new();
+        let mut seen: Vec<TitleField> = Vec::new();
+        let mut words: Vec<Word> = Vec::new();
+        for pieces in words_of(pattern) {
+            let mut word = Word {
+                text: String::new(),
+                parts: Vec::new(),
+                hidden: false,
+            };
+            let mut texts: Vec<(TitleField, String)> = Vec::new();
+            for piece in pieces {
+                match piece {
+                    Piece::Text(text) => word.text.push_str(&text),
+                    Piece::Part(None) => word.hidden = true,
+                    Piece::Part(Some(field)) => {
+                        let text = text_of(field, card, kind, graded);
+                        // A part used twice shows the first time only.
+                        word.hidden |= text.is_empty() || seen.contains(&field);
+                        word.text.push_str(&text);
+                        word.parts.push(field);
+                        texts.push((field, text));
+                    }
+                }
+            }
+            seen.extend(word.parts.iter().copied());
+            if !word.hidden {
+                for (field, text) in texts {
+                    if parts.iter().all(|(f, _)| *f != field) {
+                        parts.push((field, text));
+                    }
+                }
+            }
+            words.push(word);
+        }
+        if parts.iter().any(|(f, _)| *f == Serial) {
+            parts.retain(|(f, _)| *f != PrintRun);
+        }
+        // The user's own words say things too: a pattern with "Auto" doesn't need features saying "Auto".
+        let own: Vec<String> = words
+            .iter()
+            .filter(|w| w.parts.is_empty())
+            .flat_map(|w| self::words(&w.text))
+            .collect();
+        // The least important first, so of two parts saying the same the more important stays.
+        for field in BY_IMPORTANCE
+            .iter()
+            .rev()
+            .filter(|f| CAN_REPEAT.contains(f))
+        {
+            let Some(at) = parts.iter().position(|(f, _)| f == field) else {
+                continue;
+            };
+            let mine = self::words(&parts[at].1);
+            let said = mine.iter().all(|w| own.contains(w))
+                || parts.iter().enumerate().any(|(i, (other, text))| {
+                    let theirs = self::words(text);
+                    i != at && SAYS.contains(other) && mine.iter().all(|w| theirs.contains(w))
+                });
+            if said && !mine.is_empty() {
+                parts.remove(at);
+            }
+        }
+        let parts: Vec<TitleField> = parts.into_iter().map(|(f, _)| f).collect();
+        for word in &mut words {
+            word.hidden |= word.parts.iter().any(|f| !parts.contains(f));
+        }
+        Title { words, parts }
+    }
+
+    /// Whether it says anything about the card: a template only of words the user wrote isn't for it.
+    fn says_something(&self) -> bool {
+        self.words.iter().any(|w| !w.parts.is_empty() && !w.hidden)
+    }
+
+    /// The title with the parts `inside`; a separator goes with the parts around it.
+    fn render(&self, inside: &[TitleField]) -> String {
+        let mut shown: Vec<&Word> = Vec::new();
+        for word in &self.words {
+            if word.hidden || !word.parts.iter().all(|f| inside.contains(f)) || word.text.is_empty()
+            {
+                continue;
+            }
+            if word.separator() && shown.last().is_none_or(|w| w.separator()) {
+                continue;
+            }
+            shown.push(word);
+        }
+        while shown.last().is_some_and(|w| w.separator()) {
+            shown.pop();
+        }
+        shown
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// The card's title in at most `room` characters. Too long, it keeps the name, the number, the grade and the
+/// user's own words, and then takes the other parts while they fit, the most important first, instead of losing
+/// its end.
 pub fn compose(
     card: &CardFields,
     kind: Kind,
@@ -175,44 +368,33 @@ pub fn compose(
     let own = titles
         .iter()
         .filter(|t| is_for(t, card, kind, graded.is_some()))
-        .map(|t| (parts(&t.fields, card, kind, graded), t.name.clone()))
+        .map(|t| (Title::new(&pattern(t), card, kind, graded), t.name.clone()))
         // A template that says nothing about this card (only a team, and it has none) isn't for it.
-        .find(|(parts, _)| !parts.is_empty());
-    let (parts, template) =
-        own.unwrap_or_else(|| (parts(builtin(kind), card, kind, graded), String::new()));
+        .find(|(title, _)| title.says_something());
+    let (title, template) =
+        own.unwrap_or_else(|| (Title::new(builtin(kind), card, kind, graded), String::new()));
 
     let length = |text: &str| text.chars().count();
-    let mut inside: Vec<bool> = parts.iter().map(|(f, _)| kept(*f)).collect();
-    let joined = |inside: &[bool]| {
-        parts
-            .iter()
-            .zip(inside)
-            .filter(|(_, inside)| **inside)
-            .map(|((_, text), _)| text.as_str())
-            .collect::<Vec<_>>()
-            .join(" ")
-    };
-    let mut total = length(&joined(&inside));
-    let clipped = total > room;
+    let mut inside: Vec<TitleField> = title.parts.iter().copied().filter(|f| kept(*f)).collect();
+    let clipped = length(&title.render(&inside)) > room;
     if !clipped {
         for field in BY_IMPORTANCE {
-            if let Some(at) = parts.iter().position(|(f, _)| f == field) {
-                let more = length(&parts[at].1) + usize::from(total > 0);
-                if total + more <= room {
-                    inside[at] = true;
-                    total += more;
+            if title.parts.contains(field) {
+                inside.push(*field);
+                if length(&title.render(&inside)) > room {
+                    inside.pop();
                 }
             }
         }
     }
-    let left_out = parts
+    let left_out = title
+        .parts
         .iter()
-        .zip(&inside)
-        .filter(|(_, inside)| !**inside)
-        .map(|((field, _), _)| *field)
+        .copied()
+        .filter(|f| !inside.contains(f))
         .collect();
     Composed {
-        text: clip_words(&joined(&inside), room),
+        text: clip_words(&title.render(&inside), room),
         template,
         left_out,
         clipped,
@@ -355,7 +537,7 @@ pub fn preview(
 }
 
 /// Made-up cards for the template editor while the user has none: a sports card with everything a title can
-/// say, a graded one and a trading card.
+/// say, a graded one, a trading card and a comic.
 pub fn samples() -> Vec<ItemSummary> {
     let sample =
         |seq: i64, id_type: &str, card: CardFields, slab: Option<(&str, &str)>| ItemSummary {
@@ -462,6 +644,23 @@ pub fn samples() -> Vec<ItemSummary> {
             ]),
             None,
         ),
+        sample(
+            4,
+            "comics",
+            card([
+                "Amazing Spider-Man",
+                "Marvel",
+                "300",
+                "",
+                "May 1988",
+                "Comics",
+                "",
+                "",
+                "",
+                "",
+            ]),
+            Some(("CGC", "9.8")),
+        ),
     ]
 }
 
@@ -509,7 +708,7 @@ mod tests {
     #[test]
     fn without_a_template_titles_are_the_built_in_ones() {
         let made = compose(&card(), Kind::Sport, None, &[], MAX_TITLE);
-        assert_eq!(made.text, "2026 Finest Jazz Chisholm Jr. #AU-9");
+        assert_eq!(made.text, "2026 Finest Jazz Chisholm Jr. Lava 43/75 #AU-9");
         assert_eq!((made.template.as_str(), made.left_out.len()), ("", 0));
         let tcg = CardFields {
             subcategory: "Magic The Gathering".into(),
@@ -602,7 +801,10 @@ mod tests {
         };
         assert_eq!(
             made(&no_team, None),
-            ("2026 Finest Jazz Chisholm Jr. #AU-9".into(), String::new())
+            (
+                "2026 Finest Jazz Chisholm Jr. Lava 43/75 #AU-9".into(),
+                String::new()
+            )
         );
     }
 
@@ -718,7 +920,9 @@ mod tests {
         assert_eq!(shown.before, shown.automatic);
         assert_eq!(
             titled(rookie, &add(EditField::Title, EditPlace::Start, "HOT"), &[]),
-            Ok(Some("HOT 2023 Prizm Victor Wembanyama #136".into()))
+            Ok(Some(
+                "HOT 2023 Prizm Victor Wembanyama Silver Prizm RC #136".into()
+            ))
         );
         // What the title says already isn't said twice, and a card's own title only grows while it fits.
         let psa = add(EditField::Title, EditPlace::End, "psa 9");
@@ -756,22 +960,210 @@ mod tests {
             ..rookie.clone()
         };
         assert!(apply(&auto, &queued, &all).is_err());
-        let comic = ItemSummary {
-            id_type: Some("comics".into()),
+        let unknown = ItemSummary {
+            id_type: Some("slab".into()),
+            card: CardFields {
+                subcategory: String::new(),
+                ..rookie.card.clone()
+            },
             ..rookie.clone()
         };
-        assert!(preview(&comic, Some(&flagship), &all).problem.is_some());
+        assert!(preview(&unknown, Some(&flagship), &all).problem.is_some());
     }
 
     #[test]
     fn stored_templates_are_tidied() {
         let stored = normalized(vec![TitleTemplate {
             name: "  Mine ".into(),
-            fields: vec![Name, Unknown, Year, Name],
+            fields: vec![Name, Unknown, Number, Name],
             ..Default::default()
         }]);
         assert_eq!(stored[0].name, "Mine");
-        assert_eq!(stored[0].fields, vec![Name, Year]);
+        assert_eq!(stored[0].pattern, "{name} #{number}");
+        assert_eq!(stored[0].fields, vec![Name, Number]);
         assert!(!stored[0].id.is_empty());
+        // A pattern is the template; its parts are written for older versions, an unknown one stays in the text.
+        let stored = normalized(vec![pattern_template(
+            "Mine",
+            "  {{name}}   {hologram} Auto {printRun} {name} ",
+        )]);
+        assert_eq!(
+            stored[0].pattern,
+            "{{name}} {hologram} Auto {printRun} {name}"
+        );
+        assert_eq!(stored[0].fields, vec![Name, PrintRun]);
+    }
+
+    fn pattern_template(name: &str, pattern: &str) -> TitleTemplate {
+        TitleTemplate {
+            name: name.into(),
+            pattern: pattern.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Made-up data shaped like a customer's card.
+    fn green_wave() -> CardFields {
+        CardFields {
+            name: "Fábio Vieira".into(),
+            set_name: "2025-26 Topps Chrome Bundesliga".into(),
+            card_number: "BA-FV".into(),
+            series: "Green Wave".into(),
+            year: "2025-26".into(),
+            subcategory: "Soccer".into(),
+            brand: "Topps".into(),
+            serial: "70/99".into(),
+            features: "Auto".into(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_pattern_orders_the_parts_around_the_users_words() {
+        let card = green_wave();
+        assert_eq!(
+            title(&card, &[]),
+            "2025-26 Topps Chrome Bundesliga Fábio Vieira Green Wave Auto 70/99 #BA-FV"
+        );
+        // The pattern's own "Auto" says the features already; the print run is the serial's.
+        let mine = pattern_template(
+            "Mine",
+            "{name} {year} {set} {series} Auto {features} {printRun} #{number}",
+        );
+        assert_eq!(
+            title(&card, std::slice::from_ref(&mine)),
+            "Fábio Vieira 2025-26 Topps Chrome Bundesliga Green Wave Auto /99 #BA-FV"
+        );
+        // A print run next to the serial isn't said twice; a one of one stays one.
+        let both = pattern_template("Both", "{name} {serial} {printRun}");
+        assert_eq!(
+            title(&card, std::slice::from_ref(&both)),
+            "Fábio Vieira 70/99"
+        );
+        let one = CardFields {
+            serial: "1/1".into(),
+            ..green_wave()
+        };
+        let run = pattern_template("Run", "{name} {printRun}");
+        assert_eq!(title(&one, std::slice::from_ref(&run)), "Fábio Vieira 1/1");
+        // A series that only names the brand (Ximilar's answer without a sub-set) is no parallel.
+        let base = CardFields {
+            series: "topps".into(),
+            serial: String::new(),
+            features: String::new(),
+            ..green_wave()
+        };
+        assert_eq!(
+            title(&base, &[]),
+            "2025-26 Topps Chrome Bundesliga Fábio Vieira #BA-FV"
+        );
+    }
+
+    #[test]
+    fn words_of_a_pattern_go_with_their_parts() {
+        let card = CardFields {
+            team: String::new(),
+            ..green_wave()
+        };
+        let piped = pattern_template("Piped", "| {name} | {team} | ({team}) #{number} -");
+        assert_eq!(
+            title(&card, std::slice::from_ref(&piped)),
+            "Fábio Vieira | #BA-FV"
+        );
+        // An unknown part hides its word; a part named twice shows once; {{part}} reads as {part}.
+        let odd = pattern_template("Odd", "{{name}} {hologram} x{hologram} {name} No.{number}");
+        assert_eq!(
+            title(&card, std::slice::from_ref(&odd)),
+            "Fábio Vieira No.BA-FV"
+        );
+        // Only words of the user's, nothing about the card: the template isn't for it.
+        let words = pattern_template("Words", "Rookie Card {team}");
+        let made = compose(&card, Kind::Sport, None, &[words], MAX_TITLE);
+        assert_eq!(made.template, "");
+        // The user's words always stay, and take their room: the parts that matter least give way.
+        let long = pattern_template(
+            "Long",
+            "{name} {set} {series} {features} {serial} #{number} Free Shipping In The United States Today",
+        );
+        let made = compose(&green_wave(), Kind::Sport, None, &[long], MAX_TITLE);
+        assert_eq!(
+            made.text,
+            "Fábio Vieira Auto 70/99 #BA-FV Free Shipping In The United States Today"
+        );
+        assert_eq!(made.left_out, vec![Set, Series]);
+    }
+
+    #[test]
+    fn templates_for_parallels_and_regular_cards() {
+        let titles = [
+            TitleTemplate {
+                only: TitleOnly::Graded,
+                ..pattern_template("Graded", "{grade} {name}")
+            },
+            TitleTemplate {
+                only: TitleOnly::Autograph,
+                ..pattern_template("Autographs", "{name} Auto")
+            },
+            TitleTemplate {
+                only: TitleOnly::Parallel,
+                ..pattern_template("Parallels", "{name} {series} {printRun}")
+            },
+            TitleTemplate {
+                only: TitleOnly::Regular,
+                ..pattern_template("Regular", "{name} #{number}")
+            },
+        ];
+        let made = |card: &CardFields, kind: Kind, graded: Option<&Graded>| {
+            compose(card, kind, graded, &titles, MAX_TITLE).template
+        };
+        let plain = CardFields {
+            features: String::new(),
+            ..green_wave()
+        };
+        assert_eq!(made(&green_wave(), Kind::Sport, None), "Autographs");
+        assert_eq!(made(&green_wave(), Kind::Sport, Some(&psa("10"))), "Graded");
+        assert_eq!(made(&plain, Kind::Sport, None), "Parallels");
+        let unnumbered = CardFields {
+            serial: String::new(),
+            ..plain.clone()
+        };
+        assert_eq!(made(&unnumbered, Kind::Sport, None), "Parallels");
+        let base = CardFields {
+            series: "Topps".into(),
+            ..unnumbered.clone()
+        };
+        assert_eq!(made(&base, Kind::Sport, None), "Regular");
+        // A trading card's series is its era, no parallel.
+        assert_eq!(made(&unnumbered, Kind::Tcg, None), "Regular");
+    }
+
+    #[test]
+    fn comics_have_titles_of_their_own() {
+        let comic = CardFields {
+            name: "Amazing Spider-Man".into(),
+            set_name: "Marvel".into(),
+            card_number: "300".into(),
+            year: "May 1988".into(),
+            series: "1988-05".into(),
+            subcategory: "Comics".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            compose(&comic, Kind::Comic, None, &[], MAX_TITLE).text,
+            "Amazing Spider-Man #300 1988 Marvel"
+        );
+        let comics = TitleTemplate {
+            kind: TitleKind::Comics,
+            ..pattern_template("Comics", "{set} {name} #{number} ({year}) {game} {series}")
+        };
+        let sports = TitleTemplate {
+            kind: TitleKind::Sport,
+            ..pattern_template("Sports", "{name}")
+        };
+        let made = compose(&comic, Kind::Comic, None, &[sports, comics], MAX_TITLE);
+        assert_eq!(
+            (made.text.as_str(), made.template.as_str()),
+            ("Marvel Amazing Spider-Man #300 (1988)", "Comics")
+        );
     }
 }

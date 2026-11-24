@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 
 use super::client::{self, EbayClient};
-use super::listing::{Collectible, Kind};
+use super::listing::Kind;
 use super::Hosts;
 use crate::model::{EbayMarket, ItemSummary, MarketListing, PriceRange, SlabLabel};
 use crate::settings::{EbaySettings, Secret, SettingsStore};
@@ -198,13 +198,13 @@ pub fn search_for(item: &ItemSummary, market: &'static SearchMarket) -> Option<S
         return None;
     }
     // A card of no known type (a slab whose label names no game) is searched as a trading card.
-    let what = Collectible::of(item).unwrap_or(Collectible::Card(Kind::Tcg));
+    let what = Kind::of(item).unwrap_or(Kind::Tcg);
     let words: Vec<&str> = match what {
-        Collectible::Card(Kind::Sport) => {
+        Kind::Sport => {
             vec![&c.year, &c.set_name, &c.name, &c.series, &c.card_number]
         }
-        Collectible::Comic => vec![&c.name, &c.card_number, &c.set_name],
-        Collectible::Card(Kind::Tcg) => vec![
+        Kind::Comic => vec![&c.name, &c.card_number, &c.set_name],
+        Kind::Tcg => vec![
             &c.name,
             if c.set_code.is_empty() {
                 &c.set_name
@@ -227,9 +227,9 @@ pub fn search_for(item: &ItemSummary, market: &'static SearchMarket) -> Option<S
     Some(Search {
         query,
         market,
-        category_id: market.is_us().then(|| what.category().to_string()),
+        category_id: market.is_us().then(|| what.search_category().to_string()),
         // Comics have no graded/ungraded condition of the cards' kind.
-        condition_id: (what != Collectible::Comic).then_some(if item.slab.is_some() {
+        condition_id: (what != Kind::Comic).then_some(if item.slab.is_some() {
             GRADED
         } else {
             UNGRADED
@@ -658,5 +658,72 @@ mod tests {
             }
             assert!(m.range.is_some(), "{} found nothing", s.query);
         }
+    }
+    /// What eBay says of the category comics are listed in (`listing::Kind::Comic`), to check the conditions and
+    /// item specifics `listing.rs` sends, which come from eBay's pages and listings, not its documentation:
+    /// `CARDLOADER_REAL_EBAY=1 EBAY_APP_ID=… cargo test -p cardloader real_ebay_comics_category -- --ignored
+    /// --nocapture`.
+    #[tokio::test]
+    #[ignore]
+    async fn real_ebay_comics_category() {
+        let dir = tempfile::tempdir().unwrap();
+        let settings = SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            crate::settings::Settings::default(),
+            "token",
+        );
+        let client = AppToken::default().client(&settings).await.unwrap();
+        let category = crate::ebay::listing::Kind::Comic.category();
+        let get = |path: String, query: Vec<(&'static str, String)>| {
+            let client = &client;
+            async move {
+                client
+                    .request(reqwest::Method::GET, &path, &query, None)
+                    .await
+                    .unwrap()
+            }
+        };
+        let tree = get(
+            "commerce/taxonomy/v1/category_tree/0/get_category_subtree".into(),
+            vec![("category_id", category.into())],
+        )
+        .await;
+        let node = &tree["categorySubtreeNode"];
+        println!(
+            "{category}: {} (leaf: {})",
+            node["category"]["categoryName"], node["leafCategoryTreeNode"]
+        );
+        let aspects = get(
+            "commerce/taxonomy/v1/category_tree/0/get_item_aspects_for_category".into(),
+            vec![("category_id", category.into())],
+        )
+        .await;
+        for a in aspects["aspects"].as_array().into_iter().flatten() {
+            let c = &a["aspectConstraint"];
+            let values: Vec<&str> = a["aspectValues"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|v| v["localizedValue"].as_str())
+                .take(30)
+                .collect();
+            println!(
+                "  {} (required: {}, mode: {}): {}",
+                a["localizedAspectName"],
+                c["aspectRequired"],
+                c["aspectMode"],
+                values.join(" | ")
+            );
+        }
+        let conditions = get(
+            "sell/metadata/v1/marketplace/EBAY_US/get_item_condition_policies".into(),
+            vec![("filter", format!("categoryIds:{{{category}}}"))],
+        )
+        .await;
+        println!("{conditions:#}");
+        assert_eq!(
+            node["leafCategoryTreeNode"], true,
+            "{category} isn't a leaf"
+        );
     }
 }

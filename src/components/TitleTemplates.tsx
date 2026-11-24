@@ -1,32 +1,37 @@
-// Settings › Selling › Listing titles: the user's title templates, each a list of parts in order for the cards it is
-// for, with the titles they give shown as they are edited.
+// Settings › Selling › Listing titles: the user's title templates, each a pattern of parts and the user's own words
+// for the cards it is for, edited as chips or as text, with the titles they give shown as they are edited.
 
+import clsx from "clsx";
 import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { t as translate, useT } from "../i18n";
 import { api, type TitleField, type TitlePreview, type TitleTemplate } from "../lib/api";
 import { fileUrl } from "../lib/format";
+import { fieldsIn, patternOf, piecesOf, unknownParts, wordsOf } from "../lib/titlePattern";
 import Select, { type SelectOption } from "./Select";
 import { leftOutText, TITLE_FIELDS, TitleCount, titleFieldLabel } from "./TitleParts";
 
-/** What a new template starts with: a sports title with what the built-in one leaves out. */
-const STARTING_FIELDS: TitleField[] = [
-  "year",
-  "brand",
-  "set",
-  "name",
-  "series",
-  "features",
-  "serial",
-  "number",
-  "grade",
-];
+/** What a new template starts with: a sports title, name first, with what the built-in one leaves out. */
+const STARTING_PATTERN = "{name} {year} {set} {series} {features} {printRun} #{number} {grade}";
+
+/** A word of a pattern as a chip shows it: its parts by their names ("#Card number"). */
+function wordLabel(word: string): string {
+  return piecesOf(word)
+    .map((p) => ("text" in p ? p.text : p.field ? titleFieldLabel(p.field) : `{${p.key}}`))
+    .join("");
+}
+
+/** How a part is written into a pattern. */
+function placeholder(field: TitleField): string {
+  return field === "number" ? "#{number}" : `{${field}}`;
+}
 
 function kindOptions(): SelectOption<TitleTemplate["kind"]>[] {
   return [
     { value: "any", label: translate("titles.kind.any") },
     { value: "sport", label: translate("titles.kind.sport") },
     { value: "tcg", label: translate("titles.kind.tcg") },
+    { value: "comics", label: translate("titles.kind.comics") },
   ];
 }
 
@@ -35,6 +40,8 @@ function onlyOptions(): SelectOption<TitleTemplate["only"]>[] {
     { value: "any", label: translate("titles.only.any") },
     { value: "graded", label: translate("titles.only.graded"), hint: translate("titles.only.gradedHint") },
     { value: "autograph", label: translate("titles.only.autograph"), hint: translate("titles.only.autographHint") },
+    { value: "parallel", label: translate("titles.only.parallel"), hint: translate("titles.only.parallelHint") },
+    { value: "regular", label: translate("titles.only.regular"), hint: translate("titles.only.regularHint") },
   ];
 }
 
@@ -82,7 +89,8 @@ export default function TitleTemplates({
         name: t("titles.newName", { n: templates.length + 1 }),
         kind: "any",
         only: "any",
-        fields: STARTING_FIELDS,
+        pattern: STARTING_PATTERN,
+        fields: fieldsIn(STARTING_PATTERN),
       },
     ]);
 
@@ -136,7 +144,6 @@ function Template({
   onRemove: () => void;
 }) {
   const t = useT();
-  const unused = TITLE_FIELDS.filter((f) => !tpl.fields.includes(f));
   return (
     <div className="space-y-3 rounded-md border border-slate-200 p-3 dark:border-slate-800">
       <div className="flex flex-wrap items-end gap-2">
@@ -197,30 +204,71 @@ function Template({
         </div>
       </div>
 
+      <Pattern template={tpl} onChange={onChange} />
+    </div>
+  );
+}
+
+/** The template's pattern, as chips to move and remove and as text to write. */
+function Pattern({
+  template: tpl,
+  onChange,
+}: {
+  template: TitleTemplate;
+  onChange: (patch: Partial<TitleTemplate>) => void;
+}) {
+  const t = useT();
+  const [text, setText] = useState("");
+  const pattern = patternOf(tpl);
+  const words = wordsOf(pattern);
+  const used = fieldsIn(pattern);
+  const unknown = unknownParts(pattern);
+  const unused = TITLE_FIELDS.filter((f) => !used.includes(f));
+  const set = (next: string) => onChange({ pattern: next, fields: fieldsIn(next) });
+  const setWords = (next: string[]) => set(next.join(" "));
+  const addText = () => {
+    const added = wordsOf(text);
+    if (added.length) setWords([...words, ...added]);
+    setText("");
+  };
+  return (
+    <div className="space-y-3">
       <div>
         <div className="label">{t("titles.parts")}</div>
         <div className="flex flex-wrap items-center gap-1.5">
-          {tpl.fields.map((field, at) => {
-            const label = TITLE_FIELDS.includes(field) ? titleFieldLabel(field) : field;
+          {words.map((word, at) => {
+            const pieces = piecesOf(word);
+            const own = pieces.every((p) => "text" in p);
+            const odd = pieces.some((p) => "field" in p && !p.field);
+            const label = own ? `“${word}”` : wordLabel(word);
             return (
               <span
-                key={field}
-                className="inline-flex items-center rounded-md border border-slate-300 bg-slate-50 text-sm dark:border-slate-700 dark:bg-slate-800"
+                key={`${at}-${word}`}
+                className={clsx(
+                  "inline-flex items-center rounded-md border text-sm",
+                  odd
+                    ? "border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950"
+                    : own
+                      ? "border-dashed border-slate-300 dark:border-slate-700"
+                      : "border-slate-300 bg-slate-50 dark:border-slate-700 dark:bg-slate-800",
+                )}
               >
                 <button
                   className="rounded-l-md px-0.5 py-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-slate-700 dark:hover:text-slate-200"
                   disabled={at === 0}
-                  onClick={() => onChange({ fields: moved(tpl.fields, at, -1) })}
+                  onClick={() => setWords(moved(words, at, -1))}
                   aria-label={t("titles.moveEarlier", { field: label })}
                   title={t("titles.moveEarlier", { field: label })}
                 >
                   <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-                <span className="px-1 font-medium">{label}</span>
+                <span className={clsx("px-1", own ? "text-slate-600 italic dark:text-slate-300" : "font-medium")}>
+                  {label}
+                </span>
                 <button
                   className="px-0.5 py-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 disabled:opacity-30 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-                  disabled={at === tpl.fields.length - 1}
-                  onClick={() => onChange({ fields: moved(tpl.fields, at, 1) })}
+                  disabled={at === words.length - 1}
+                  onClick={() => setWords(moved(words, at, 1))}
                   aria-label={t("titles.moveLater", { field: label })}
                   title={t("titles.moveLater", { field: label })}
                 >
@@ -228,7 +276,7 @@ function Template({
                 </button>
                 <button
                   className="rounded-r-md border-l border-slate-300 px-1 py-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 dark:border-slate-700 dark:hover:bg-slate-700 dark:hover:text-slate-200"
-                  onClick={() => onChange({ fields: tpl.fields.filter((f) => f !== field) })}
+                  onClick={() => setWords(words.filter((_, i) => i !== at))}
                   aria-label={t("titles.removePart", { field: label })}
                   title={t("titles.removePart", { field: label })}
                 >
@@ -243,12 +291,41 @@ function Template({
               value=""
               placeholder={t("titles.addPart")}
               options={unused.map((f) => ({ value: f, label: titleFieldLabel(f) }))}
-              onChange={(f) => f && onChange({ fields: [...tpl.fields, f] })}
+              onChange={(f) => f && setWords([...words, placeholder(f)])}
               aria-label={t("titles.addPart")}
             />
           )}
+          <input
+            className="input w-36 py-1 text-sm"
+            value={text}
+            placeholder={t("titles.addText")}
+            aria-label={t("titles.addText")}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addText()}
+            onBlur={addText}
+          />
         </div>
-        {tpl.fields.length === 0 && <p className="mt-1.5 text-xs text-slate-500">{t("titles.noParts")}</p>}
+        {words.length === 0 && <p className="mt-1.5 text-xs text-slate-500">{t("titles.noParts")}</p>}
+      </div>
+      <div>
+        <label className="label" htmlFor={`pattern-${tpl.id}`}>
+          {t("titles.pattern")}
+        </label>
+        <input
+          id={`pattern-${tpl.id}`}
+          className="input font-mono text-sm"
+          value={pattern}
+          spellCheck={false}
+          onChange={(e) => set(e.target.value)}
+        />
+        <p className="mt-1 text-xs text-slate-500">
+          {t("titles.patternHint", { parts: TITLE_FIELDS.map((f) => `{${f}}`).join(" ") })}
+        </p>
+        {unknown.length > 0 && (
+          <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+            {t("titles.unknownPart", { names: unknown.map((k) => `{${k}}`).join(", ") })}
+          </p>
+        )}
       </div>
     </div>
   );
