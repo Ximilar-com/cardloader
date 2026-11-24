@@ -502,7 +502,8 @@ kept (a raw card counts only ungraded listings, a slab only its own grader and g
 
 The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
 out greyed) with **Search eBay** to search again yourself; untick a listing that isn't your card, or tick one back,
-and the range follows. When the card is identified again, or you pick or type another card, its listings are dropped.
+and the range follows. When the card is identified again, or you pick or type another card, its listings are dropped, unless they were
+found by a search you (or your agent) typed: those were chosen for the card as it is.
 Searches run on ebay.com unless you choose another of eBay's 16 sites (ebay.co.uk, ebay.de, ebay.fr, ebay.it, …) in
 **Settings → Selling**, or for one search in the card's panel. Prices from another site keep its currency (€, £, …):
 the card shows them so, totals are by currency, and exports and marketplaces that expect US dollars leave such a

@@ -220,7 +220,9 @@ listings you keep. Read their titles and hold their pictures against the card's 
 larger ones of those you aren't sure of. Keep the listings that are this card as it is: the same card and number, \
 the same variant or parallel, the same state (a raw card: ungraded listings; a slab: the same grader and grade); \
 no lots, reprints or other cards. Send their ids with price_cards as listing_ids instead of a price, with a note \
-on what you left out; an empty list when none is the card.
+on what you left out; an empty list when none is the card. The listings were searched for the card as it was \
+read: if it was misread, correct it with edit_card first, then find_ebay_listings searches for the corrected \
+card, and choose from those.
 6. Repeat from 2 until next_cards_to_price says finished.
 
 A session can have more for you (identified cards waiting for your price, cards to crop): when a tool's next names another tool, go on with it, until every one says finished.

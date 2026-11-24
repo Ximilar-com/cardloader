@@ -421,7 +421,14 @@ impl Runner {
         }
         edit.notes = edit.notes.trim().to_string();
         edit.location = edit.location.trim().to_string();
-        self.db.save_edit(item_id, &edit, by)?;
+        // An agent that finds a card misread often searches eBay for the card it sees and corrects the fields
+        // after: those listings are of the corrected card.
+        let keep_market = self
+            .db
+            .item(item_id)?
+            .market
+            .is_some_and(|m| !crate::ebay::browse::searched_from(&before, &m));
+        self.db.save_edit(item_id, &edit, by, keep_market)?;
         Ok(before.session_id)
     }
 

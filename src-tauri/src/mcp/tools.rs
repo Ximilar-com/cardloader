@@ -760,7 +760,7 @@ fn specs() -> Vec<Spec> {
         spec::<WaitForSession>(Run, "wait_for_session", "Wait for a session", "Waits until the session's run ends or the timeout passes, and returns its progress. Call it again while it still runs."),
         spec::<AcceptCards>(Run, "accept_cards", "Accept cards", "Accepts the cards' matches (or takes that back with accepted false). They are marked as accepted by AI with your note. Cards the user accepted stay theirs."),
         spec::<SelectCandidate>(Run, "select_candidate", "Select a candidate", "Makes another candidate the card's match (get_card lists them by index); the card counts as accepted."),
-        spec::<EditCard>(Run, "edit_card", "Edit a card", "Corrects a card's fields or price by hand, or sets its notes, location, details (brand, team, serial, features) or its own listing title; given fields change, others stay."),
+        spec::<EditCard>(Run, "edit_card", "Edit a card", "Corrects a card's fields or price by hand, or sets its notes, location, details (brand, team, serial, features) or its own listing title; given fields change, others stay. Changed card fields drop the eBay listings Cardloader searched for the card as it was: correct a card before you choose its listings."),
         spec::<EditCards>(Run, "edit_cards", "Edit many cards", "Adds one text to many cards at once: to the start or end of their listing titles (the title is fitted into eBay's 80 characters around it and becomes the card's own), or to their features, brand, team or series. Returns each card's listing title and its length; with preview true nothing is changed. Cards that can't take it are skipped with the reason."),
         spec::<RetryCards>(Run, "retry_cards", "Analyse cards again", "Puts the failed cards (or the given ones) back in the queue and analyses them."),
         spec::<ItemIds>(Run, "turn_cards_upright", "Turn cards upright", "Turns the pictures (front and back) of the cards Ximilar found upside down; other cards are left as they are."),
@@ -1564,7 +1564,9 @@ impl Handler {
                  grader and grade); no lots, reprints or other cards. Read the titles, and hold the listings' \
                  pictures below against the card's own; listing_pictures gives larger ones of the listings you \
                  aren't sure of. {} Then send their ids with {answer} as listing_ids, with a note on what you \
-                 left out: the card's price is their median. An empty list when none is the card",
+                 left out: the card's price is their median. An empty list when none is the card. These \
+                 listings were searched for the card as it was read: if it was misread, first correct it with \
+                 edit_card, then find_ebay_listings searches for the corrected card, and send ids from that search",
                 if web {
                     "You may search the web too (the user allows it)."
                 } else {

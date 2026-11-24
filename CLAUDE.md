@@ -361,7 +361,9 @@ state from them.
   `keep_ebay_listings` (Tauri commands and MCP tools; the panel's ticks are the user's `keep`, which drops the
   agent's note) store `items.market` (all listings, `counted` flags, the agent's note) and `items.market_range`
   (`PriceRange`, read with every row for the session table's eBay column), migration 009. Both are dropped when the
-  card becomes another one (`db::OTHER_CARD`: a new recognition, a pick, typed card fields). `real_ebay_search` is
+  card becomes another one (`db::OTHER_CARD`: a new recognition, a pick, typed card fields; typed fields leave
+  listings someone's own query found, `browse::searched_from`, as an agent that found a card misread searches for
+  what it sees and corrects the fields after, which had left a price with no listings in the panel). `real_ebay_search` is
   the opt-in check against eBay.
 - **Listings that are the card** (`Prices::EbayLocal`, `EbayAgent`; the user's decisions: the median, raw cards
   from ungraded listings and slabs from their own grader and grade, ticks in the panel don't move the price). Both

@@ -900,10 +900,17 @@ impl Db {
     /// The user typed the card's fields or price. Like a pick, it reaches Cards Cloud as a PATCH (`picks`
     /// counts it); notes and the location stay local. Only a changed card or price accepts it: notes or a location
     /// alone leave the review as it was (a card to review stays so, the user's accept stays theirs). Changed card
-    /// fields drop its eBay listings (`OTHER_CARD`); a new price alone doesn't. The card's details (brand, team,
+    /// fields drop its eBay listings (`OTHER_CARD`) unless `keep_market` (someone's own query found them, see
+    /// `browse::searched_from`); a new price alone doesn't. The card's details (brand, team,
     /// serial number, features) and its listing title are saved like notes: they are what many cards get at once,
     /// which must not accept matches nobody looked at, and Cards Cloud takes none of them.
-    pub fn save_edit(&self, id: i64, edit: &ItemEdit, by: &Reviewer) -> Result<()> {
+    pub fn save_edit(
+        &self,
+        id: i64,
+        edit: &ItemEdit,
+        by: &Reviewer,
+        keep_market: bool,
+    ) -> Result<()> {
         let card = &edit.card;
         self.with(|c| {
             c.execute(
@@ -912,10 +919,10 @@ impl Db {
                     OR COALESCE(card_number, '') IS NOT ?6 OR COALESCE(series, '') IS NOT ?7
                     OR COALESCE(year, '') IS NOT ?8 OR COALESCE(subcategory, '') IS NOT ?9 AS other,
                     price IS NOT ?10 AS priced FROM items WHERE id = ?1),
-                 card AS (SELECT other OR priced AS changed, other FROM fields)
+                 card AS (SELECT other OR priced AS changed, other AND NOT ?21 AS stale FROM fields)
                  UPDATE items SET
-                    market = CASE WHEN (SELECT other FROM card) THEN NULL ELSE market END,
-                    market_range = CASE WHEN (SELECT other FROM card) THEN NULL ELSE market_range END,
+                    market = CASE WHEN (SELECT stale FROM card) THEN NULL ELSE market END,
+                    market_range = CASE WHEN (SELECT stale FROM card) THEN NULL ELSE market_range END,
                     picks = picks + (SELECT changed FROM card), edited = edited OR (SELECT changed FROM card),
                     name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6, series = ?7,
                     year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12,
@@ -944,7 +951,8 @@ impl Db {
                     card.team,
                     card.serial,
                     card.features,
-                    edit.title
+                    edit.title,
+                    keep_market
                 ],
             )
         })?;
@@ -2306,7 +2314,7 @@ mod tests {
                 location: String::new(),
                 title: String::new(),
             };
-            db.save_edit(id, &edit, &Reviewer::User).unwrap()
+            db.save_edit(id, &edit, &Reviewer::User, false).unwrap()
         };
         recognise();
         search();
@@ -2418,7 +2426,7 @@ mod tests {
             title: "2026 Topps Jazz Chisholm Jr. RC Auto 43/75".into(),
             ..Default::default()
         };
-        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        db.save_edit(id, &edit, &Reviewer::User, false).unwrap();
         let saved = db.item_summary(id).unwrap();
         assert_eq!(saved.card, edit.card);
         assert_eq!(saved.title, edit.title);
@@ -2428,18 +2436,18 @@ mod tests {
 
         // A typed name is a correction, and the title someone wrote stays.
         edit.card.name = "Jazz Chisholm".into();
-        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        db.save_edit(id, &edit, &Reviewer::User, false).unwrap();
         let saved = db.item_summary(id).unwrap();
         assert!(saved.reviewed && saved.edited);
         assert_eq!(saved.title, edit.title);
 
         edit.title.clear();
-        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        db.save_edit(id, &edit, &Reviewer::User, false).unwrap();
         assert_eq!(db.item_summary(id).unwrap().title, "");
 
         // Another candidate is another card: its details are the candidate's, and the title is automatic again.
         edit.title = "A title".into();
-        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        db.save_edit(id, &edit, &Reviewer::User, false).unwrap();
         db.save_pick(
             id,
             &card,

@@ -239,6 +239,13 @@ pub fn search_for(item: &ItemSummary, market: &'static SearchMarket) -> Option<S
     })
 }
 
+/// The listings are what Cardloader's own search for the card, as it is, finds: a typed correction of its fields
+/// makes them another card's. Listings found by someone's own query were chosen for the card they looked at, and
+/// stay with it.
+pub fn searched_from(item: &ItemSummary, market: &EbayMarket) -> bool {
+    search_for(item, search_market(&market.marketplace)).is_some_and(|s| s.query == market.query)
+}
+
 fn join(words: &[&str]) -> String {
     words
         .iter()
@@ -494,6 +501,16 @@ mod tests {
             s.query,
             "2017 Panini Prizm Patrick Mahomes II Silver Prizm 269 PSA 10"
         );
+        let found = |query: &str| EbayMarket {
+            query: query.into(),
+            marketplace: "EBAY_US".into(),
+            ..EbayMarket::default()
+        };
+        assert!(searched_from(&sport, &found(&s.query)));
+        assert!(!searched_from(
+            &sport,
+            &found("Mahomes Prizm 269 silver PSA 10")
+        ));
         assert_eq!(
             (s.category_id.as_deref(), s.condition_id),
             (Some("261328"), Some(GRADED))

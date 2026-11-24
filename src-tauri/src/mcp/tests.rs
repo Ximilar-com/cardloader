@@ -584,6 +584,27 @@ async fn agent_prices_a_card_on_ebay() {
         "Charizard ex 125/197",
         "a search starts over: every listing counts again"
     );
+
+    // An agent that searched for the card it sees and then corrects the misread fields keeps those listings;
+    // what Cardloader searched from the fields as they were goes with them.
+    agent
+        .ok(
+            "edit_card",
+            json!({"item_id": card, "card_number": "199", "note": "number misread"}),
+        )
+        .await;
+    assert!(state.db.item(card).unwrap().market.is_some());
+    agent
+        .ok("find_ebay_listings", json!({"item_id": card}))
+        .await;
+    agent
+        .ok(
+            "edit_card",
+            json!({"item_id": card, "name": "Charizard ex SIR", "note": "the special art"}),
+        )
+        .await;
+    assert!(state.db.item(card).unwrap().market.is_none());
+    assert!(state.db.item_summary(card).unwrap().market_range.is_none());
 }
 
 /// The cards waiting for the agent to identify them, once `n` of them are (scanning the folder takes a moment).
