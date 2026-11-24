@@ -85,6 +85,17 @@ const messages: Messages<typeof en> = {
   identifyAs: "識別の種類",
   grading: "グレーディング",
   imagesPerCard: "カードあたりの画像",
+  pairingWarning: {
+    single: {
+      title: "画像1つが1枚のカードになります。",
+      text: "画像に裏面も含まれていると、裏面がそれぞれ別のカードとして解析され、API呼び出しも価格も別々に付きます。その場合は「表面＋裏面のペア」を選んでください。",
+    },
+    frontBack: {
+      title: "画像2つで1枚のカードになります。",
+      text: "表面と裏面は名前（card_front / card_back、card_F / card_B）で組み合わせ、なければ順番に2つずつ（表、裏、表、裏）組み合わせます。表面だけの場合、1枚おきのカードが前のカードの裏面として扱われ、抜け落ちます。",
+    },
+    odd: "このフォルダーの画像は奇数（{count}個）です。裏面のないカードが1枚できるか、ペアがずれています。足りない面がないか確認してください。",
+  },
   conditionScale: "コンディションの基準",
   priceStats: "価格の統計",
   readSlabs: "鑑定済みスラブのラベルを読み取る",
@@ -221,17 +232,29 @@ const messages: Messages<typeof en> = {
   keepOne: "セッションはこのうち少なくとも1つを行います。",
   identifyLocked: "このセッションにはカードがあります：識別するかどうかは変えられません。",
   priceWith: "価格の取得方法",
-  priceEngines: { ximilar: "Ximilarの価格の統計", ebay: "eBayの出品", agent: "AIエージェント（MCP）" },
+  priceEngines: {
+    ximilar: "Ximilarの価格の統計",
+    ebay: "eBayの出品",
+    agent: "AIエージェント（MCP）",
+    ebay_local: "eBayの出品＋ローカルモデル",
+    ebay_agent: "eBayの出品＋AIエージェント（MCP）",
+  },
   priceHints: {
     ximilar: "Ximilarの識別と一緒に届きます",
     ebay: "カードの出品中リストの中央値",
     agent: "MCPで接続したClaudeなどのエージェント",
+    ebay_local: "ローカルモデルがこのカードの出品だけを残します",
+    ebay_agent: "エージェントが出品とその写真を確認します",
   },
   priceNotes: {
     ximilar: "Ximilarの相場は識別ごとに追加料金なしで届きます。",
     ebay: "カードが識別されると、CardloaderがあなたのeBayキーセットでそのカードの出品中の固定価格リストを検索し、その中央値を価格にします。見つかった出品はカードに残ります。",
     agent:
       "AIエージェントが識別済みのカードに1枚ずつ価格を付けます。Claudeなどで「Cardloaderのこのセッションのカードに価格を付けて」と頼んでください。",
+    ebay_local:
+      "カードが識別されると、CardloaderがあなたのeBayキーセットでそのカードの出品中の固定価格リストを検索します。ローカルモデルがタイトルを読み、このカードの出品（同じカード・バリエーション・グレード。まとめ売りは除外）だけを残し、その中央値が価格になります。見つかった出品はカードに残り、除外されたものはグレー表示になります。",
+    ebay_agent:
+      "カードが識別されると、CardloaderがあなたのeBayキーセットでそのカードの出品中の固定価格リストを検索し、出品の写真とカードの写真を添えてAIエージェントに渡します。エージェントがこのカードの出品だけを残し、その中央値が価格になります。Claudeなどで「Cardloaderのこのセッションのカードに価格を付けて」と頼んでください。",
   },
   needsEbay: "CardloaderがeBayの出品から価格を検索できるよう、「設定」でeBayキーセットを追加してください。",
   needsAgentsPrices:

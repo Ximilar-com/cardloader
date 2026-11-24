@@ -60,7 +60,14 @@ const messages: Messages<typeof en> = {
     grade: "Volles Grading",
     centering: "Nur Zentrierung",
   },
-  prices: { off: "Aus", ximilar: "Ximilar", ebay: "eBay", agent: "KI-Agent" },
+  prices: {
+    off: "Aus",
+    ximilar: "Ximilar",
+    ebay: "eBay",
+    agent: "KI-Agent",
+    ebay_local: "eBay + lokales Modell",
+    ebay_agent: "eBay + KI-Agent",
+  },
   stageBy: "{stage}: {by}",
   gradingShort: {
     off: "Aus",
@@ -87,6 +94,10 @@ const messages: Messages<typeof en> = {
     year: "Jahr",
     series: "Serie",
     subcategory: "Kategorie",
+    brand: "Marke",
+    team: "Team",
+    serial: "Seriennummer",
+    features: "Merkmale",
   },
   noMatch: "Kein Treffer",
   via: {

@@ -31,6 +31,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import AddToCardsDialog from "../components/AddToCards";
+import BulkEditDialog from "../components/BulkEditDialog";
 import DetailPanel from "../components/DetailPanel";
 import { EbaySection } from "../components/Ebay";
 import Menu from "../components/Menu";
@@ -73,6 +74,8 @@ import {
   gradingOf,
   idModeLabels,
   amounts,
+  agentTasksOf,
+  pricedByAgent,
   pricesOf,
   sourceLabels,
   taskLabels,
@@ -130,6 +133,8 @@ function SessionView({ id }: { id: string }) {
   const showHelp = useShortcuts((s) => s.showHelp);
   /** The ticked cards prices or grading are being added to. */
   const [adding, setAdding] = useState<number[] | null>(null);
+  /** The ticked cards a text is being added to (their titles, or a field). */
+  const [editing, setEditing] = useState<number[] | null>(null);
   const samples = useRef<[number, number][]>([]);
   const selectedRef = useRef<string | null>(null);
   /** A card's detail that took a while to come (an eBay search): shown only if the card is still the open one. */
@@ -322,6 +327,9 @@ function SessionView({ id }: { id: string }) {
   // The local model or an AI agent finds the cards' corners, and Cardloader cuts them out.
   const cropEngine = cropEngineOf(session.options);
   const agentCrops = savesCrops && cropEngine === "agent";
+  // One prompt for everything that is the agent's here: a card goes from one of its tasks to the next.
+  const agentTasks = agentTasksOf(session.options);
+  const agentPrompt = agentTasks ? t(`session.agentPrompt.${agentTasks}`, { name: session.name, id: session.id }) : "";
   // A card waiting only for its crop shows "Cropping", not "Grading".
   const cropping = savesCrops && gradingOf(session.options) === "off";
 
@@ -377,7 +385,7 @@ function SessionView({ id }: { id: string }) {
                     <FolderOpen className="h-3 w-3" /> {t("session.actions.showCrops")}
                   </button>
                 )}
-                {(prices === "ebay" || prices === "agent") && (
+                {prices !== "off" && prices !== "ximilar" && (
                   <>
                     <span>·</span>
                     <span>
@@ -550,22 +558,22 @@ function SessionView({ id }: { id: string }) {
               </div>
             )}
             {agent && active && counts.inProgress > 0 && (
-              <AgentBanner prompt={t("session.agentPrompt.identify", { name: session.name, id: session.id })}>
-                {rich(t("session.agentWaiting", { count: counts.inProgress, name: session.name, id: session.id }), {
+              <AgentBanner prompt={agentPrompt}>
+                {rich(t("session.agentWaiting", { count: counts.inProgress, prompt: agentPrompt }), {
                   b: (s) => <b>{s}</b>,
                 })}
               </AgentBanner>
             )}
-            {prices === "agent" && active && counts.pricing > 0 && (
-              <AgentBanner prompt={t("session.agentPrompt.price", { name: session.name, id: session.id })}>
-                {rich(t("session.agentPricing", { count: counts.pricing, name: session.name, id: session.id }), {
+            {pricedByAgent(prices) && active && counts.pricing > 0 && (
+              <AgentBanner prompt={agentPrompt}>
+                {rich(t("session.agentPricing", { count: counts.pricing, prompt: agentPrompt }), {
                   b: (s) => <b>{s}</b>,
                 })}
               </AgentBanner>
             )}
             {agentCrops && active && counts.cropping > 0 && (
-              <AgentBanner prompt={t("session.agentPrompt.crop", { name: session.name, id: session.id })}>
-                {rich(t("session.agentCropping", { count: counts.cropping, name: session.name, id: session.id }), {
+              <AgentBanner prompt={agentPrompt}>
+                {rich(t("session.agentCropping", { count: counts.cropping, prompt: agentPrompt }), {
                   b: (s) => <b>{s}</b>,
                 })}
               </AgentBanner>
@@ -619,6 +627,15 @@ function SessionView({ id }: { id: string }) {
                   title={t("session.bulk.unacceptTitle")}
                 >
                   <Undo2 className="h-3.5 w-3.5" /> {t("session.bulk.unaccept")}
+                </button>
+              )}
+              {identifies && (
+                <button
+                  className="btn px-2 py-1 text-xs"
+                  onClick={() => setEditing(checkedIds)}
+                  title={t("titles.bulk.buttonTitle")}
+                >
+                  <Pencil className="h-3.5 w-3.5" /> {t("titles.bulk.button")}
                 </button>
               )}
               <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedIds)}>
@@ -794,6 +811,7 @@ function SessionView({ id }: { id: string }) {
           onAccept={identifies ? () => accept([detail.id]) : undefined}
           onUnaccept={identifies ? () => api.reviewItems(id, [detail.id], false).catch(toastError) : undefined}
           onEdit={cropOnly ? undefined : (edit) => api.updateItem(detail.id, edit).then(setDetail)}
+          listing={identifies && detail.idType && detail.name ? { id: detail.id, rev: detail.updatedAt } : undefined}
           onDelete={active ? undefined : () => setDeleting([detail.id])}
           onTurn={() =>
             api
@@ -876,6 +894,9 @@ function SessionView({ id }: { id: string }) {
       )}
 
       {adding && <AddToCardsDialog session={session} itemIds={adding} onClose={() => setAdding(null)} />}
+      {editing && (
+        <BulkEditDialog itemIds={editing} onClose={() => setEditing(null)} onDone={() => setChecked(new Set())} />
+      )}
       {actions.node}
     </div>
   );

@@ -1,0 +1,105 @@
+import type { Messages } from "..";
+import type en from "../en/titles";
+
+const messages: Messages<typeof en> = {
+  section: {
+    title: "Titoli delle inserzioni",
+    text: "Quali parti di una carta formano il titolo della sua inserzione su eBay, Whatnot e Shopify, e in che ordine. Il primo modello adatto a una carta ne forma il titolo; le carte senza modello mantengono il titolo abituale. Un titolo che supererebbe {max} caratteri lascia fuori ciò che conta meno invece di perdere la fine.",
+  },
+  add: "Aggiungi un modello",
+  newName: "Modello {n}",
+  name: "Nome",
+  kind: {
+    label: "Per",
+    any: "Tutte le carte",
+    sport: "Carte sportive",
+    tcg: "Carte collezionabili",
+  },
+  only: {
+    label: "Solo",
+    any: "Tutte",
+    graded: "Carte gradate",
+    gradedHint: "in uno slab la cui etichetta è stata letta",
+    autograph: "Autografi",
+    autographHint: "le caratteristiche dicono Auto o Autograph",
+  },
+  parts: "Parti, in ordine",
+  addPart: "Aggiungi una parte…",
+  noParts: "Senza parti, questo modello non forma titoli.",
+  moveEarlier: "Sposta {field} prima",
+  moveLater: "Sposta {field} dopo",
+  removePart: "Rimuovi {field}",
+  moveUp: "Usa prima del modello sopra",
+  moveDown: "Usa dopo il modello sotto",
+  remove: "Rimuovi il modello",
+  field: {
+    year: "Anno",
+    game: "Gioco o sport",
+    brand: "Marca",
+    set: "Set",
+    setCode: "Codice set",
+    name: "Nome",
+    series: "Serie",
+    features: "Caratteristiche",
+    serial: "Numero di serie",
+    number: "Numero della carta",
+    team: "Squadra",
+    grade: "Voto",
+  },
+  preview: {
+    title: "Anteprima",
+    yours: "Le tue carte più recenti, con i titoli di questi modelli.",
+    examples: "Carte di esempio, con i titoli di questi modelli.",
+    builtin: "Titolo abituale",
+    custom: "Questa carta ha un titolo proprio",
+  },
+  count: "{count}/{max}",
+  countHint: "Il titolo di un’inserzione accetta {max} caratteri",
+  tooLong: "Il titolo è lungo {count} caratteri; un’inserzione ne accetta {max}.",
+  leftOut: "Lasciato fuori per farlo stare: {fields}",
+  custom: "Proprio",
+  customHint: "Scritto per questa carta: i modelli non lo cambiano",
+  listingTitle: "Titolo dell’inserzione",
+  backToAutomatic: "Torna al titolo automatico",
+  automaticHint: "Vuoto: il titolo formato dal suo modello.",
+  bulk: {
+    button: "Modifica…",
+    buttonTitle: "Aggiungi un testo ai titoli o a un campo di queste carte",
+    title: { one: "Modifica {count} carta", other: "Modifica {count} carte" },
+    field: {
+      label: "Aggiungi a",
+      title: "Titolo dell’inserzione",
+    },
+    place: {
+      label: "Dove",
+      end: "Alla fine",
+      start: "All’inizio",
+      replace: "Al suo posto",
+    },
+    text: "Testo",
+    textPlaceholder: "PSA 9, Flagship, …",
+    hint: {
+      title:
+        "Ogni titolo viene adattato a {max} caratteri attorno al testo e diventa quello proprio della carta: i modelli non lo cambiano più.",
+      titleReplace:
+        "Ogni carta riceve questo titolo ({max} caratteri al massimo). Senza testo, le carte tornano ai loro titoli automatici.",
+      field: "Un titolo mostra il testo dove il suo modello ha questa parte.",
+      series:
+        "La serie distingue una carta da un’altra: cambiarla accetta queste carte e scarta i loro intervalli di prezzo eBay.",
+    },
+    unchanged: "Nessuna modifica",
+    summary: { one: "Cambierà {count} carta", other: "Cambieranno {count} carte" },
+    summarySkipped: {
+      one: "Cambierà {count} carta · {skipped} non possono",
+      other: "Cambieranno {count} carte · {skipped} non possono",
+    },
+    apply: { one: "Modifica {count} carta", other: "Modifica {count} carte" },
+    applyNone: "Modifica",
+    toast: { one: "{count} carta modificata", other: "{count} carte modificate" },
+    toastSkipped: {
+      one: "{count} carta modificata · {skipped} saltate",
+      other: "{count} carte modificate · {skipped} saltate",
+    },
+  },
+};
+export default messages;

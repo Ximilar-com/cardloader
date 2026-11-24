@@ -5,7 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { api, errorText, type Engine, type GradingMode, type Prices, type Session } from "../lib/api";
 import { ebaySiteOptions } from "../lib/ebaySites";
-import { cropEngineOf, gradeEngineOf } from "../lib/format";
+import { cropEngineOf, gradeEngineOf, pricedByAgent, pricedOnEbay } from "../lib/format";
 import { modelOption, useModels } from "./LocalModels";
 import Modal, { ErrorNote } from "./Modal";
 import {
@@ -41,7 +41,8 @@ export default function AddToCardsDialog({
   const t = useT();
   const o = session.options;
   const [prices, setPrices] = useState(true);
-  const [pricesBy, setPricesBy] = useState<"ebay" | "agent">(o.engine === "agent" ? "agent" : "ebay");
+  // Ximilar's prices come with its identification: not for cards identified already.
+  const [pricesBy, setPricesBy] = useState<Exclude<Prices, "off" | "ximilar">>(o.engine === "agent" ? "agent" : "ebay");
   const [grade, setGrade] = useState(false);
   const [gradeBy, setGradeBy] = useState<Engine>(gradeEngineOf(o));
   const [mode, setMode] = useState<Mode>(o.grading === "off" ? "grade" : o.grading);
@@ -73,16 +74,18 @@ export default function AddToCardsDialog({
 
   const gradesLocally = grade && gradeBy === "local";
   const cropsLocally = crops && cropBy === "local";
-  const local = gradesLocally || cropsLocally;
+  // eBay's listings, with the local model saying which of them are the card.
+  const pricesLocally = prices && pricesBy === "ebay_local";
+  const local = pricesLocally || gradesLocally || cropsLocally;
   // Crops go to a folder of the user's: the session's own folder would be deleted with the session.
   const needsCropFolder = crops && !cropFolder.trim();
   const downloaded = models?.filter((m) => m.state === "ready") ?? [];
   const chosenModel = downloaded.find((m) => m.id === model) ?? downloaded[0];
   // What the run would refuse, said before it is started.
   const missing = [
-    prices && pricesBy === "ebay" && ready && !ready.ebay && { text: t("newSession.needsEbay"), section: "ebay" },
+    prices && pricedOnEbay(pricesBy) && ready && !ready.ebay && { text: t("newSession.needsEbay"), section: "ebay" },
     prices &&
-      pricesBy === "agent" &&
+      pricedByAgent(pricesBy) &&
       ready &&
       !ready.agents && { text: t("newSession.needsAgentsPrices"), section: "agents" },
     crops &&
@@ -172,8 +175,7 @@ export default function AddToCardsDialog({
             <label className="label">{t("newSession.priceWith")}</label>
             <Select
               value={pricesBy}
-              onChange={(v: Prices) => (v === "ebay" || v === "agent") && setPricesBy(v)}
-              // Ximilar's prices come with its identification: not for cards identified already.
+              onChange={(v: Prices) => v !== "off" && v !== "ximilar" && setPricesBy(v)}
               options={priceOptions(false).map((p) =>
                 p.value === "ximilar" ? { ...p, hint: t("session.addTo.ximilarNewOnly") } : p,
               )}
@@ -184,6 +186,7 @@ export default function AddToCardsDialog({
             <Select value={site ?? defaultSite} onChange={setSite} options={ebaySiteOptions()} />
           </div>
           <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.priceNotes.${pricesBy}`)}</p>
+          {pricesLocally && modelField}
         </Part>
 
         <Part on={grade} onToggle={setGrade} label={t("newSession.tasks.grade")}>
@@ -191,7 +194,7 @@ export default function AddToCardsDialog({
             <label className="label">{t("newSession.gradeWith")}</label>
             <Select value={gradeBy} onChange={setGradeBy} options={engineOptions(false)} />
           </div>
-          {gradesLocally ? modelField : <div />}
+          {gradesLocally && !pricesLocally ? modelField : <div />}
           <div>
             <label className="label">{t("newSession.gradeWhat")}</label>
             <Select value={mode} onChange={setMode} options={gradeModeOptions()} />
@@ -215,7 +218,7 @@ export default function AddToCardsDialog({
             <label className="label">{t("newSession.cropWith")}</label>
             <Select value={cropBy} onChange={setCropBy} options={engineOptions()} />
           </div>
-          {cropsLocally && !gradesLocally ? modelField : <div />}
+          {cropsLocally && !gradesLocally && !pricesLocally ? modelField : <div />}
           <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.cropNotes.${cropBy}`)}</p>
           <div className="col-span-2">
             <label className="label">{t("newSession.crop.folder")}</label>

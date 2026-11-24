@@ -177,12 +177,40 @@ export function pricesOf(o: Pick<SessionOptions, "task" | "engine" | "prices" | 
   return prices;
 }
 
+/** Priced from the card's eBay listings (`SessionOptions::uses_ebay`), whoever says which of them count. */
+export function pricedOnEbay(prices: Prices): boolean {
+  return prices === "ebay" || prices === "ebay_local" || prices === "ebay_agent";
+}
+
+/** Priced by an AI agent (`SessionOptions::prices_by_agent`): on its own, or from the listings found for it. */
+export function pricedByAgent(prices: Prices): boolean {
+  return prices === "agent" || prices === "ebay_agent";
+}
+
+/** Everything of a session that is an AI agent's to do: one of these names the prompt asking for all of it. */
+export type AgentTasks =
+  "identify" | "price" | "crop" | "identifyPrice" | "identifyCrop" | "priceCrop" | "identifyPriceCrop";
+
+/** What an AI agent does in the session (identifying, pricing, cropping), or null when nothing. A card goes from one
+ * of these to the next, so the agent is asked for all of them at once: asked only to identify, it stops there
+ * with the cards waiting for its prices. */
+export function agentTasksOf(o: SessionOptions): AgentTasks | null {
+  const tasks = [
+    agentOf(o) && "identify",
+    pricedByAgent(pricesOf(o)) && "price",
+    cropsOf(o) && cropEngineOf(o) === "agent" && "crop",
+  ].filter((task): task is string => !!task);
+  const key = tasks.map((task, i) => (i === 0 ? task : task[0].toUpperCase() + task.slice(1))).join("");
+  return key ? (key as AgentTasks) : null;
+}
+
 /** What happens to each card, in order (`SessionOptions::stages`). */
 export function stagesOf(o: SessionOptions): Stage[] {
   const prices = pricesOf(o);
   return [
     o.task === "identify" && ("identify" as const),
-    (prices === "ebay" || prices === "agent") && ("price" as const),
+    // Ximilar's prices come with its identification: no stage of their own.
+    prices !== "off" && prices !== "ximilar" && ("price" as const),
     gradingOf(o) !== "off" && ("grade" as const),
     cropsOf(o) && ("crop" as const),
   ].filter((s): s is Stage => !!s);

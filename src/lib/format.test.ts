@@ -5,6 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (p: string) => `asset:/
 import type { Engine, GradingMode, Prices, SessionOptions, Stage } from "./api";
 import {
   agentOf,
+  agentTasksOf,
   basename,
   cropEngineOf,
   cropsOf,
@@ -131,6 +132,30 @@ describe("format", () => {
       expect(pricesOf(o), what).toBe(c.prices as Prices);
       expect(stagesOf(o), what).toEqual(c.stages as Stage[]);
     }
+  });
+
+  it("names everything in a session that is an AI agent's to do", () => {
+    const session = (options: Partial<SessionOptions>) =>
+      ({
+        task: "identify",
+        engine: "ximilar",
+        grading: "off",
+        saveCrops: false,
+        priceStats: false,
+        ...options,
+      }) as SessionOptions;
+    expect(agentTasksOf(session({}))).toBeNull();
+    expect(agentTasksOf(session({ engine: "agent" }))).toBe("identify");
+    // The session that showed the gap: the agent identifies, then keeps the eBay listings that are the card.
+    expect(agentTasksOf(session({ engine: "agent", prices: "ebay_agent" }))).toBe("identifyPrice");
+    expect(agentTasksOf(session({ prices: "agent" }))).toBe("price");
+    expect(agentTasksOf(session({ prices: "ebay_local", saveCrops: true, cropEngine: "agent" }))).toBe("crop");
+    expect(agentTasksOf(session({ prices: "agent", saveCrops: true, cropEngine: "agent" }))).toBe("priceCrop");
+    expect(agentTasksOf(session({ engine: "agent", prices: "agent", saveCrops: true, cropEngine: "agent" }))).toBe(
+      "identifyPriceCrop",
+    );
+    // A crop-only session's corners can be the agent's; nothing else of it is.
+    expect(agentTasksOf(session({ task: "crop", engine: "agent", prices: "agent", cropEngine: "agent" }))).toBe("crop");
   });
 
   it("maps the chosen tasks onto a session's options and back", () => {

@@ -1,0 +1,105 @@
+import type { Messages } from "..";
+import type en from "../en/titles";
+
+const messages: Messages<typeof en> = {
+  section: {
+    title: "Títulos de los anuncios",
+    text: "Qué partes de una carta forman el título de su anuncio en eBay, Whatnot y Shopify, y en qué orden. La primera plantilla que corresponde a una carta forma su título; las cartas sin plantilla conservan el título habitual. Un título que pasaría de {max} caracteres deja fuera lo menos importante en vez de perder el final.",
+  },
+  add: "Añadir una plantilla",
+  newName: "Plantilla {n}",
+  name: "Nombre",
+  kind: {
+    label: "Para",
+    any: "Todas las cartas",
+    sport: "Cartas deportivas",
+    tcg: "Cartas coleccionables",
+  },
+  only: {
+    label: "Solo",
+    any: "Todas ellas",
+    graded: "Cartas graduadas",
+    gradedHint: "en un slab cuya etiqueta se leyó",
+    autograph: "Autógrafos",
+    autographHint: "Características dicen Auto o Autograph",
+  },
+  parts: "Partes, en orden",
+  addPart: "Añadir una parte…",
+  noParts: "Sin partes, esta plantilla no forma títulos.",
+  moveEarlier: "Mover {field} antes",
+  moveLater: "Mover {field} después",
+  removePart: "Quitar {field}",
+  moveUp: "Usar antes que la plantilla de arriba",
+  moveDown: "Usar después de la plantilla de abajo",
+  remove: "Quitar la plantilla",
+  field: {
+    year: "Año",
+    game: "Juego o deporte",
+    brand: "Marca",
+    set: "Set",
+    setCode: "Código del set",
+    name: "Nombre",
+    series: "Serie",
+    features: "Características",
+    serial: "Número de serie",
+    number: "Número de carta",
+    team: "Equipo",
+    grade: "Nota",
+  },
+  preview: {
+    title: "Vista previa",
+    yours: "Tus cartas más recientes, con los títulos de estas plantillas.",
+    examples: "Cartas de ejemplo, con los títulos de estas plantillas.",
+    builtin: "Título habitual",
+    custom: "Esta carta tiene su propio título",
+  },
+  count: "{count}/{max}",
+  countHint: "El título de un anuncio admite {max} caracteres",
+  tooLong: "El título tiene {count} caracteres; un anuncio admite {max}.",
+  leftOut: "Se dejó fuera para que quepa: {fields}",
+  custom: "Propio",
+  customHint: "Escrito para esta carta: las plantillas no lo cambian",
+  listingTitle: "Título del anuncio",
+  backToAutomatic: "Volver al título automático",
+  automaticHint: "Vacío: el título que forma su plantilla.",
+  bulk: {
+    button: "Editar…",
+    buttonTitle: "Añadir un texto a los títulos o a un campo de estas cartas",
+    title: { one: "Editar {count} carta", other: "Editar {count} cartas" },
+    field: {
+      label: "Añadir a",
+      title: "Título del anuncio",
+    },
+    place: {
+      label: "Dónde",
+      end: "Al final",
+      start: "Al principio",
+      replace: "En su lugar",
+    },
+    text: "Texto",
+    textPlaceholder: "PSA 9, Flagship, …",
+    hint: {
+      title:
+        "Cada título se ajusta a {max} caracteres alrededor del texto y pasa a ser el propio de la carta: las plantillas ya no lo cambian.",
+      titleReplace:
+        "Todas las cartas reciben este título ({max} caracteres como máximo). Sin texto, las cartas vuelven a sus títulos automáticos.",
+      field: "Un título muestra el texto donde su plantilla tiene esta parte.",
+      series:
+        "La serie distingue una carta de otra: cambiarla acepta estas cartas y descarta sus rangos de precios de eBay.",
+    },
+    unchanged: "Sin cambios",
+    summary: { one: "Cambiará {count} carta", other: "Cambiarán {count} cartas" },
+    summarySkipped: {
+      one: "Cambiará {count} carta · {skipped} no lo admiten",
+      other: "Cambiarán {count} cartas · {skipped} no lo admiten",
+    },
+    apply: { one: "Cambiar {count} carta", other: "Cambiar {count} cartas" },
+    applyNone: "Cambiar",
+    toast: { one: "{count} carta cambiada", other: "{count} cartas cambiadas" },
+    toastSkipped: {
+      one: "{count} carta cambiada · {skipped} omitidas",
+      other: "{count} cartas cambiadas · {skipped} omitidas",
+    },
+  },
+};
+export default messages;

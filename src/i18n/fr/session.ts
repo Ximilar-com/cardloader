@@ -221,25 +221,34 @@ const messages: Messages<typeof en> = {
     none: "Aucune carte identifiée à compléter : celles en attente, en cours ou non identifiées sont laissées de côté.",
   },
   agentPrompt: {
-    identify: "Identifie les cartes de la session Cardloader {name} (id {id}) via MCP.",
-    price: "Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP.",
-    crop: "Recadre les cartes de la session Cardloader {name} (id {id}) via MCP.",
+    identify:
+      "Identifie les cartes de la session Cardloader {name} (id {id}) via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
+    price:
+      "Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
+    crop: "Recadre les cartes de la session Cardloader {name} (id {id}) via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
+    identifyPrice:
+      "Identifie les cartes de la session Cardloader {name} (id {id}) et fixe leur prix via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
+    identifyCrop:
+      "Identifie et recadre les cartes de la session Cardloader {name} (id {id}) via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
+    priceCrop:
+      "Fixe le prix des cartes de la session Cardloader {name} (id {id}) et recadre-les via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
+    identifyPriceCrop:
+      "Identifie les cartes de la session Cardloader {name} (id {id}), fixe leur prix et recadre-les via MCP, et continue jusqu’à ce qu’aucune carte ne t’attende.",
     copy: "Copier le prompt",
   },
   agentCropping: {
-    one: "<b>{count} carte</b> attend que votre agent IA trouve ses coins. Demandez-lui, p. ex. dans Claude : « Recadre les cartes de la session Cardloader {name} (id {id}) via MCP. »",
+    one: "<b>{count} carte</b> attend que votre agent IA trouve ses coins. Demandez-lui, p. ex. dans Claude : « {prompt} »",
     other:
-      "<b>{count} cartes</b> attendent que votre agent IA trouve leurs coins. Demandez-lui, p. ex. dans Claude : « Recadre les cartes de la session Cardloader {name} (id {id}) via MCP. »",
+      "<b>{count} cartes</b> attendent que votre agent IA trouve leurs coins. Demandez-lui, p. ex. dans Claude : « {prompt} »",
   },
   agentPricing: {
-    one: "<b>{count} carte</b> attend le prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP. »",
+    one: "<b>{count} carte</b> attend le prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « {prompt} »",
     other:
-      "<b>{count} cartes</b> attendent les prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « Fixe le prix des cartes de la session Cardloader {name} (id {id}) via MCP. »",
+      "<b>{count} cartes</b> attendent les prix de votre agent IA. Demandez-lui, p. ex. dans Claude : « {prompt} »",
   },
   agentWaiting: {
-    one: "<b>{count} carte</b> attend votre agent IA. Demandez-lui, p. ex. dans Claude : « Identifie les cartes de la session Cardloader {name} (id {id}) via MCP. »",
-    other:
-      "<b>{count} cartes</b> attendent votre agent IA. Demandez-lui, p. ex. dans Claude : « Identifie les cartes de la session Cardloader {name} (id {id}) via MCP. »",
+    one: "<b>{count} carte</b> attend votre agent IA. Demandez-lui, p. ex. dans Claude : « {prompt} »",
+    other: "<b>{count} cartes</b> attendent votre agent IA. Demandez-lui, p. ex. dans Claude : « {prompt} »",
   },
 };
 export default messages;

@@ -33,6 +33,11 @@ const HEADER: &[&str] = &[
     "error",
     "notes",
     "location",
+    "brand",
+    "team",
+    "serial",
+    "features",
+    "listing_title",
 ];
 
 /// Quotes a field when it holds a separator, quote or line break (RFC 4180).
@@ -88,6 +93,12 @@ pub fn csv(items: &[ItemSummary]) -> String {
             i.error.clone().unwrap_or_default(),
             i.notes.clone(),
             i.location.clone(),
+            c.brand.clone(),
+            c.team.clone(),
+            c.serial.clone(),
+            c.features.clone(),
+            // Only a title someone wrote: the automatic one depends on the templates of the day.
+            i.title.clone(),
         ];
         out.push_str(&row.iter().map(|v| field(v)).collect::<Vec<_>>().join(","));
         out.push_str("\r\n");
@@ -121,6 +132,8 @@ mod tests {
             id_type: Some("tcg".into()),
             card: CardFields {
                 name: "Say \"hi\"".into(),
+                brand: "Topps".into(),
+                features: "RC, Auto".into(),
                 ..Default::default()
             },
             confidence: Some("high".into()),
@@ -144,6 +157,7 @@ mod tests {
             review_note: String::new(),
             notes: String::new(),
             location: String::new(),
+            title: "Say hi RC".into(),
             ebay: None,
             market_range: None,
         };
@@ -153,5 +167,11 @@ mod tests {
         let row = lines.next().unwrap();
         assert!(row.starts_with("3,done,tcg,\"Say \"\"hi\"\"\","));
         assert!(row.contains(",high,0.25,yes,12.5,USD,,,PSA,10,12345678,\"/cards/a, front.jpg\",,"));
+        assert!(text
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with(",location,brand,team,serial,features,listing_title"));
+        assert!(row.ends_with(",Topps,,,\"RC, Auto\",Say hi RC"));
     }
 }

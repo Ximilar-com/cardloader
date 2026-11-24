@@ -55,7 +55,8 @@ src-tauri/src/
   ximilar/        http.rs (client, retry, error classes), recognition.rs, grading.rs, cards_cloud.rs
   ebay/           selling on eBay with the user's keyset: mod.rs (OAuth: consent window, tokens, account setup),
                   client.rs (REST calls, errors[]), listing.rs (card → category, condition descriptors, title,
-                  item specifics, inventory item + offer), sync.rs (jobs: drafts, publish, refresh, remove)
+                  item specifics, inventory item + offer), title.rs (listing titles: the user's templates, fitting
+                  into 80 characters, one text for many cards), sync.rs (jobs: drafts, publish, refresh, remove)
   market/         files for other marketplaces: tcgplayer.rs (list of ungraded cards), whatnot.rs (bulk listing
                   CSV), shopify.rs (product CSV with condition variants, inventory CSV), imgbb.rs (public picture
                   hosting, `Hosting`); shares eBay's card typing and titles
@@ -204,12 +205,25 @@ state from them.
   sessions = `engine`, an agent never grades), `prices` (`Prices`: Ximilar's price statistics, which come only with
   Ximilar's identification, eBay listings, or an agent; `None` = `price_stats`), `crop_engine` crops (Ximilar, local or
   agent; `None` = Ximilar). One `local_model` serves every local task. Run checks: `uses_local` needs the model downloaded, `uses_ebay` the eBay
-  keyset; `uses_agent` runs `AGENT_BATCH` cards at once, else `uses_local` runs one.
-- **A card's pass** (`Runner::recognize_item`): the stages its session has, in order (`SessionOptions::stages`:
-  identify, price, grade, crop; `run_stage` picks what does each by the options). The price stage is
+  keyset. How many cards run at once is by engine, not by session (`Lanes`, see "A card's pass").
+- **A card's pass** (`Runner::recognize_item`): the stages its session has (`SessionOptions::stages`: identify,
+  price, grade, crop; `run_stage` picks what does each by the options), in the order of `SessionOptions::pass`:
+  identification first (a price needs the card known; grading and crops don't, but it is what the user waits
+  for), then by how long a stage may hold the card up (`wait`): what answers at once (Ximilar, a plain eBay
+  search), then the local model's work, then what waits for an AI agent. So a grade is never held up behind an
+  agent's price. `stages()` stays the listed order (the shared cases, the UI); only the runner uses `pass()`, and
+  `resume` / `add_to_cards` (`in_pass_order`) follow it. **Cards overlap** (`Lanes` in `runner.rs`): a card
+  takes a place in the lane of what a stage needs only for that stage — `api` (Settings' parallel requests),
+  `local` (1), `ebay` (`EBAY_AT_ONCE`), none for an agent's wait — and the start the dispatcher gave it
+  (`starts_at_once`: what the first stage's engine takes, `AGENT_BATCH` for an agent's) is given back when its
+  first stage is done, at once for a card going on with a pass cut short. The next card is identified while this
+  one is priced; identification runs ahead of slower stages without a bound, the cards parked between stages.
+  A paused session starts nothing new, also not a card's next stage (`Lanes::take`). The price stage is
   `price_on_ebay` (`Runner::find_ebay_listings`, the same search the Tauri command and the MCP tool run; the median of
   the listings becomes `items.price` via `Db::save_price`, no listings = no price) or `price_by_agent`; a failed price
-  is `JobKind::Price` ("price: …"), a row with no job id that is never polled. The first stage failing is the card
+  is `JobKind::Price` ("price: …"), a row with no job id that is never polled. `prices: ebay_local` /
+  `ebay_agent` (see "Listings that are the card") search the same way and have someone keep the card's own
+  listings before the median is taken. The first stage failing is the card
   failing (`process`: offline pauses, a refused token stops the run). A later stage that can't pass fails only that
   part (`Db::fail_job`, "grading: …" / "crop: …") and ends the pass; one stopped, offline or refused for the token
   (`comes_back`) leaves the card in the queue owing that stage (`items.stage`), and the next run goes on there
@@ -249,7 +263,14 @@ state from them.
   with `Secret::McpToken`; hosts are loopback, browser origins only localhost. It answers stateless JSON (no MCP
   sessions). `cardloader mcp` (checked in `main.rs` before Tauri starts) reads `<config>/mcp.json` (port, pid) and
   the token, relays stdin lines concurrently, and opens the app only from a macOS bundle (`open`), since starting a
-  second exe would share the database. `wait_for_session` long-polls ≤ 120 s. Agents' reviews go through
+  second exe would share the database. A client keeps one bridge for days and asks for the tools once, so the
+  bridge says when they change: `mcp.json` also carries `tools` (`tools_stamp`: version + allowed groups, rewritten
+  by `McpServer::apply`), the bridge reads it every 2 s and sends `notifications/tools/list_changed` when the pid
+  or the stamp isn't the one the client's list came from (`Bridge::tools_changed`; it adds `listChanged` to the
+  `initialize` answer, since the stateless server can't notify). Claude Desktop had gone on offering an older
+  app's 31 tools. A session is the argument `session`; `session_id` is still read (serde alias) but no longer
+  advertised: through Claude Desktop's relay to the computer that one argument never arrived (its own tools have a
+  `session_id` too; why it is dropped isn't known). `wait_for_session` long-polls ≤ 120 s. Agents' reviews go through
   `Reviewer::Agent { note }`: `items.agent_reviewed` + `review_note`; the user accepting such a card makes it theirs,
   an agent never takes over a user's accept (it can't unaccept one either; `Db::set_reviewed`), a new recognition
   clears both (`byAgent` in `cardview.ts`). What an agent names is checked where it is used: an export path must be a
@@ -287,7 +308,38 @@ state from them.
   tool (`Handler::crop_answer`: the quad, the size's shape against the picture's, a card with a back needs `back`
   or `no_back` with why), because an answer handed over ends the wait; `uncropped` fails the crop with the note.
   The corners start at the card's own top-left, so the cut is upright however the card lies. `turn_item` refuses a
-  card waiting for its corners; prompt `crop_session`.
+  card waiting for its corners; prompt `crop_session`. **Several tasks for one agent**: a card goes from the
+  agent's identification to its price to its crop, each a wait of its own, so the agent must move between the
+  three loops. A tool with nothing of its own waiting says at once where cards do wait (`Handler::elsewhere`: "no
+  card waits here now, but 1 card(s) wait for your price: call next_cards_to_price") instead of long-polling for
+  cards that only come once those are answered, and every answer's `next` says the same (`after`). The session
+  page's banners copy one prompt for all of the session's agent tasks (`agentTasksOf` in `format.ts` →
+  `session.agentPrompt.identifyPrice`, …, each ending "keep going until no card waits for you"): asked only to
+  identify, Claude stopped with the cards waiting for its prices.
+- **Listing titles** (`ebay/title.rs`; eBay, Whatnot and Shopify share the title through `listing::plan(item,
+  titles)`): `settings.titles` are the user's templates (`TitleTemplate`: ordered `TitleField`s for a `kind` of
+  card and `only` graded ones or autographs, i.e. Features with a word starting "auto"), top-level because
+  `settings.ebay` belongs to the connection. The first template that is for a card and has something to say about
+  it makes its title, else `builtin(kind)`, the titles Cardloader always made. `compose` never cuts a title that
+  is too long: name, number and grade stay, the rest is taken while it fits by `BY_IMPORTANCE`, rendered in the
+  template's order (`clip_words` only when those three alone pass `MAX_TITLE`); a part another part says isn't
+  repeated (`CAN_REPEAT`, never the set or a number). A template's enums have `#[serde(other)] Unknown`:
+  `SettingsStore::load` reads a file that doesn't parse as no settings at all, so a value of a newer version must
+  parse. **A card's own title** is `items.title` (migration 014, NULL = automatic; `Listing::custom`), written by
+  the edit form, `edit_card` or a bulk change, at most 80 characters, dropped with `OTHER_CARD` by a new
+  recognition or a pick but kept by a typed field; Shopify's grouped product takes `Listing::automatic`.
+  **Details**: `brand`, `team`, `serial`, `features` are `CardFields` (same migration) that `Db::save_edit`
+  writes like notes: no review, `edited`, `picks` or eBay ranges change, and Cards Cloud gets none of them
+  (`cards_cloud`'s eight fields stay). `recognition::parse` reads `company`, `team`, `serial_number`;
+  `features` is only ever typed (the user decided against a guessed "Auto" in a title). `Db::fill_details` gave
+  older cards theirs from the stored answer when the migration ran, best-effort. **One text for many cards**
+  (`BulkEdit`, `title::apply`, `AppState::edit_items`, MCP `edit_cards`; `BulkEditDialog.tsx`): to a field, or to
+  the start/end of the title, where an automatic title is composed again in the room the text leaves and becomes
+  the card's own; a card that can't take it is skipped, one that says the text already is unchanged.
+  `Runner::edit_items` saves all, then tells each session and sends corrections once. `AppState::preview_titles`
+  (`preview_titles`) is every preview: a card's title in the panel, the dialog's before → after, and the Settings
+  editor's unsaved templates on the newest cards (`title::samples` when there are none). `demo.ts` composes
+  titles roughly the same way for the browser demo; nothing checks the two against each other.
 - **Price currencies**: `items.price_currency` (migration 013; NULL = USD, every older price) read as
   `ItemSummary.price_currency`. Ximilar's, picks and edits keep/write USD; the eBay price stage writes the range's
   currency, an agent's `price_cards` its `currency`, a CSV its currency column (or €/£ in the price). Totals are by
@@ -311,6 +363,27 @@ state from them.
   (`PriceRange`, read with every row for the session table's eBay column), migration 009. Both are dropped when the
   card becomes another one (`db::OTHER_CARD`: a new recognition, a pick, typed card fields). `real_ebay_search` is
   the opt-in check against eBay.
+- **Listings that are the card** (`Prices::EbayLocal`, `EbayAgent`; the user's decisions: the median, raw cards
+  from ungraded listings and slabs from their own grader and grade, ticks in the panel don't move the price). Both
+  are `uses_ebay` (keyset), one `Stage::Price`, and end in `Runner::keep_ebay_listings` (`browse::keep`: `counted`
+  flags, a note saying who chose) + `price_from` (the kept listings' median; none kept = the card keeps the price
+  it had, not an error). **Local** (`prices_locally`, so `uses_local`: the model is asked for, one card at a
+  time; `Runner::price_by_listings_locally`, `local::price`, `LocalModels::pick_listings`): `LOCAL_LISTINGS` (30)
+  searched, `price::BATCH` (10) per question, **no picture** (`llama.rs` writes no marker for none), a GBNF of one
+  `true`/`false` per listing under its number; the price is left out of the question on purpose (a filter that
+  saw prices would choose the median). Titles are untrusted text in a prompt whose special tokens are parsed:
+  `price::clean` strips `<`, `>`, `|` and control characters. An answer naming no listing fails the price.
+  `real_model_picks_listings` (opt-in, needs only `CARDLOADER_MODELS`) prints a model's verdicts on twelve made-up
+  listings: Qwen3.5 9B 12/12 twice, 4B 11/12 and 12/12, LFM 450M 7/12 and 9/12; no model is gated on it.
+  **Agent** (`agent_picks_listings`, also `prices_by_agent`: waiter, banner; `Runner::price_by_agent`): the search
+  runs before the card waits and again on every run (never a market the user's search or ticks changed), then
+  `next_cards_to_price` hands the card over alone with `listings` and thumbnails (`thumbnails`: `LISTING_THUMBS`
+  24, `THUMB_EDGE` 225, `THUMBS_BUDGET` 250 kB taken off `fit`'s budget, so the scans stay readable),
+  `listing_pictures` gives up to 8 larger ones, and `price_cards` takes `listing_ids` (`AgentAnswer::Kept`;
+  checked in the tool against the stored search, `known_listings`, since an answer handed over ends the wait). A
+  plain `price` is refused there; a plain `agent` session takes either. Pictures come from `ebay::pictures::fetch`:
+  https on `*.ebayimg.com` only, no redirects, 8 s, 3 MB (loopback too under `cfg!(test)`), the size asked by
+  rewriting `s-l225` in the address (`sized`), else the address as stored.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
   the queued cards and never reads the source, so a scanner session doesn't start a scan.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail
@@ -463,8 +536,13 @@ state from them.
 
 Real Ximilar API calls, real eBay calls (use a sandbox keyset), real updates (need a published signed release), real scanners (SANE/TWAIN), signed release builds,
 the real local model (CI uses a fake `VisionModel`; see the opt-in tests above), how well a local model or an
-agent finds a card's corners (nothing measures the crops they give; the fake never runs the corners grammar), real GPUs (Vulkan/CUDA: CI has
+agent finds a card's corners (nothing measures the crops they give; the fake never runs the corners grammar), the
+`company`, `team` and `serial_number` keys of Ximilar's sports matches (seen in stored answers, in no documentation;
+whether TCG matches have any is unknown), how well a local model tells a card's eBay listings from others (twelve
+made-up listings, see above), eBay's real picture addresses and whether every size of a picture is served (the
+fixtures' are made up), whether Claude Desktop takes a result with about 26 pictures, real GPUs (Vulkan/CUDA: CI has
 none, so it builds the backend and runs on the CPU), the llama.cpp libraries in the Windows/Linux bundles, and real MCP clients (Claude Desktop,
 Claude Code; the tests speak JSON-RPC over HTTP and through the bridge, and `npx @modelcontextprotocol/inspector`
-can call the tools by hand). Say so when a change depends on
+can call the tools by hand; whether Claude Desktop asks for the tools again after `list_changed`, and whether
+`session` passes its relay where `session_id` didn't, was never seen). Say so when a change depends on
 them, and describe how it was checked.

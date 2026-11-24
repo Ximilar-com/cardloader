@@ -41,7 +41,10 @@ select_candidate. To identify the cards yourself instead, create the session wit
 reads the images and hands you each card's pictures through next_cards_to_identify, and you answer with \
 identify_cards. Both next_cards_to_identify and next_cards_to_price say whether the user lets you search the web \
 (webSearch): when not, use only the cards' pictures and Cardloader's tools. To price identified cards yourself, create the session with prices \"agent\": next_cards_to_price \
-hands you each identified card, and you answer with price_cards. For what an identified card asks on eBay now, call \
+hands you each identified card, and you answer with price_cards. A session can give you several of these tasks: \
+when a tool's next says cards wait for another one, go on with the tool it names, until each says finished. With prices \"ebay_agent\" Cardloader searches \
+eBay for each card and hands you its listings with their pictures: you answer with the listings that are the card \
+(price_cards with listing_ids; listing_pictures shows larger pictures), and their median is its price. For what an identified card asks on eBay now, call \
 find_ebay_listings, then keep_ebay_listings with the listings that are the card. To crop cards yourself (each \
 card cut out of its picture, straightened), create the session with crop_engine \"agent\" (task crop, or \
 save_crops): next_cards_to_crop hands you each card's pictures, you find the card's four corners in them, \
@@ -57,6 +60,15 @@ const PICTURES_BUDGET: usize = 750_000;
 /// The least of that budget a card picture gets: about a 1024 px card at a middling JPEG quality. With more
 /// pictures than that leaves room for, fewer cards are sent rather than pictures too coarse to read.
 const PICTURE_MIN_SHARE: usize = 150_000;
+/// Thumbnails of a card's eBay listings sent with it (`ebay_agent`): at most this many, eBay's best matches
+/// first, as small as eBay's own search shows them, and within this much of a result, so the card's own pictures
+/// keep the rest of `PICTURES_BUDGET` and stay readable. Larger ones come on request (`listing_pictures`).
+const LISTING_THUMBS: usize = 24;
+const THUMB_EDGE: u32 = 225;
+const THUMBS_BUDGET: usize = 250_000;
+/// `listing_pictures`: how many listings one call shows, and their long edge unless the agent asks otherwise.
+const LISTING_PICTURES: usize = 8;
+const LISTING_PICTURE_EDGE: u32 = 800;
 /// The long edge of the cut `preview_crop` shows: enough to see whether the card's edges are in it.
 const CUT_PREVIEW_LONG_EDGE: u32 = 768;
 /// How far the shape of the picture an agent says its corners are in may be from the picture's own (its width
@@ -109,9 +121,13 @@ impl Group {
 #[derive(Deserialize, JsonSchema)]
 struct NoArgs {}
 
+// A session is named by the argument `session`. It was `session_id` (still read, for clients set up with it), a
+// name Claude Desktop's own tools use too: called through its relay to this computer, that one argument never
+// arrived ("missing field `session_id`"), whatever its value, while every other did.
 #[derive(Deserialize, JsonSchema)]
 struct SessionArg {
     /// The session: its id, its name, or "latest" for the newest session.
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
 }
 
@@ -143,6 +159,7 @@ enum CardFilter {
 #[derive(Deserialize, JsonSchema)]
 struct ListCards {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     #[serde(default)]
     filter: CardFilter,
@@ -206,8 +223,10 @@ struct CreateSession {
     /// What grades the cards when they are graded: ximilar or local. Default: as `engine` (ximilar for agent).
     grade_engine: Option<Engine>,
     /// Where identified cards' prices come from: ximilar (price statistics, only when ximilar identifies), ebay
-    /// (the median of the card's active eBay listings; needs the user's eBay keyset), agent (you price each card:
-    /// next_cards_to_price, then price_cards), or off. Default: ximilar when `price_stats`, else off.
+    /// (the median of the card's active eBay listings; needs the user's eBay keyset), ebay_local (the same, of
+    /// the listings the local model keeps as the card), ebay_agent (the same, of the listings you keep:
+    /// next_cards_to_price hands you them with their pictures, price_cards takes listing_ids), agent (you price
+    /// each card: next_cards_to_price, then price_cards), or off. Default: ximilar when `price_stats`, else off.
     prices: Option<Prices>,
     /// For prices from eBay or by you: the eBay site (EBAY_US, EBAY_GB, EBAY_DE, …). Default: the user's.
     ebay_site: Option<String>,
@@ -264,6 +283,7 @@ struct CreateSession {
 #[derive(Deserialize, JsonSchema)]
 struct RunSession {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Only analyse the cards waiting in the queue: no new files, no scan (default false).
     only_queued: Option<bool>,
@@ -272,6 +292,7 @@ struct RunSession {
 #[derive(Deserialize, JsonSchema)]
 struct NextCards {
     /// A session identified, priced or cropped by an AI agent (its id, its name, or "latest"); empty for any.
+    #[serde(rename = "session", alias = "session_id")]
     session_id: Option<String>,
     /// Cards to return at most (default 1, at most 10): each comes with its pictures, front and back, so one card
     /// at a time gets them at their best. Fewer come than asked for when the pictures of that many wouldn't fit
@@ -287,11 +308,14 @@ struct NextCards {
 #[derive(Deserialize, JsonSchema)]
 struct AddToCardsArgs {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Only these cards (item ids); default: every identified card that is finished.
     item_ids: Option<Vec<i64>>,
-    /// ebay: the median of each card's active eBay listings (needs the user's eBay keyset); agent: you price
-    /// each card (next_cards_to_price, then price_cards). Ximilar's prices come only with its identification.
+    /// ebay: the median of each card's active eBay listings (needs the user's eBay keyset); ebay_local: of the
+    /// listings the local model keeps as the card; ebay_agent: of the listings you keep (next_cards_to_price
+    /// hands you them, price_cards takes listing_ids); agent: you price each card (next_cards_to_price, then
+    /// price_cards). Ximilar's prices come only with its identification.
     prices: Option<Prices>,
     /// grade (a full grade), centering, or condition (e.g. Near Mint).
     grading: Option<GradingMode>,
@@ -366,10 +390,24 @@ struct CardPrice {
     price: Option<f64>,
     /// The price's currency (ISO 4217, e.g. EUR for prices from ebay.de). Default: USD.
     currency: Option<String>,
+    /// Instead of a price: the ids of the card's eBay listings that are this card, as it is (from
+    /// next_cards_to_price in an ebay_agent session, or your own find_ebay_listings). Their median becomes the
+    /// card's price. An empty list, with a note, when none of them is the card.
+    listing_ids: Option<Vec<String>>,
     /// How you got it, in a few words (shown to the user), e.g. "median of 6 sold listings, no lots".
     note: Option<String>,
     /// You found no price: only the card's price fails, with your note.
     unpriced: Option<bool>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct ListingPictures {
+    item_id: i64,
+    /// Listings of the card's last eBay search (ids from next_cards_to_price or find_ebay_listings): at most 8
+    /// a call.
+    listing_ids: Vec<String>,
+    /// The pictures' long edge in pixels (default 800, 256 to 1024).
+    long_edge: Option<u32>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -390,6 +428,14 @@ struct CardIdentity {
     year: Option<String>,
     /// The variant, parallel or insert, e.g. "Silver Prizm", "Reverse Holo".
     variant: Option<String>,
+    /// Who made the card, e.g. "Topps", "Panini".
+    brand: Option<String>,
+    /// The player's team on the card.
+    team: Option<String>,
+    /// The copy's serial number as printed, e.g. "43/75".
+    serial: Option<String>,
+    /// What a seller would say in a listing title, e.g. "RC Auto". Only what the pictures show.
+    features: Option<String>,
     /// The game or sport, e.g. Pokemon, Football, Soccer.
     game: Option<String>,
     /// tcg, sport or comics. Default: from the game, else the session's.
@@ -434,6 +480,7 @@ struct KeepEbayListings {
 #[derive(Deserialize, JsonSchema)]
 struct WaitForSession {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Return after this many seconds even if it still runs (default 50, at most 120).
     timeout_seconds: Option<u64>,
@@ -469,6 +516,15 @@ struct EditCard {
     year: Option<String>,
     /// The game or sport.
     subcategory: Option<String>,
+    brand: Option<String>,
+    team: Option<String>,
+    /// The copy's serial number, e.g. "43/75".
+    serial: Option<String>,
+    /// What a listing title says about the card, e.g. "RC Auto".
+    features: Option<String>,
+    /// The card's own listing title (80 characters at most), instead of the one its template makes; "" goes
+    /// back to the automatic one.
+    title: Option<String>,
     price: Option<f64>,
     /// The user's notes on the card (local only).
     notes: Option<String>,
@@ -481,6 +537,7 @@ struct EditCard {
 #[derive(Deserialize, JsonSchema)]
 struct RetryCards {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Default: every card that failed.
     item_ids: Option<Vec<i64>>,
@@ -489,6 +546,19 @@ struct RetryCards {
 #[derive(Deserialize, JsonSchema)]
 struct ItemIds {
     item_ids: Vec<i64>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+struct EditCards {
+    item_ids: Vec<i64>,
+    /// What the text goes to: title (each card's own listing title), features, brand, team or series.
+    field: String,
+    /// start, end (the default) or replace. replace with an empty text empties the field; a title is then the
+    /// automatic one again.
+    place: Option<String>,
+    text: String,
+    /// true: change nothing, only return the titles the change would give.
+    preview: Option<bool>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -501,6 +571,7 @@ struct SetLocation {
 #[derive(Deserialize, JsonSchema)]
 struct ExportCsv {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -511,6 +582,7 @@ struct ExportCsv {
 #[derive(Deserialize, JsonSchema)]
 struct ExportTcgplayer {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -524,6 +596,7 @@ struct ExportTcgplayer {
 #[derive(Deserialize, JsonSchema)]
 struct DeleteCards {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     item_ids: Vec<i64>,
 }
@@ -531,6 +604,7 @@ struct DeleteCards {
 #[derive(Deserialize, JsonSchema)]
 struct DeleteSession {
     /// The session id ("latest" is not accepted here).
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Also delete its copy in Cards Cloud (default false).
     also_in_cards_cloud: Option<bool>,
@@ -539,6 +613,7 @@ struct DeleteSession {
 #[derive(Deserialize, JsonSchema)]
 struct EbayDrafts {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// The cards and their prices. Default: every identified card that has a market price, at that price.
     items: Option<Vec<DraftItem>>,
@@ -549,6 +624,7 @@ struct EbayDrafts {
 #[derive(Deserialize, JsonSchema)]
 struct EbayCards {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Default: all of the session's cards that apply.
     item_ids: Option<Vec<i64>>,
@@ -557,6 +633,7 @@ struct EbayCards {
 #[derive(Deserialize, JsonSchema)]
 struct EbayRefresh {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Read the listings even if they were read a few minutes ago.
     force: Option<bool>,
@@ -565,6 +642,7 @@ struct EbayRefresh {
 #[derive(Deserialize, JsonSchema)]
 struct ExportWhatnot {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -577,6 +655,7 @@ struct ExportWhatnot {
 #[derive(Deserialize, JsonSchema)]
 struct ExportShopify {
     /// The session: its id, its name, or "latest".
+    #[serde(rename = "session", alias = "session_id")]
     session_id: String,
     /// Where to write the file: an absolute path ending in .csv, outside Cardloader's own folders.
     path: String,
@@ -673,14 +752,16 @@ fn specs() -> Vec<Spec> {
         spec::<NextCards>(Run, "next_cards_to_crop", "Cards to crop", "Cards of sessions with crop_engine agent that wait for you to find them in their pictures: each card's front (and back) picture with its size in pixels. Waits while the next cards are scanned; says finished when no more can come. Answer with crop_cards."),
         spec::<PreviewCrop>(Run, "preview_crop", "Preview a crop", "Shows the picture that four corners would cut out of one side of a card, without saving anything: check that the whole card is in it and nothing else, correct the corners, then send them with crop_cards."),
         spec::<CropCards>(Run, "crop_cards", "Crop cards", "Where the cards from next_cards_to_crop are in their pictures: each side's four corners in the picture's pixels. Cardloader cuts each card out of its full scan, straightened, into the session's crop folder."),
-        spec::<NextCards>(Run, "next_cards_to_price", "Cards to price", "Identified cards of sessions with prices agent that wait for you to price them: their name, set, number, year, variant, game, slab grade, any eBay range already found, and their front (and back) picture. Waits while the next cards are identified; says finished when no more can come. Answer with price_cards."),
-        spec::<PriceCards>(Run, "price_cards", "Price cards", "Your price of cards from next_cards_to_price (in US dollars unless you give each one's currency), with a note on how you got it. find_ebay_listings and keep_ebay_listings can help when the user has an eBay keyset."),
+        spec::<NextCards>(Run, "next_cards_to_price", "Cards to price", "Identified cards of sessions with prices agent or ebay_agent that wait for you to price them: their name, set, number, year, variant, game, slab grade, any eBay range already found, and their front (and back) picture. In an ebay_agent session each card comes alone with the eBay listings Cardloader found for it and small pictures of them: you say which are the card. Waits while the next cards are identified; says finished when no more can come. Answer with price_cards."),
+        spec::<PriceCards>(Run, "price_cards", "Price cards", "Your price of cards from next_cards_to_price (in US dollars unless you give each one's currency), with a note on how you got it; or, instead of a price, listing_ids: the card's eBay listings that are this card, whose median becomes its price (what an ebay_agent session asks for). find_ebay_listings and keep_ebay_listings can help when the user has an eBay keyset."),
+        spec::<ListingPictures>(Run, "listing_pictures", "Pictures of eBay listings", "Larger pictures of some of a card's eBay listings (from its last search), to compare with the card's own pictures before you say which listings are the card: the same card, parallel and condition can be hard to tell from a title."),
         spec::<FindEbayListings>(Run, "find_ebay_listings", "Find eBay listings", "Searches eBay for an identified card's active fixed-price listings (by its name, set and number, or your query) and keeps them on the card with their price range: min, max, average and median. Then call keep_ebay_listings with the listings that are this card. Needs the user's eBay keyset."),
         spec::<KeepEbayListings>(Run, "keep_ebay_listings", "Keep eBay listings", "Of a card's last eBay search, only the listings that are this card count in its price range (the user sees the others left out, with your note)."),
         spec::<WaitForSession>(Run, "wait_for_session", "Wait for a session", "Waits until the session's run ends or the timeout passes, and returns its progress. Call it again while it still runs."),
         spec::<AcceptCards>(Run, "accept_cards", "Accept cards", "Accepts the cards' matches (or takes that back with accepted false). They are marked as accepted by AI with your note. Cards the user accepted stay theirs."),
         spec::<SelectCandidate>(Run, "select_candidate", "Select a candidate", "Makes another candidate the card's match (get_card lists them by index); the card counts as accepted."),
-        spec::<EditCard>(Run, "edit_card", "Edit a card", "Corrects a card's fields or price by hand, or sets its notes and location; given fields change, others stay."),
+        spec::<EditCard>(Run, "edit_card", "Edit a card", "Corrects a card's fields or price by hand, or sets its notes, location, details (brand, team, serial, features) or its own listing title; given fields change, others stay."),
+        spec::<EditCards>(Run, "edit_cards", "Edit many cards", "Adds one text to many cards at once: to the start or end of their listing titles (the title is fitted into eBay's 80 characters around it and becomes the card's own), or to their features, brand, team or series. Returns each card's listing title and its length; with preview true nothing is changed. Cards that can't take it are skipped with the reason."),
         spec::<RetryCards>(Run, "retry_cards", "Analyse cards again", "Puts the failed cards (or the given ones) back in the queue and analyses them."),
         spec::<ItemIds>(Run, "turn_cards_upright", "Turn cards upright", "Turns the pictures (front and back) of the cards Ximilar found upside down; other cards are left as they are."),
         spec::<SetLocation>(Run, "set_location", "Set where cards are kept", "Sets where the cards are kept (a box, a binder page)."),
@@ -920,7 +1001,9 @@ impl Handler {
                 let by_agent = SessionOptions {
                     // Only what was added is the agent's to do now: the cards are identified already.
                     engine: Engine::Ximilar,
-                    prices: a.prices.filter(|p| *p == Prices::Agent),
+                    prices: a
+                        .prices
+                        .filter(|p| matches!(p, Prices::Agent | Prices::EbayAgent)),
                     save_crops: crops,
                     ..session.options.clone()
                 };
@@ -933,6 +1016,7 @@ impl Handler {
             }
             "find_ebay_listings" => self.find_ebay_listings(args(a)?).await,
             "keep_ebay_listings" => self.keep_ebay_listings(args(a)?),
+            "listing_pictures" => self.listing_pictures(args(a)?).await,
             "accept_cards" => self.accept(args(a)?),
             "select_candidate" => {
                 let a: SelectCandidate = args(a)?;
@@ -941,6 +1025,7 @@ impl Handler {
                 self.card(a.item_id, false).await
             }
             "edit_card" => self.edit(args(a)?).await,
+            "edit_cards" => self.edit_many(args(a)?),
             "retry_cards" => {
                 let a: RetryCards = args(a)?;
                 let id = self.session_id(&a.session_id)?;
@@ -1283,6 +1368,11 @@ impl Handler {
         let mut v = card_row(&item.summary);
         v["sessionId"] = json!(item.summary.session_id);
         v["notes"] = json!(item.summary.notes);
+        // What it would be listed as; `customTitle` is set when someone wrote it for this card.
+        let titles = self.state.settings.get().titles;
+        v["listingTitle"] = json!(crate::ebay::listing::plan(&item.summary, &titles)
+            .ok()
+            .map(|p| p.title));
         v["candidates"] = json!(recognition::candidates(response));
         v["rotation"] = json!(recognition::rotation(response));
         v["links"] = json!(endpoint.map(|e| recognition::parse(e, response).links));
@@ -1291,7 +1381,7 @@ impl Handler {
         let mut content = out(v)?;
         if images {
             let mut shown = vec![pictures(&item, PICTURE_LONG_EDGE).await?];
-            fit(&mut shown, PICTURE_LONG_EDGE).await?;
+            fit(&mut shown, PICTURE_LONG_EDGE, PICTURES_BUDGET).await?;
             content.extend(blocks(&shown[0]).0);
         }
         Ok(content)
@@ -1321,7 +1411,8 @@ impl Handler {
                             s.name
                         ),
                         AgentTask::Price => format!(
-                            "session \"{}\" isn't priced by an AI agent (create one with prices \"agent\")",
+                            "session \"{}\" isn't priced by an AI agent (create one with prices \"agent\" or \
+                             \"ebay_agent\")",
                             s.name
                         ),
                         AgentTask::Crop => format!(
@@ -1341,6 +1432,12 @@ impl Handler {
             let waiting = runner.agent_waiting(session.as_deref(), task);
             if !waiting.is_empty() {
                 break waiting;
+            }
+            // Nothing here, but cards wait for another task of the agent's (identified ones for their price):
+            // waiting on would wait for cards that only come once those are answered.
+            if let Some(there) = self.elsewhere(session.as_deref(), task) {
+                return out(json!({"cards": [], "finished": false,
+                    "next": format!("no card waits here now, but {there}; then call {tool} again")}));
             }
             let running = match &session {
                 Some(id) => runner.is_running(id),
@@ -1374,13 +1471,38 @@ impl Handler {
         let max = a.max.unwrap_or(1).clamp(1, 10);
         let mut items = Vec::new();
         let mut shown = Vec::new();
+        // The listings Cardloader found for a card whose agent says which of them are the card, with thumbnails.
+        let mut found: Option<(EbayMarket, Vec<ListingPicture>)> = None;
         for (session_id, item_id) in waiting.iter().take(max) {
             let item = self.state.db.item(*item_id)?;
+            let picks = task == AgentTask::Price
+                && self
+                    .state
+                    .db
+                    .session(session_id)?
+                    .options
+                    .agent_picks_listings();
+            // Such a card comes alone: its listings' pictures take the room other cards would.
+            if picks && !items.is_empty() {
+                break;
+            }
             shown.push(pictures(&item, long_edge).await?);
+            if let Some(market) = item.market.clone().filter(|_| picks) {
+                let thumbs = thumbnails(&market.listings).await;
+                found = Some((market, thumbs));
+            }
             items.push((session_id, item));
+            if picks {
+                break;
+            }
         }
         // As many of them as one result holds; the others go on waiting and come with the next call.
-        fit(&mut shown, long_edge).await?;
+        let thumbs_size: usize = found
+            .iter()
+            .flat_map(|(_, thumbs)| thumbs)
+            .map(ListingPicture::size)
+            .sum();
+        fit(&mut shown, long_edge, PICTURES_BUDGET - thumbs_size).await?;
         let mut cards = Vec::new();
         let mut pics = Vec::new();
         for ((session_id, item), shown) in items.iter().zip(&shown) {
@@ -1401,7 +1523,8 @@ impl Handler {
                 card["game"] = json!(c.subcategory);
                 card["card"] = json!({
                     "name": c.name, "fullName": c.full_name, "setName": c.set_name, "setCode": c.set_code,
-                    "cardNumber": c.card_number, "year": c.year, "variant": c.series,
+                    "cardNumber": c.card_number, "year": c.year, "variant": c.series, "brand": c.brand,
+                    "serial": c.serial, "features": c.features,
                 });
                 card["slab"] = json!(i.slab);
                 card["ebayRange"] = json!(i.market_range);
@@ -1415,13 +1538,39 @@ impl Handler {
                 // The frame the corners are given in: these pictures' own pixels.
                 card["pictures"] = sizes;
             }
-            cards.push(card);
             pics.extend(shown);
+            if let Some((market, thumbs)) = &found {
+                card["ebayQuery"] = json!(market.query);
+                card["listings"] = json!(market
+                    .listings
+                    .iter()
+                    .map(|l| {
+                        let pictured = thumbs.iter().any(|t| t.id == l.id && t.picture.is_ok());
+                        json!({"id": l.id, "title": l.title, "price": l.price, "currency": l.currency,
+                               "condition": l.condition, "picture": pictured})
+                    })
+                    .collect::<Vec<_>>());
+                pics.extend(listing_blocks(thumbs));
+            }
+            cards.push(card);
         }
         // Whether the agent may look beyond the pictures is the user's choice (Settings → AI agents), said with
         // every batch: Cardloader can't switch off an agent's own web search.
         let web = self.state.settings.get().mcp.allow_web;
         let next = match (task, web) {
+            (AgentTask::Price, _) if found.is_some() => format!(
+                "say which of the card's listings are this card, as it is: the same card and number, the same \
+                 variant or parallel, and the same state (a raw card: ungraded listings only; a slab: the same \
+                 grader and grade); no lots, reprints or other cards. Read the titles, and hold the listings' \
+                 pictures below against the card's own; listing_pictures gives larger ones of the listings you \
+                 aren't sure of. {} Then send their ids with {answer} as listing_ids, with a note on what you \
+                 left out: the card's price is their median. An empty list when none is the card",
+                if web {
+                    "You may search the web too (the user allows it)."
+                } else {
+                    "The user turned web search off in Cardloader, so don't search the web."
+                }
+            ),
             (AgentTask::Identify, false) => format!(
                 "read each card from its pictures below only: the user turned web search off in Cardloader, so don't \
                  search the web or other sources. Then send them with {answer}"
@@ -1461,23 +1610,33 @@ impl Handler {
         for card in a.cards {
             let item_id = card.item_id;
             let note = card.note.unwrap_or_default().trim().to_string();
-            let answer = match (card.unpriced, card.price) {
-                (Some(true), _) => Ok(AgentAnswer::Unpriced {
+            // Checked here, before the card's wait is answered: an answer handed over ends the wait.
+            let answer = match (card.unpriced, card.listing_ids, card.price) {
+                (Some(true), ..) => Ok(AgentAnswer::Unpriced {
                     note: if note.is_empty() {
                         "no price found".into()
                     } else {
                         note
                     },
                 }),
-                (_, Some(price)) if price.is_finite() && price >= 0.0 => {
+                (_, Some(ids), _) => self
+                    .known_listings(item_id, &ids)
+                    .map(|()| AgentAnswer::Kept { ids, note }),
+                (_, None, Some(_)) if self.picks_listings(item_id) => Err(Error::msg(
+                    "this session prices a card from its eBay listings that you keep: send listing_ids (the \
+                     listings that are this card, [] when none is), or unpriced with a note",
+                )),
+                (_, None, Some(price)) if price.is_finite() && price >= 0.0 => {
                     currency_code(card.currency.as_deref()).map(|currency| AgentAnswer::Priced {
                         price: (price * 100.0).round() / 100.0,
                         currency,
                         note,
                     })
                 }
-                (_, Some(_)) => Err(Error::msg("the price must be a number, 0 or more")),
-                (_, None) => Err(Error::msg("give the card's price, or unpriced with a note")),
+                (_, None, Some(_)) => Err(Error::msg("the price must be a number, 0 or more")),
+                (_, None, None) => Err(Error::msg(
+                    "give the card's price or its listing_ids, or unpriced with a note",
+                )),
             };
             let result = answer.and_then(|answer| self.state.runner.answer_agent(item_id, answer));
             results.push(match result {
@@ -1488,7 +1647,104 @@ impl Handler {
         out(json!({
             "results": results,
             "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Price).len(),
+            "next": self.after(AgentTask::Price, "next_cards_to_price"),
         }))
+    }
+
+    /// The agent's other tasks that have cards waiting now (of `session`, or of any): a session can have it
+    /// identify, price and crop, and a card goes from one to the next. Asked only to identify, an agent stopped
+    /// there with the cards waiting for its prices.
+    fn elsewhere(&self, session: Option<&str>, task: AgentTask) -> Option<String> {
+        let tasks = [
+            (
+                AgentTask::Identify,
+                "next_cards_to_identify",
+                "to be identified",
+            ),
+            (AgentTask::Price, "next_cards_to_price", "for your price"),
+            (AgentTask::Crop, "next_cards_to_crop", "to be cropped"),
+        ];
+        let there: Vec<String> = tasks
+            .into_iter()
+            .filter(|(other, ..)| *other != task)
+            .filter_map(|(other, tool, what)| {
+                let n = self.state.runner.agent_waiting(session, other).len();
+                (n > 0).then(|| format!("{n} card(s) wait {what}: call {tool}"))
+            })
+            .collect();
+        (!there.is_empty()).then(|| there.join(", and "))
+    }
+
+    /// What an agent does after answering cards of `task`: its loop again, by way of the other tasks' cards.
+    fn after(&self, task: AgentTask, tool: &str) -> String {
+        match self.elsewhere(None, task) {
+            Some(there) => format!("{there}; then call {tool} again, until it says finished"),
+            None => format!(
+                "call {tool} again until it says finished: it also says when cards wait for another task of \
+                 yours (their price, their corners)"
+            ),
+        }
+    }
+
+    /// Whether the card's session has its agent say which eBay listings are the card (`ebay_agent`).
+    fn picks_listings(&self, item_id: i64) -> bool {
+        let session = self
+            .state
+            .db
+            .item_summary(item_id)
+            .and_then(|i| self.state.db.session(&i.session_id));
+        session.is_ok_and(|s| s.options.agent_picks_listings())
+    }
+
+    /// The card's last eBay search has every one of these listings.
+    fn known_listings(&self, item_id: i64, ids: &[String]) -> Result<()> {
+        let market = self.state.db.item(item_id)?.market.ok_or_else(|| {
+            Error::msg("the card has no eBay listings yet: find_ebay_listings first")
+        })?;
+        let unknown: Vec<&str> = ids
+            .iter()
+            .filter(|id| market.listings.iter().all(|l| l.id != **id))
+            .map(String::as_str)
+            .collect();
+        match unknown.is_empty() {
+            true => Ok(()),
+            false => Err(Error::msg(format!(
+                "no such listing in the card's last search: {}",
+                unknown.join(", ")
+            ))),
+        }
+    }
+
+    /// Larger pictures of some of a card's eBay listings, within one result.
+    async fn listing_pictures(&self, a: ListingPictures) -> Result<Vec<ContentBlock>> {
+        self.known_listings(a.item_id, &a.listing_ids)?;
+        let market = self.state.db.item(a.item_id)?.market.unwrap_or_default();
+        let edge = a
+            .long_edge
+            .unwrap_or(LISTING_PICTURE_EDGE)
+            .clamp(256, PICTURE_LONG_EDGE);
+        let asked: Vec<&MarketListing> = a
+            .listing_ids
+            .iter()
+            .filter_map(|id| market.listings.iter().find(|l| l.id == *id))
+            .collect();
+        let (now, later) = asked.split_at(asked.len().min(LISTING_PICTURES));
+        let each = PICTURES_BUDGET / now.len().max(1);
+        let shown = listing_pictures(now, edge, Some(each)).await;
+        let mut content = out(json!({
+            "itemId": a.item_id,
+            "pictures": shown.iter().map(|p| match &p.picture {
+                Ok((_, (w, h))) => json!({"id": p.id, "title": p.title, "width": w, "height": h}),
+                Err(e) => json!({"id": p.id, "title": p.title, "error": e}),
+            }).collect::<Vec<_>>(),
+            "notShown": later.iter().map(|l| l.id.clone()).collect::<Vec<_>>(),
+            "next": match later.is_empty() {
+                true => "compare them with the card's pictures (get_card shows those again)",
+                false => "call listing_pictures again for the listings in notShown",
+            },
+        }))?;
+        content.extend(listing_blocks(&shown));
+        Ok(content)
     }
 
     /// One side's corners as an agent gives them, read as fractions of the picture it was shown.
@@ -1570,6 +1826,7 @@ impl Handler {
         out(json!({
             "results": results,
             "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Crop).len(),
+            "next": self.after(AgentTask::Crop, "next_cards_to_crop"),
         }))
     }
 
@@ -1668,6 +1925,7 @@ impl Handler {
         out(json!({
             "results": results,
             "stillWaiting": self.state.runner.agent_waiting(None, AgentTask::Identify).len(),
+            "next": self.after(AgentTask::Identify, "next_cards_to_identify"),
         }))
     }
 
@@ -1737,6 +1995,10 @@ impl Handler {
             series: text(c.variant),
             year: text(c.year),
             subcategory,
+            brand: text(c.brand),
+            team: text(c.team),
+            serial: text(c.serial),
+            features: text(c.features),
         };
         if card.full_name.is_empty() {
             card.full_name = card.composed_full_name();
@@ -1948,6 +2210,10 @@ impl Handler {
             (&mut card.series, a.series),
             (&mut card.year, a.year),
             (&mut card.subcategory, a.subcategory),
+            (&mut card.brand, a.brand),
+            (&mut card.team, a.team),
+            (&mut card.serial, a.serial),
+            (&mut card.features, a.features),
         ];
         for (field, value) in fields {
             if let Some(value) = value {
@@ -1959,11 +2225,59 @@ impl Handler {
             price: a.price.or(current.price),
             notes: a.notes.unwrap_or(current.notes),
             location: a.location.unwrap_or(current.location),
+            title: a.title.unwrap_or(current.title),
         };
         self.state
             .runner
             .edit_item(a.item_id, edit, &agent(a.note))?;
         self.card(a.item_id, false).await
+    }
+
+    fn edit_many(&self, a: EditCards) -> Result<Vec<ContentBlock>> {
+        let field = match a.field.trim().to_ascii_lowercase().as_str() {
+            "title" => EditField::Title,
+            "features" => EditField::Features,
+            "brand" => EditField::Brand,
+            "team" => EditField::Team,
+            "series" | "variant" => EditField::Series,
+            _ => {
+                return Err(Error::msg(
+                    "field is title, features, brand, team or series",
+                ))
+            }
+        };
+        let place = match a.place.as_deref().map(|p| p.trim().to_ascii_lowercase()) {
+            None => EditPlace::End,
+            Some(p) => match p.as_str() {
+                "" | "end" => EditPlace::End,
+                "start" => EditPlace::Start,
+                "replace" => EditPlace::Replace,
+                _ => return Err(Error::msg("place is start, end or replace")),
+            },
+        };
+        let edit = BulkEdit {
+            field,
+            place,
+            text: a.text,
+        };
+        // What the change would give is read before it is made: afterwards nothing would be left to change.
+        let titles = self.state.preview_titles(TitleQuery {
+            item_ids: Some(a.item_ids.clone()),
+            edit: Some(edit.clone()),
+            templates: None,
+        })?;
+        let done = match a.preview.unwrap_or(false) {
+            true => EditedItems::default(),
+            false => self.state.edit_items(&a.item_ids, &edit, &agent(None))?,
+        };
+        let titles: Vec<Value> = titles
+            .iter()
+            .map(|t| {
+                json!({"id": t.item_id, "seq": t.seq, "title": t.title, "length": t.title.chars().count(),
+                    "custom": t.custom, "leftOut": t.left_out, "changes": t.changed, "problem": t.problem})
+            })
+            .collect();
+        out(json!({"changed": done.changed, "skipped": done.skipped, "titles": titles}))
     }
 
     fn update_defaults(&self, a: UpdateDefaults) -> Result<Vec<ContentBlock>> {
@@ -2181,19 +2495,19 @@ async fn pictures(item: &ItemDetail, long_edge: u32) -> Result<Vec<Shown>> {
 /// Makes the cards' pictures fit one tool result (`PICTURES_BUDGET`). When they don't as they are, cards are left
 /// for the next call first, as long as each picture would get less than `PICTURE_MIN_SHARE` (the first card
 /// always stays), and then the pictures over their share are made again within it: coarser, then smaller.
-async fn fit(cards: &mut Vec<Vec<Shown>>, long_edge: u32) -> Result<()> {
+async fn fit(cards: &mut Vec<Vec<Shown>>, long_edge: u32, budget: usize) -> Result<()> {
     let size = |cards: &[Vec<Shown>]| cards.iter().flatten().map(Shown::size).sum::<usize>();
     let count = |cards: &[Vec<Shown>]| cards.iter().flatten().filter(|s| s.size() > 0).count();
-    while size(cards) > PICTURES_BUDGET
+    while size(cards) > budget
         && cards.len() > 1
-        && PICTURES_BUDGET / count(cards).max(1) < PICTURE_MIN_SHARE
+        && budget / count(cards).max(1) < PICTURE_MIN_SHARE
     {
         cards.pop();
     }
-    if size(cards) <= PICTURES_BUDGET {
+    if size(cards) <= budget {
         return Ok(());
     }
-    let share = PICTURES_BUDGET / count(cards).max(1);
+    let share = budget / count(cards).max(1);
     for shown in cards.iter_mut().flatten().filter(|s| s.size() > share) {
         let path = shown.path.clone();
         let picture = tokio::task::spawn_blocking(move || {
@@ -2204,6 +2518,84 @@ async fn fit(cards: &mut Vec<Vec<Shown>>, long_edge: u32) -> Result<()> {
         shown.picture = picture.map_err(|e| e.to_string());
     }
     Ok(())
+}
+
+/// A listing's picture as an agent is shown it.
+struct ListingPicture {
+    id: String,
+    title: String,
+    /// The JPEG as base64 with its width and height, or why there is none.
+    picture: std::result::Result<(String, (u32, u32)), String>,
+}
+
+impl ListingPicture {
+    fn size(&self) -> usize {
+        self.picture.as_ref().map_or(0, |(data, _)| data.len())
+    }
+}
+
+/// The listings' pictures from eBay at about `edge` pixels, all fetched at once and in the listings' order; each
+/// within `each` base64 characters when given.
+async fn listing_pictures(
+    listings: &[&MarketListing],
+    edge: u32,
+    each: Option<usize>,
+) -> Vec<ListingPicture> {
+    let fetched = futures::future::join_all(listings.iter().map(|l| async move {
+        let url = l.image.as_deref().ok_or("the listing has no picture")?;
+        let bytes = crate::ebay::pictures::fetch(url, edge).await?;
+        tokio::task::spawn_blocking(move || match each {
+            Some(max) => imaging::encode_bytes_within(&bytes, edge, max),
+            None => imaging::encode_bytes(&bytes, edge, 80),
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|_| "the picture couldn't be read".to_string())
+    }))
+    .await;
+    listings
+        .iter()
+        .zip(fetched)
+        .map(|(l, picture)| ListingPicture {
+            id: l.id.clone(),
+            title: l.title.clone(),
+            picture,
+        })
+        .collect()
+}
+
+/// Small pictures of a card's listings to go with it: of the first `LISTING_THUMBS` that have one, as many as
+/// `THUMBS_BUDGET` holds.
+async fn thumbnails(listings: &[MarketListing]) -> Vec<ListingPicture> {
+    let pictured: Vec<&MarketListing> = listings
+        .iter()
+        .filter(|l| l.image.is_some())
+        .take(LISTING_THUMBS)
+        .collect();
+    let mut size = 0;
+    listing_pictures(&pictured, THUMB_EDGE, None)
+        .await
+        .into_iter()
+        .take_while(|p| {
+            size += p.size();
+            size <= THUMBS_BUDGET
+        })
+        .collect()
+}
+
+/// Listings' pictures as an agent gets them: each after a line with the listing's id and title.
+fn listing_blocks(pictures: &[ListingPicture]) -> Vec<ContentBlock> {
+    let mut content = Vec::new();
+    for p in pictures {
+        if let Ok((data, (w, h))) = &p.picture {
+            content.push(ContentBlock::text(format!(
+                "Listing {} ({w}×{h} px): {}",
+                p.id, p.title
+            )));
+            content.push(ContentBlock::image(data.clone(), "image/jpeg"));
+        }
+    }
+    content
 }
 
 /// A card's pictures as an agent gets them: each after a line naming it and its size, and those sizes by side
@@ -2266,6 +2658,11 @@ fn card_row(i: &ItemSummary) -> Value {
         "year": i.card.year,
         "series": i.card.series,
         "game": i.card.subcategory,
+        "brand": i.card.brand,
+        "team": i.card.team,
+        "serial": i.card.serial,
+        "features": i.card.features,
+        "customTitle": i.title,
         "type": i.id_type,
         "confidence": i.confidence,
         "distance": i.distance,

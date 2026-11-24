@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 use super::imgbb::Hosting;
 use super::{csv_line, graded_condition, PricedItem, Skipped};
 use crate::ebay::listing::{self, Kind, Listing, Preview};
-use crate::model::{CardCondition, ItemDetail, ItemSummary};
+use crate::model::{CardCondition, ItemDetail, ItemSummary, TitleTemplate};
 use crate::runner::Runner;
 use crate::ximilar::http::ApiError;
 
@@ -158,8 +158,9 @@ pub fn description(item: &ItemSummary, plan: &Listing) -> String {
 }
 
 /// `grading`: the card's grading record, which names the scale of its condition.
-pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
-    let plan = listing::plan(item);
+pub fn preview(item: &ItemSummary, grading: Option<&Value>, titles: &[TitleTemplate]) -> Preview {
+    let plan = listing::plan(item, titles);
+    let (custom_title, left_out) = Preview::titled(&plan);
     let (category, condition) = match &plan {
         Ok(p) => {
             let (category, sub) = category(item, p.kind);
@@ -181,6 +182,8 @@ pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
             .as_ref()
             .map(|p| p.title.clone())
             .unwrap_or_else(|_| item.card.full_name.clone()),
+        custom_title,
+        left_out,
         category,
         condition,
         price: item
@@ -246,12 +249,13 @@ pub async fn export(
     let mut hosting = Hosting::new(runner, options.upload_images)?;
     let mut text = csv_line(&HEADER.iter().map(|h| h.to_string()).collect::<Vec<_>>());
     let mut export = Export::default();
+    let titles = runner.settings.get().titles;
     for (done, priced) in cards.iter().enumerate() {
         if cancel.is_cancelled() {
             return Err(ApiError::Cancelled.into());
         }
         let item = runner.db.item(priced.item_id)?;
-        match listing::plan(&item.summary) {
+        match listing::plan(&item.summary, &titles) {
             Ok(_) if !(priced.price.is_finite() && priced.price > 0.0) => {
                 skip(&mut export, &item, "no price")
             }
@@ -313,7 +317,7 @@ mod tests {
     #[test]
     fn a_trading_card_row() {
         let card = item("tcg", "Pokemon");
-        let plan = listing::plan(&card.summary).unwrap();
+        let plan = listing::plan(&card.summary, &[]).unwrap();
         let row = row(
             &card,
             &plan,
@@ -355,7 +359,7 @@ mod tests {
             grade: "10".into(),
             certificate: "87654321".into(),
         });
-        let plan = listing::plan(&slab.summary).unwrap();
+        let plan = listing::plan(&slab.summary, &[]).unwrap();
         let auction = Options {
             listing_type: ListingType::Auction,
             ..options()

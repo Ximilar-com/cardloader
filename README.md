@@ -58,7 +58,11 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   model or agent yet: look at the first crops before relying on them.
 - **Pick what to do, each task by its own engine.** New session's **What to do** chooses any of **Identify**,
   **Prices**, **Grade** and **Crop**, and each chosen task gets a tab with what does it: for example identify with
-  Ximilar, grade with the local model and price with your AI agent or from eBay's listings. Without **Identify**, a
+  Ximilar, grade with the local model and price with your AI agent or from eBay's listings (all of them, or the
+  ones the local model or your agent says are the card). Cards overlap: as soon as one is identified the next
+  one starts, while the first goes on to its grade, crop and price. Each card does what answers quickly first
+  (Ximilar's grade and crop, a plain eBay price), then what the local model does, then what waits for your agent,
+  so a grade never waits for a price your agent hasn't given yet. Without **Identify**, a
   session sends each card straight to grading (a full grade, centering or its condition) or just saves the crops.
 - **Scanner.** Cardloader drives a RICOH/Fujitsu **fi-8170**, or any SANE/TWAIN document scanner, in duplex batches.
   Front and back are paired automatically, in the order you feed them (front or back first), and pages fed upside
@@ -76,6 +80,10 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   its pictures, title, item specifics and condition (graded slabs with their grader and grade), at Ximilar's price
   or yours. Publish the drafts when they look right; Cardloader then shows which listings sold. See
   [Selling on eBay](#selling-on-ebay).
+- **Listing titles your way.** Choose which parts of a card make its title and in what order, with templates for
+  sports cards, graded cards or autographs; every title shows its length against eBay's 80 characters and leaves
+  out what matters least instead of being cut off. Tick cards to add a text to all their titles at once. See
+  [Listing titles](#listing-titles).
 - **TCGplayer, Whatnot and Shopify.** Export a session's ungraded trading cards as a TCGplayer list (with each card's
   TCGplayer product link), as Whatnot's bulk listing CSV for auctions and Buy it Now, or as Shopify products with
   condition variants (or a Shopify inventory update), with the pictures uploaded to ImgBB. See
@@ -90,7 +98,7 @@ Cardloader is an open-source desktop app for Windows, macOS and Linux, built wit
   review (sort by Match to see the unsure ones first), failed or corrected
   ones, or search it. Accept a match with **A** (cards to review show an amber question mark, accepted ones a green check; **A** again, or **Unaccept**, takes it back), pick a candidate with **1–9**, edit a card's name, set, number,
   price, location or notes with **E**, and move with **J**/**K**; press **?** for all shortcuts. Tick cards (Shift
-  for a range) to accept, analyse again, set where they are kept or delete them at once. Corrections are sent to
+  for a range) to accept, edit, analyse again, set where they are kept or delete them at once. Corrections are sent to
   Cards Cloud too. A notification tells you when a session has finished while you were in another app.
 - **Home.** Your cards, their total value, the cards to review and the API calls of the last 7 days; a list of
   what needs attention (sessions to review, failed cards, interrupted sessions to resume, upload errors); and a year
@@ -338,6 +346,33 @@ in a graded slab is listed as Graded with its grader, grade and certificate numb
 condition chosen in the dialog (Ximilar's own grade is an estimate, not a professional grade). Comics aren't listed
 yet. Listing fees and selling limits are eBay's.
 
+### Listing titles
+
+Without any setup a title is *year, game, set, name, #number* and a slab's grader and grade, e.g.
+`2023 Pokemon Obsidian Flames Charizard ex #125 PSA 10`. eBay, Whatnot and Shopify get the same title.
+
+- **Templates** (**Settings → Selling → Listing titles**): add a template, choose its parts (year, brand, set,
+  name, series, features, serial number, card number, team, grade, game or sport, set code) and put them in
+  order. A template is for all cards, sports cards or trading cards, and optionally only for graded cards or for
+  autographs (cards whose Features say *Auto* or *Autograph*). The first template in the list that is for a card
+  makes its title; cards no template is for keep the usual title. The preview below shows your newest cards with
+  the templates as you edit them.
+- **80 characters.** Every title shows its length, e.g. `76/80`. A title that would be longer keeps the name, the
+  card number and the grade and then takes the other parts while they fit, in this order of importance: serial
+  number, features, series, set, set code, brand, year, game, team. The preview says what was left out. A part
+  another part already says isn't repeated (`Topps` before the set `Topps Chrome`).
+- **Brand, team, serial number, features** are fields of a card, shown and edited with the others (**E**).
+  Ximilar fills in the brand, team and serial number of sports cards; Features (`RC`, `Auto`, `Flagship`, …) is
+  yours to type. Typing them doesn't accept the card, and they aren't sent to Cards Cloud.
+- **A card's own title.** Edit a card and type its **Listing title** to replace the automatic one; **Back to the
+  automatic title** returns to the template's. A card with its own title is marked **Custom** and templates no
+  longer change it; a new analysis or another candidate picked drops it.
+- **Many cards at once.** Tick cards in a session or on the Cards page and click **Edit…**: add a text at the
+  start or end of their listing titles, or to their Features, Series, Brand or Team (or put it in place of what is
+  there). The dialog shows every card's title before and after with its length. A text added to a title leaves
+  the rest to be fitted around it, and makes the title the card's own; a card that can't take it (the title would
+  pass 80 characters) is skipped. A text added to a field shows in the titles whose template has that part.
+
 ## TCGplayer, Whatnot and Shopify
 
 A session's **⋯** menu has **Export for TCGplayer…**, **Export for Whatnot…** and **Export for Shopify…**. Both show the cards with their
@@ -420,7 +455,8 @@ look up a card's set, number or parallel (and, when pricing, recent sales) onlin
 precise.
 
 An agent can price the cards too: choose **Prices** in New session and price them with **AI agent (MCP)** (or
-`prices: "agent"` in `create_session`). Once a card is identified, by whatever identifies the session's cards, it
+`prices: "agent"` in `create_session`; with **eBay listings + AI agent** it chooses among the listings Cardloader
+finds instead, see [Prices from eBay](#prices-from-ebay)). Once a card is identified, by whatever identifies the session's cards, it
 waits for the agent's price (`next_cards_to_price`, answered with `price_cards` in US dollars and a note shown under
 the card's price). The **Price cards yourself** prompt (`price_session`) walks an agent through it.
 
@@ -448,6 +484,22 @@ grades stop counting; its note says what it left out. The **Prices from eBay** p
 through a session. A session can also do this for every card by itself: choose **Prices** in New session and price
 with **eBay listings**; each identified card's listings are searched and their median becomes its price.
 
+A search for a card also finds lots, other parallels and other grades, and the plain **eBay listings** price counts
+them all. Two more choices put a filter between the search and the price, which is then the median of the listings
+kept (a raw card counts only ungraded listings, a slab only its own grader and grade):
+
+- **eBay listings + local model.** The model on your computer reads the listings' titles (30 a card, ten at a
+  time, no pictures) and keeps the ones that are this card. On twelve made-up listings of one card, raw and
+  graded, Qwen3.5 9B was right on all of them and Qwen3.5 4B on all but one (it left out a listing that was the
+  card); LFM2.5 450M was right on 7 and 9 of 12, counting another player's card and other grades. That is one card,
+  not a benchmark: look at the listings a model kept before relying on its prices. The card's panel shows which
+  were kept and which left out, and you can tick them yourself.
+- **eBay listings + AI agent (MCP)** (`prices: "ebay_agent"`). Cardloader searches eBay and hands your agent each
+  card alone: its pictures, the listings (`listings`: id, title, price, condition) and small pictures of up to 24
+  of them. `listing_pictures` gives larger pictures of the listings it isn't sure of, to hold against the card's
+  own. It answers `price_cards` with `listing_ids`, the listings that are the card (an empty list when none is),
+  and a note on what it left out. A price of its own isn't taken in such a session.
+
 The session table shows each card's range in an **eBay** column, and the card's panel lists the listings (those left
 out greyed) with **Search eBay** to search again yourself; untick a listing that isn't your card, or tick one back,
 and the range follows. When the card is identified again, or you pick or type another card, its listings are dropped.
@@ -462,7 +514,7 @@ Agents can always read sessions, cards and their pictures. Everything else needs
 
 | Switch | Lets agents |
 | --- | --- |
-| **Run and review** (on by default) | Create, run, pause and stop sessions, wait for them, accept cards, pick another candidate, edit cards, analyse cards again, sync to Cards Cloud, and export CSV and TCGplayer files |
+| **Run and review** (on by default) | Create, run, pause and stop sessions, wait for them, accept cards, pick another candidate, edit cards (one, or a text added to many cards' listing titles or features at once), analyse cards again, sync to Cards Cloud, and export CSV and TCGplayer files |
 | **Delete** | Delete cards and sessions, and Cards Cloud sessions |
 | **Marketplaces** | Create eBay drafts, publish and remove listings, and export Whatnot and Shopify files (these upload pictures) |
 | **Settings** | Change the defaults of new sessions |
@@ -477,7 +529,8 @@ review your own.
 **Export:** a session's **⋯** menu → **Export CSV…** writes one row per card (UTF-8, comma-separated, readable
 by Excel): number, status, type, name, full name, set, set code, card number, series, year, category, confidence,
 distance, whether you picked the match, price (USD), grade, condition, the graded slab's company, grade and
-certificate number, front and back image paths, error.
+certificate number, front and back image paths, error, notes, location, brand, team, serial number, features and
+`listing_title` (only a title written for the card: the automatic one depends on your templates).
 
 **Import:** **Sessions → Import CSV** (or the **CSV file** source in **New session**) shows what the file
 contains before anything is imported. One row is one card, and columns are recognised by their header, loosely:
@@ -486,7 +539,8 @@ contains before anything is imported. One row is one card, and columns are recog
 | --- | --- |
 | Front image | `front`, `image`, `image path`, `path`, `file`, `filename`, `photo`, … |
 | Back image | `back`, `back path`, `back image` |
-| Card | `name` / `card name`, `full name`, `set` / `set name` / `expansion`, `set code`, `number` / `no` / `collector number`, `series`, `year`, `category` / `game`, `type` |
+| Card | `name` / `card name`, `full name`, `set` / `set name` / `expansion`, `set code`, `number` / `no` / `collector number`, `series` / `parallel`, `year`, `category` / `game`, `type` |
+| Details | `brand` / `company` / `manufacturer`, `team`, `serial` / `serial number`, `features`, `listing title` (the card's own, 80 characters at most) |
 | Values | `price` / `price usd` / `value` / `market price`, `grade`, `condition`, `distance` |
 
 - A row with a card name becomes an identified card right away, with no API call. Tick **Analyse the images
@@ -576,7 +630,8 @@ src-tauri/src/
   runner.rs               session runner: ingest → recognise → grade (async) → events
   sync.rs                 Cards Cloud mirroring
   crop.rs                 cutting a card out at four corners (the local model's or an agent's), straightened
-  ebay/                   eBay: sign-in, listings (drafts, publish, status), Inventory/Media API client
+  ebay/                   eBay: sign-in, listings (drafts, publish, status), listing titles (templates, 80
+                          characters), Inventory/Media API client
   market/                 TCGplayer, Whatnot and Shopify CSV exports, ImgBB picture hosting
   ximilar/                HTTP client, recognition, grading, Cards Cloud API
   local/                  on-device models: catalog, downloads, llama.cpp engine, prompts, comparison

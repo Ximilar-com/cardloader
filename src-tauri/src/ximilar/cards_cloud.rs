@@ -480,6 +480,7 @@ mod tests {
                 review_note: String::new(),
                 notes: String::new(),
                 location: String::new(),
+                title: String::new(),
                 ebay: None,
                 market_range: None,
             },

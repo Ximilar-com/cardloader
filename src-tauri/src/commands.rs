@@ -11,7 +11,8 @@ use tauri::{AppHandle, State};
 use crate::db::Db;
 use crate::ebay::listing::{self as ebay_listing, CardCondition};
 use crate::ebay::sync::{DraftItem, EbayProgress, Job};
-use crate::ebay::{self, browse, EbaySetup};
+use crate::ebay::title;
+use crate::ebay::{self, EbaySetup};
 use crate::error::{Error, Result};
 use crate::export;
 use crate::local::compare::{self, CompareReport, CompareRow};
@@ -435,14 +436,7 @@ impl AppState {
         ids: &[String],
         note: &str,
     ) -> Result<EbayMarket> {
-        let mut market =
-            self.db.item(item_id)?.market.ok_or_else(|| {
-                Error::msg("search the card's listings first (find_ebay_listings)")
-            })?;
-        browse::keep(&mut market, ids, note).map_err(Error::msg)?;
-        self.db.save_market(item_id, &market)?;
-        self.runner.emit_item(item_id);
-        Ok(market)
+        self.runner.keep_ebay_listings(item_id, ids, note)
     }
 }
 
@@ -598,6 +592,10 @@ impl AppState {
                 if let Some(site) = add.ebay_site.as_deref().map(str::trim) {
                     options.ebay_site = site.to_string();
                 }
+                // The model that says which listings are the card (`ebay_local`).
+                if let Some(model) = add.local_model.as_deref().filter(|m| !m.is_empty()) {
+                    options.local_model = model.to_string();
+                }
                 stages.push(Stage::Price);
             }
         }
@@ -651,6 +649,8 @@ impl AppState {
         }
         self.db
             .update_session_meta(id, &session.name, session.id_mode, &options)?;
+        // In the order the pass takes them: the cards owe the first of these.
+        let stages = options.in_pass_order(stages);
         let ids = self.db.add_stages(id, item_ids, &stages)?;
         for item in &ids {
             self.runner.emit_item(*item);
@@ -721,6 +721,83 @@ pub fn search_cards(
 #[tauri::command]
 pub fn update_item(state: S, id: i64, edit: ItemEdit) -> Result<ItemDetail> {
     state.runner.edit_item(id, edit, &Reviewer::User)
+}
+
+/// The listing titles of the cards named (else of the newest cards, else of made-up ones): as they are, with
+/// templates not saved yet, or as a change to many cards would make them.
+#[tauri::command]
+pub fn preview_titles(state: S, query: TitleQuery) -> Result<Vec<TitlePreview>> {
+    state.preview_titles(query)
+}
+
+/// Adds a text to the listing titles or a field of many cards at once.
+#[tauri::command]
+pub fn edit_items(state: S, item_ids: Vec<i64>, edit: BulkEdit) -> Result<EditedItems> {
+    state.edit_items(&item_ids, &edit, &Reviewer::User)
+}
+
+/// How many cards the template editor shows when none are named.
+const TITLE_EXAMPLES: usize = 6;
+
+impl AppState {
+    pub fn preview_titles(&self, query: TitleQuery) -> Result<Vec<TitlePreview>> {
+        let titles = match query.templates {
+            Some(drafts) => title::normalized(drafts),
+            None => self.settings.get().titles,
+        };
+        let (cards, made_up) = match &query.item_ids {
+            Some(ids) => (self.summaries(ids), false),
+            None => {
+                let newest: Vec<ItemSummary> = self
+                    .db
+                    .search_cards("", "", TITLE_EXAMPLES)?
+                    .cards
+                    .into_iter()
+                    .map(|c| c.item)
+                    .collect();
+                match newest.is_empty() {
+                    true => (title::samples(), true),
+                    false => (newest, false),
+                }
+            }
+        };
+        Ok(cards
+            .iter()
+            .map(|card| TitlePreview {
+                item_id: (!made_up).then_some(card.id),
+                ..title::preview(card, query.edit.as_ref(), &titles)
+            })
+            .collect())
+    }
+
+    /// One change for many cards, of any sessions. A card that can't take it (its title would be too long, it
+    /// isn't identified) is skipped; one that has the text already isn't counted.
+    pub fn edit_items(&self, ids: &[i64], edit: &BulkEdit, by: &Reviewer) -> Result<EditedItems> {
+        if edit.text.trim().is_empty() && edit.place != EditPlace::Replace {
+            return Err(Error::msg("enter the text to add"));
+        }
+        let titles = self.settings.get().titles;
+        let mut edits = Vec::new();
+        let mut skipped = 0;
+        for card in self.summaries(ids) {
+            match title::apply(edit, &card, &titles) {
+                Ok(Some(after)) => edits.push((card.id, after)),
+                Ok(None) => {}
+                Err(_) => skipped += 1,
+            }
+        }
+        Ok(EditedItems {
+            changed: self.runner.edit_items(edits, by)?,
+            skipped,
+        })
+    }
+
+    /// The cards of `ids` there are, in that order.
+    fn summaries(&self, ids: &[i64]) -> Vec<ItemSummary> {
+        ids.iter()
+            .filter_map(|&id| self.db.item_summary(id).ok())
+            .collect()
+    }
 }
 
 /// Turns a card's image upright when Ximilar found it upside down (cardloader's copies, never the user's files).
@@ -1172,12 +1249,13 @@ pub fn ebay_refresh(state: S, session_id: String, force: bool) -> Result<()> {
 
 impl AppState {
     pub fn ebay_preview(&self, session_id: &str) -> Result<Vec<ebay_listing::Preview>> {
+        let titles = self.settings.get().titles;
         Ok(self
             .db
             .items(session_id)?
             .iter()
             .filter(|i| i.status == ItemStatus::Done)
-            .map(ebay_listing::preview)
+            .map(|i| ebay_listing::preview(i, &titles))
             .collect())
     }
 
@@ -1278,6 +1356,7 @@ impl AppState {
         session_id: &str,
         format: Format,
     ) -> Result<Vec<ebay_listing::Preview>> {
+        let titles = self.settings.get().titles;
         self.db
             .items(session_id)?
             .iter()
@@ -1292,8 +1371,8 @@ impl AppState {
                 let grading = grading.as_ref();
                 Ok(match format {
                     Format::Tcgplayer => tcgplayer::preview(i, grading),
-                    Format::Whatnot => whatnot::preview(i, grading),
-                    Format::Shopify => shopify::preview(i, grading),
+                    Format::Whatnot => whatnot::preview(i, grading, &titles),
+                    Format::Shopify => shopify::preview(i, grading, &titles),
                 })
             })
             .collect()
@@ -1711,6 +1790,7 @@ mod tests {
                 None,
                 Some("Light Played"),
                 Some(&grading),
+                "",
             )
             .unwrap();
         for format in [Format::Tcgplayer, Format::Whatnot, Format::Shopify] {

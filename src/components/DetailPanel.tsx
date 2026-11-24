@@ -19,13 +19,14 @@ import {
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { t, useT, type Key } from "../i18n";
-import { errorText, type EbayMarket, type ItemEdit, type Json } from "../lib/api";
+import { api, errorText, MAX_TITLE, type EbayMarket, type ItemEdit, type Json, type TitlePreview } from "../lib/api";
 import type { Candidate, CardView } from "../lib/cardview";
 import { basename, dateTime, decimal, grade, parseAmount, price } from "../lib/format";
 import { ebaySite, ebaySiteOptions } from "../lib/ebaySites";
 import { ErrorNote, useBackdropClose } from "./Modal";
 import Select from "./Select";
 import StatusChip, { AcceptedChip, AgentChip, ConfidenceChip, EditedChip, PickedChip, ReviewChip } from "./StatusChip";
+import { CustomTitleMark, leftOutText, TitleCount, titleLength } from "./TitleParts";
 
 export default function DetailPanel({
   view,
@@ -35,6 +36,7 @@ export default function DetailPanel({
   onAccept,
   onUnaccept,
   onEdit,
+  listing,
   onDelete,
   onTurn,
   onPrev,
@@ -60,6 +62,8 @@ export default function DetailPanel({
   onUnaccept?: () => void;
   /** Saves what the user typed; without it, the card can't be edited. */
   onEdit?: (edit: ItemEdit) => Promise<unknown>;
+  /** An identified local card: its listing title is shown and can be written. `rev` changes when it is saved. */
+  listing?: { id: number; rev: string };
   onDelete?: () => void;
   /** Turns the card's image upright (it was upside down). */
   onTurn?: () => Promise<unknown>;
@@ -85,6 +89,21 @@ export default function DetailPanel({
   const [zoomed, setZoomed] = useState(false);
   const [turning, setTurning] = useState(false);
   const [turnBusy, setTurnBusy] = useState(false);
+  const [titled, setTitled] = useState<TitlePreview | null>(null);
+  const [listingId, listingRev] = [listing?.id, listing?.rev];
+  useEffect(() => {
+    if (listingId == null) return;
+    let live = true;
+    api
+      .previewTitles({ itemIds: [listingId] })
+      .then((titles) => live && setTitled(titles[0] ?? null))
+      .catch(() => live && setTitled(null));
+    return () => {
+      live = false;
+    };
+  }, [listingId, listingRev]);
+  // A card that can't be listed (a comic) has no title to show or write.
+  const title = listing && titled?.itemId === listing.id && !titled.problem ? titled : null;
   // Only upside down is certain to be fixed by turning the picture half way.
   const canTurn = !!onTurn && view.rotation?.tag === "rotated_upside_down";
 
@@ -343,6 +362,7 @@ export default function DetailPanel({
             initial={view.edit}
             currency={view.priceCurrency}
             identified={view.status === "done" || view.status === "grading"}
+            automaticTitle={title?.automatic}
             onCancel={() => setEditing(false)}
             onSave={(edit) => onEdit(edit).then(() => setEditing(false))}
           />
@@ -370,6 +390,19 @@ export default function DetailPanel({
                 <Field label={t("detail.card.location")} value={view.edit?.location} />
                 <Field label={t("detail.card.notes")} value={view.edit?.notes} />
               </dl>
+              {title && (
+                <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                  <div className="mb-1 flex items-center gap-1.5 text-xs text-slate-500">
+                    <span className="flex-1">{t("titles.listingTitle")}</span>
+                    {title.custom && <CustomTitleMark />}
+                    <TitleCount text={title.title} />
+                  </div>
+                  <div className="selectable text-sm font-medium break-words">{title.title}</div>
+                  {!title.custom && title.leftOut.length > 0 && (
+                    <div className="mt-0.5 text-xs text-slate-500">{leftOutText(title.leftOut)}</div>
+                  )}
+                </div>
+              )}
             </Section>
           )
         )}
@@ -963,6 +996,11 @@ function editFields(): [keyof ItemEdit, string][] {
     ["setCode", t("detail.edit.setCode")],
     ["cardNumber", t("detail.edit.cardNumber")],
     ["year", t("detail.edit.year")],
+    ["series", t("status.field.series")],
+    ["brand", t("status.field.brand")],
+    ["team", t("status.field.team")],
+    ["serial", t("status.field.serial")],
+    ["features", t("status.field.features")],
   ];
 }
 
@@ -971,6 +1009,7 @@ function EditForm({
   initial,
   currency,
   identified,
+  automaticTitle,
   onSave,
   onCancel,
 }: {
@@ -979,6 +1018,8 @@ function EditForm({
   currency: string;
   /** Card fields and price can be typed only once the card is identified. */
   identified: boolean;
+  /** The listing title the card's template makes: with it, the card can be given its own. */
+  automaticTitle?: string;
   onSave: (edit: ItemEdit) => Promise<unknown>;
   onCancel: () => void;
 }) {
@@ -994,6 +1035,8 @@ function EditForm({
     const empty = priceText.trim() === "";
     const value = empty ? null : parseAmount(priceText);
     if (!empty && (value == null || value < 0)) return setError(t("detail.edit.priceInvalid"));
+    const length = titleLength(edit.title.trim());
+    if (length > MAX_TITLE) return setError(t("titles.tooLong", { count: length, max: MAX_TITLE }));
     setBusy(true);
     setError(null);
     onSave({ ...edit, price: value }).catch((e) => {
@@ -1018,7 +1061,7 @@ function EditForm({
   return (
     <Section title={t("detail.edit.title")}>
       <form
-        className="grid grid-cols-[80px_1fr] gap-x-3 gap-y-1.5 text-sm"
+        className="grid grid-cols-[100px_1fr] gap-x-3 gap-y-1.5 text-sm"
         onSubmit={(e) => {
           e.preventDefault();
           submit();
@@ -1032,6 +1075,39 @@ function EditForm({
       >
         {editFields().map(([k, label], i) =>
           input(label, String(edit[k] ?? ""), (v) => set(k, v), !identified, identified && i === 0),
+        )}
+        {automaticTitle != null && (
+          <label className="contents">
+            <span className="pt-1.5 text-slate-500">{t("titles.listingTitle")}</span>
+            <span>
+              <textarea
+                className="input min-h-14 py-1"
+                value={edit.title}
+                placeholder={automaticTitle}
+                disabled={!identified}
+                onChange={(e) => set("title", e.target.value.replace(/\n/g, " "))}
+                onKeyDown={(e) => {
+                  // Enter saves, as in the other fields: a title is one line.
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+              />
+              <span className="mt-0.5 flex items-center gap-2 text-xs text-slate-500">
+                <span className="flex-1">
+                  {edit.title.trim() ? (
+                    <button type="button" className="text-accent underline" onClick={() => set("title", "")}>
+                      {t("titles.backToAutomatic")}
+                    </button>
+                  ) : (
+                    t("titles.automaticHint")
+                  )}
+                </span>
+                <TitleCount text={edit.title.trim() || automaticTitle} />
+              </span>
+            </span>
+          </label>
         )}
         {input(t("detail.edit.price", { currency }), priceText, setPriceText, !identified)}
         {input(t("detail.edit.location"), edit.location, (v) => set("location", v), false, !identified)}

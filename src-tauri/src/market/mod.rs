@@ -173,6 +173,7 @@ pub fn test_item(id_type: &str, game: &str) -> ItemDetail {
             review_note: String::new(),
             notes: String::new(),
             location: String::new(),
+            title: String::new(),
             ebay: None,
             market_range: None,
         },

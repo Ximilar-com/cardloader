@@ -11,6 +11,7 @@ import sessions from "./sessions";
 import settings from "./settings";
 import sidebar from "./sidebar";
 import status from "./status";
+import titles from "./titles";
 import wizard from "./wizard";
 
 export default {
@@ -28,4 +29,5 @@ export default {
   market,
   ebay,
   models,
+  titles,
 };

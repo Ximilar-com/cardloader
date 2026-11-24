@@ -77,6 +77,8 @@ export default {
     ximilar: "Ximilar",
     ebay: "eBay",
     agent: "AI agent",
+    ebay_local: "eBay + local model",
+    ebay_agent: "eBay + AI agent",
   },
   /** One task and what does it, in a session's summary line, e.g. "Grade: Local model". */
   stageBy: "{stage}: {by}",
@@ -105,6 +107,10 @@ export default {
     year: "Year",
     series: "Series",
     subcategory: "Category",
+    brand: "Brand",
+    team: "Team",
+    serial: "Serial number",
+    features: "Features",
   },
   noMatch: "No match",
   via: {

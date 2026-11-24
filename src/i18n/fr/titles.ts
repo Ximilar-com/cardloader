@@ -1,0 +1,105 @@
+import type { Messages } from "..";
+import type en from "../en/titles";
+
+const messages: Messages<typeof en> = {
+  section: {
+    title: "Titres des annonces",
+    text: "Quelles parties d’une carte forment le titre de son annonce sur eBay, Whatnot et Shopify, et dans quel ordre. Le premier modèle qui s’applique à une carte forme son titre ; les cartes sans modèle gardent le titre habituel. Un titre qui dépasserait {max} caractères laisse de côté le moins important au lieu de perdre sa fin.",
+  },
+  add: "Ajouter un modèle",
+  newName: "Modèle {n}",
+  name: "Nom",
+  kind: {
+    label: "Pour",
+    any: "Toutes les cartes",
+    sport: "Cartes de sport",
+    tcg: "Cartes à collectionner",
+  },
+  only: {
+    label: "Seulement",
+    any: "Toutes",
+    graded: "Cartes gradées",
+    gradedHint: "dans un slab dont l’étiquette a été lue",
+    autograph: "Autographes",
+    autographHint: "les caractéristiques disent Auto ou Autograph",
+  },
+  parts: "Parties, dans l’ordre",
+  addPart: "Ajouter une partie…",
+  noParts: "Sans parties, ce modèle ne forme aucun titre.",
+  moveEarlier: "Déplacer {field} plus tôt",
+  moveLater: "Déplacer {field} plus tard",
+  removePart: "Retirer {field}",
+  moveUp: "Utiliser avant le modèle du dessus",
+  moveDown: "Utiliser après le modèle du dessous",
+  remove: "Supprimer le modèle",
+  field: {
+    year: "Année",
+    game: "Jeu ou sport",
+    brand: "Marque",
+    set: "Set",
+    setCode: "Code du set",
+    name: "Nom",
+    series: "Série",
+    features: "Caractéristiques",
+    serial: "Numéro de série",
+    number: "Numéro de carte",
+    team: "Équipe",
+    grade: "Note",
+  },
+  preview: {
+    title: "Aperçu",
+    yours: "Vos cartes les plus récentes, avec les titres de ces modèles.",
+    examples: "Cartes d’exemple, avec les titres de ces modèles.",
+    builtin: "Titre habituel",
+    custom: "Cette carte a son propre titre",
+  },
+  count: "{count}/{max}",
+  countHint: "Le titre d’une annonce accepte {max} caractères",
+  tooLong: "Le titre fait {count} caractères ; une annonce en accepte {max}.",
+  leftOut: "Laissé de côté faute de place : {fields}",
+  custom: "Personnalisé",
+  customHint: "Écrit pour cette carte : les modèles ne le changent pas",
+  listingTitle: "Titre de l’annonce",
+  backToAutomatic: "Revenir au titre automatique",
+  automaticHint: "Vide : le titre que forme son modèle.",
+  bulk: {
+    button: "Modifier…",
+    buttonTitle: "Ajouter un texte aux titres ou à un champ de ces cartes",
+    title: { one: "Modifier {count} carte", other: "Modifier {count} cartes" },
+    field: {
+      label: "Ajouter à",
+      title: "Titre de l’annonce",
+    },
+    place: {
+      label: "Où",
+      end: "À la fin",
+      start: "Au début",
+      replace: "À la place",
+    },
+    text: "Texte",
+    textPlaceholder: "PSA 9, Flagship, …",
+    hint: {
+      title:
+        "Chaque titre est ajusté à {max} caractères autour du texte et devient celui de la carte : les modèles ne le changent plus.",
+      titleReplace:
+        "Chaque carte reçoit ce titre ({max} caractères au plus). Sans texte, les cartes retrouvent leurs titres automatiques.",
+      field: "Un titre affiche le texte là où son modèle a cette partie.",
+      series:
+        "La série distingue une carte d’une autre : la changer accepte ces cartes et abandonne leurs fourchettes de prix eBay.",
+    },
+    unchanged: "Aucun changement",
+    summary: { one: "{count} carte changera", other: "{count} cartes changeront" },
+    summarySkipped: {
+      one: "{count} carte changera · {skipped} ne peuvent pas",
+      other: "{count} cartes changeront · {skipped} ne peuvent pas",
+    },
+    apply: { one: "Modifier {count} carte", other: "Modifier {count} cartes" },
+    applyNone: "Modifier",
+    toast: { one: "{count} carte modifiée", other: "{count} cartes modifiées" },
+    toastSkipped: {
+      one: "{count} carte modifiée · {skipped} ignorées",
+      other: "{count} cartes modifiées · {skipped} ignorées",
+    },
+  },
+};
+export default messages;

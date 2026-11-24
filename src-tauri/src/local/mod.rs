@@ -9,6 +9,7 @@ pub mod grade;
 pub mod identify;
 #[cfg(feature = "local-model")]
 mod llama;
+pub mod price;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -21,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::error::{Error, Result};
 use crate::imaging;
-use crate::model::{GradingMode, IdMode};
+use crate::model::{GradingMode, IdMode, ItemSummary, MarketListing};
 use crate::ximilar::recognition::Recognition;
 use catalog::ModelSpec;
 
@@ -694,6 +695,34 @@ impl LocalModels {
             }),
         })
     }
+
+    /// Which of `listings` (found on eBay for `card`) are that card, says model `id` from their titles: one
+    /// verdict per listing, in their order. A question without a picture, `price::BATCH` listings at a time.
+    pub async fn pick_listings(
+        &self,
+        id: &str,
+        card: &ItemSummary,
+        listings: &[MarketListing],
+    ) -> Result<Vec<bool>> {
+        catalog::find(id).ok_or_else(|| Error::msg(format!("unknown local model {id}")))?;
+        let engine = self.engine(id).await?;
+        let (card, listings) = (card.clone(), listings.to_vec());
+        tokio::task::spawn_blocking(move || -> Result<Vec<bool>> {
+            let mut kept = Vec::with_capacity(listings.len());
+            for batch in listings.chunks(price::BATCH) {
+                let answer = engine.generate(
+                    &[],
+                    &price::prompt(&card, batch),
+                    Some(&price::grammar(batch.len())),
+                    price::answer_tokens(batch.len()),
+                )?;
+                kept.extend(price::parse(&answer, batch.len()).map_err(Error::msg)?);
+            }
+            Ok(kept)
+        })
+        .await
+        .map_err(|e| Error::msg(e.to_string()))?
+    }
 }
 
 #[cfg(test)]
@@ -711,9 +740,8 @@ pub mod testing {
             _: Option<&str>,
             _: u32,
         ) -> Result<String> {
-            assert!(
-                !images.is_empty() && images.iter().all(|i| !i.is_empty()) && !prompt.is_empty()
-            );
+            // A question may come without a picture (which listings are the card); never with an empty one.
+            assert!(images.iter().all(|i| !i.is_empty()) && !prompt.is_empty());
             Ok(self.0.clone())
         }
     }
@@ -729,6 +757,49 @@ pub mod testing {
         }
         let answer = answer.to_string();
         models.set_loader(Arc::new(move |_, _, _, _| Ok(fake_loaded(&answer, "CPU"))));
+    }
+
+    /// Holds a fake model's answers back until the test opens it: what else goes on while the model is busy?
+    #[derive(Clone, Default)]
+    pub struct Gate(Arc<(Mutex<bool>, std::sync::Condvar)>);
+
+    impl Gate {
+        pub fn open(&self) {
+            *self.0 .0.lock().unwrap() = true;
+            self.0 .1.notify_all();
+        }
+
+        fn pass(&self) {
+            let mut open = self.0 .0.lock().unwrap();
+            while !*open {
+                open = self.0 .1.wait(open).unwrap();
+            }
+        }
+    }
+
+    struct GatedVision(String, Gate);
+
+    impl VisionModel for GatedVision {
+        fn generate(&self, _: &[&[u8]], _: &str, _: Option<&str>, _: u32) -> Result<String> {
+            self.1.pass();
+            Ok(self.0.clone())
+        }
+    }
+
+    /// `install_fake`, with a model that answers only once the gate returned is opened.
+    pub fn install_gated(models: &LocalModels, answer: &str) -> Gate {
+        install_fake(models, answer);
+        let (answer, gate) = (answer.to_string(), Gate::default());
+        let passed = gate.clone();
+        models.set_loader(Arc::new(move |_, _, _, _| {
+            Ok(Loaded {
+                engine: Arc::new(GatedVision(answer.clone(), passed.clone())),
+                runs_on: "CPU".into(),
+                gpu_layers: 0,
+                layers: 32,
+            })
+        }));
+        gate
     }
 
     pub fn fake_loaded(answer: &str, runs_on: &str) -> Loaded {
@@ -844,6 +915,137 @@ mod real_model {
             started.elapsed().as_secs_f64(),
             updates.lock().unwrap()
         );
+    }
+
+    /// Asks the model which of some made-up eBay listings are a made-up card (a raw one, then the same card in a
+    /// slab), and prints each verdict beside the one a person would give. Needs only `CARDLOADER_MODELS`: the
+    /// question has no picture. Nothing gates a model on the score; it says what `ebay_local` can be trusted with.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn real_model_picks_listings() {
+        use crate::model::{MarketListing, SlabLabel};
+        let models = std::env::var("CARDLOADER_MODELS").expect("CARDLOADER_MODELS");
+        let local = LocalModels::new(PathBuf::from(models));
+        let id = test_model();
+        assert!(local.is_ready(&id), "model files missing");
+        let raw = crate::ebay::title::samples().remove(0);
+        let slab = ItemSummary {
+            slab: Some(SlabLabel {
+                company: "PSA".into(),
+                grade: "10".into(),
+                certificate: String::new(),
+            }),
+            ..raw.clone()
+        };
+        // (title, eBay's condition, is the raw card, is the PSA 10)
+        let listings = [
+            (
+                "2023-24 Panini Prizm Victor Wembanyama Silver Prizm RC #136 Spurs",
+                "Ungraded",
+                true,
+                false,
+            ),
+            (
+                "Victor Wembanyama 2023 Prizm Silver Rookie #136",
+                "Ungraded",
+                true,
+                false,
+            ),
+            (
+                "2023 Panini Prizm #136 Victor Wembanyama RC Silver Prizm PSA 10 GEM MINT",
+                "Graded",
+                false,
+                true,
+            ),
+            (
+                "2023 Prizm Victor Wembanyama Silver Prizm #136 PSA 9 MINT",
+                "Graded",
+                false,
+                false,
+            ),
+            (
+                "2023 Panini Prizm Victor Wembanyama Base RC #136 (not silver)",
+                "Ungraded",
+                false,
+                false,
+            ),
+            (
+                "2023-24 Prizm Victor Wembanyama Red White Blue Prizm RC #136",
+                "Ungraded",
+                false,
+                false,
+            ),
+            (
+                "Lot of 25 2023-24 Panini Prizm basketball rookies incl. Wembanyama",
+                "Ungraded",
+                false,
+                false,
+            ),
+            (
+                "2023 Panini Prizm Scoot Henderson Silver Prizm RC #141",
+                "Ungraded",
+                false,
+                false,
+            ),
+            (
+                "Victor Wembanyama Silver Prizm RC #136 custom reprint card",
+                "Ungraded",
+                false,
+                false,
+            ),
+            (
+                "2023 Panini Prizm Silver Victor Wembanyama Rookie Card 136 BGS 9.5",
+                "Graded",
+                false,
+                false,
+            ),
+            (
+                "2023-24 Panini Prizm Victor Wembanyama #136 Silver RC PSA 10",
+                "Graded",
+                false,
+                true,
+            ),
+            (
+                "Magnetic one-touch case for Victor Wembanyama Prizm cards 35pt",
+                "",
+                false,
+                false,
+            ),
+        ];
+        let asked: Vec<MarketListing> = listings
+            .iter()
+            .enumerate()
+            .map(|(i, (title, condition, ..))| MarketListing {
+                id: format!("v1|{i}|0"),
+                title: title.to_string(),
+                condition: condition.to_string(),
+                ..Default::default()
+            })
+            .collect();
+        for (name, card, truth) in [
+            ("raw", &raw, listings.map(|l| l.2)),
+            ("PSA 10", &slab, listings.map(|l| l.3)),
+        ] {
+            let started = Instant::now();
+            let verdicts = local.pick_listings(&id, card, &asked).await.unwrap();
+            let seconds = started.elapsed().as_secs_f64();
+            let mut right = 0;
+            for ((listing, verdict), truth) in asked.iter().zip(&verdicts).zip(truth) {
+                right += usize::from(*verdict == truth);
+                println!(
+                    "{} {:<5} (a person: {:<5}) {}",
+                    if *verdict == truth { "ok" } else { "--" },
+                    verdict,
+                    truth,
+                    listing.title
+                );
+            }
+            println!(
+                "PICKS {id} | {name} card: {right}/{} right, {seconds:.1}s for {} questions",
+                asked.len(),
+                asked.len().div_ceil(price::BATCH)
+            );
+        }
     }
 
     /// Grades each card of `CARDLOADER_CARDS` (one image per card) in all three modes, on the TCGplayer scale.

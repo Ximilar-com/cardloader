@@ -9,7 +9,9 @@
 pub mod browse;
 pub mod client;
 pub mod listing;
+pub mod pictures;
 pub mod sync;
+pub mod title;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

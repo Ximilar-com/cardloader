@@ -60,7 +60,14 @@ const messages: Messages<typeof en> = {
     grade: "Nota completa",
     centering: "Solo centrado",
   },
-  prices: { off: "Desactivados", ximilar: "Ximilar", ebay: "eBay", agent: "Agente de IA" },
+  prices: {
+    off: "Desactivados",
+    ximilar: "Ximilar",
+    ebay: "eBay",
+    agent: "Agente de IA",
+    ebay_local: "eBay + modelo local",
+    ebay_agent: "eBay + agente de IA",
+  },
   stageBy: "{stage}: {by}",
   gradingShort: {
     off: "Desactivada",
@@ -87,6 +94,10 @@ const messages: Messages<typeof en> = {
     year: "Año",
     series: "Serie",
     subcategory: "Categoría",
+    brand: "Marca",
+    team: "Equipo",
+    serial: "Número de serie",
+    features: "Características",
   },
   noMatch: "Sin coincidencia",
   via: {

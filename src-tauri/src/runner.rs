@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::crop::{self, Quad};
 use crate::db::{Db, JobKind};
+use crate::ebay::listing::MAX_TITLE;
 use crate::ebay::sync::{EbayProgress, Job};
 use crate::ebay::EbayAuth;
 use crate::error::{Error, Result};
@@ -163,6 +164,9 @@ pub enum AgentAnswer {
         currency: String,
         note: String,
     },
+    /// Which of the card's eBay listings (its last search's) are the card: their median is its price. None of
+    /// them is a card without a price, not a failure.
+    Kept { ids: Vec<String>, note: String },
     /// It found no price: only the card's price fails, with the note.
     Unpriced { note: String },
     /// Where the card's sides are in their pictures: Cardloader cuts them out.
@@ -180,7 +184,9 @@ impl AgentAnswer {
             AgentAnswer::Identified { .. } | AgentAnswer::Unidentified { .. } => {
                 AgentTask::Identify
             }
-            AgentAnswer::Priced { .. } | AgentAnswer::Unpriced { .. } => AgentTask::Price,
+            AgentAnswer::Priced { .. }
+            | AgentAnswer::Kept { .. }
+            | AgentAnswer::Unpriced { .. } => AgentTask::Price,
             AgentAnswer::Cropped { .. } | AgentAnswer::Uncropped { .. } => AgentTask::Crop,
         }
     }
@@ -196,6 +202,64 @@ struct AgentWait {
 pub const AGENT_CONFIDENCE: &str = "agent";
 /// Cards of an agent session offered at once: the agent reads several per call.
 const AGENT_BATCH: usize = 10;
+/// eBay searches of one session in flight at once.
+const EBAY_AT_ONCE: usize = 3;
+
+/// What a run's cards share, each with room for so many at once. A card takes a place in a lane only for the
+/// part of its pass that needs it, so cards overlap: one is priced while the next is identified, instead of each
+/// holding a worker until its last stage is done. An AI agent has no lane: any number of cards may wait for one.
+struct Lanes {
+    /// Calls to the Ximilar API: Settings' parallel requests.
+    api: Arc<Semaphore>,
+    /// The model on this computer reads one thing at a time.
+    local: Arc<Semaphore>,
+    ebay: Arc<Semaphore>,
+    paused: watch::Receiver<bool>,
+}
+
+impl Lanes {
+    /// A place in `lane`, once there is one and the session isn't paused: a paused session starts nothing new,
+    /// also not the next stage of a card it had begun.
+    async fn take(
+        &self,
+        lane: &Arc<Semaphore>,
+        cancel: &CancellationToken,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit> {
+        let mut paused = self.paused.clone();
+        loop {
+            while *paused.borrow() {
+                tokio::select! {
+                    changed = paused.changed() => if changed.is_err() { break },
+                    _ = cancel.cancelled() => return Err(ApiError::Cancelled.into()),
+                }
+            }
+            let place = tokio::select! {
+                p = lane.clone().acquire_owned() => p.map_err(|e| Error::msg(e.to_string()))?,
+                _ = cancel.cancelled() => return Err(ApiError::Cancelled.into()),
+            };
+            // Paused while it waited for the place: back in line.
+            if !*paused.borrow() || paused.has_changed().is_err() {
+                return Ok(place);
+            }
+        }
+    }
+}
+
+/// How many cards may be in the first stage of their pass at once: what that stage's engine takes.
+fn starts_at_once(o: &SessionOptions, api: usize) -> usize {
+    match o.pass().first() {
+        Some(Stage::Identify) if o.agent() => AGENT_BATCH,
+        Some(Stage::Crop) if o.crops_by_agent() => AGENT_BATCH,
+        Some(Stage::Identify) if o.identifies_locally() => 1,
+        Some(Stage::Grade) if o.grades_locally() => 1,
+        Some(Stage::Crop) if o.crops_locally() => 1,
+        _ => api,
+    }
+}
+
+/// Listings searched for a card the local model prices: every ten are one more question to it, and eBay's best
+/// matches come first.
+const LOCAL_LISTINGS: u32 = 30;
 
 impl Runner {
     pub fn new(
@@ -292,11 +356,43 @@ impl Runner {
     pub fn edit_item(
         self: &Arc<Self>,
         item_id: i64,
-        mut edit: ItemEdit,
+        edit: ItemEdit,
         by: &Reviewer,
     ) -> Result<ItemDetail> {
-        let item = self.db.item(item_id)?;
-        let before = &item.summary;
+        let session_id = self.save_edit(item_id, edit, by)?;
+        self.emit_item(item_id);
+        self.emit_session(&session_id);
+        self.push_corrections(&session_id)?;
+        self.db.item(item_id)
+    }
+
+    /// The same for many cards at once (a text added to each: `ebay::title::apply`), with their sessions told
+    /// and their corrections sent once, not once per card. Returns how many were saved.
+    pub fn edit_items(
+        self: &Arc<Self>,
+        edits: Vec<(i64, ItemEdit)>,
+        by: &Reviewer,
+    ) -> Result<usize> {
+        let mut sessions: Vec<String> = Vec::new();
+        let mut saved = 0;
+        for (item_id, edit) in edits {
+            let session_id = self.save_edit(item_id, edit, by)?;
+            self.emit_item(item_id);
+            saved += 1;
+            if !sessions.contains(&session_id) {
+                sessions.push(session_id);
+            }
+        }
+        for session_id in &sessions {
+            self.emit_session(session_id);
+            self.push_corrections(session_id)?;
+        }
+        Ok(saved)
+    }
+
+    /// Checks and stores one card's edit; returns its session.
+    fn save_edit(&self, item_id: i64, mut edit: ItemEdit, by: &Reviewer) -> Result<String> {
+        let before = self.db.item_summary(item_id)?;
         if let Some(p) = edit.price {
             if !p.is_finite() || p < 0.0 {
                 return Err(Error::Msg("the price must be a positive number".into()));
@@ -304,6 +400,13 @@ impl Runner {
         }
         if matches!(before.status, ItemStatus::Done | ItemStatus::Grading) {
             edit.card.trim();
+            edit.title = edit.title.split_whitespace().collect::<Vec<_>>().join(" ");
+            if edit.title.chars().count() > MAX_TITLE {
+                return Err(Error::Msg(format!(
+                    "the title is {} characters long; a listing takes {MAX_TITLE}",
+                    edit.title.chars().count()
+                )));
+            }
             let renamed = edit.card.name != before.card.name
                 || edit.card.set_name != before.card.set_name
                 || edit.card.card_number != before.card.card_number;
@@ -314,14 +417,12 @@ impl Runner {
         } else {
             edit.card = before.card.clone();
             edit.price = before.price;
+            edit.title = before.title.clone();
         }
         edit.notes = edit.notes.trim().to_string();
         edit.location = edit.location.trim().to_string();
         self.db.save_edit(item_id, &edit, by)?;
-        self.emit_item(item_id);
-        self.emit_session(&before.session_id);
-        self.push_corrections(&before.session_id)?;
-        self.db.item(item_id)
+        Ok(before.session_id)
     }
 
     /// Turns a card's images upright (Ximilar found the front upside down): its thumbnail and previews, which
@@ -772,16 +873,16 @@ impl Runner {
         cancel: CancellationToken,
     ) -> Result<Option<String>> {
         let id = session.id.clone();
-        // An agent reads several cards per call (the local model still reads one at a time, behind its own lock);
-        // a local model alone gains nothing from more.
-        let concurrency = if session.options.uses_agent() {
-            AGENT_BATCH
-        } else if session.options.uses_local() {
-            1
-        } else {
+        let api_at_once = {
             let max = crate::settings::MAX_CONCURRENCY;
             self.settings.get().concurrency.clamp(1, max) as usize
         };
+        let lanes = Arc::new(Lanes {
+            api: Arc::new(Semaphore::new(api_at_once)),
+            local: Arc::new(Semaphore::new(1)),
+            ebay: Arc::new(Semaphore::new(EBAY_AT_ONCE)),
+            paused: paused.clone(),
+        });
 
         let (finished_tx, finished_rx) = watch::channel(None);
         let sync_task = client
@@ -841,8 +942,12 @@ impl Runner {
                 ))
             });
 
-        // Dispatch.
-        let semaphore = Arc::new(Semaphore::new(concurrency));
+        // Dispatch. A card is started when its first stage has room, and gives the start back when that stage is
+        // done: the next card is identified while this one goes on to its prices, grade or crop.
+        let semaphore = Arc::new(Semaphore::new(starts_at_once(
+            &session.options,
+            api_at_once,
+        )));
         let mut workers: JoinSet<Option<String>> = JoinSet::new();
         let mut fatal: Option<String> = None;
         let mut ingest_task = Some(ingest_task);
@@ -876,12 +981,11 @@ impl Runner {
                     let session = session.clone();
                     let client = client.clone();
                     let cancel = cancel.clone();
+                    let lanes = lanes.clone();
                     workers.spawn(async move {
-                        let r = runner
-                            .process(&session, client.as_ref(), item_id, &cancel)
-                            .await;
-                        drop(permit);
-                        r
+                        runner
+                            .process(&session, client.as_ref(), item_id, &lanes, permit, &cancel)
+                            .await
                     });
                 }
                 None => {
@@ -1057,6 +1161,7 @@ impl Runner {
                 row.grade,
                 row.condition.as_deref(),
                 grading.as_ref(),
+                &row.title,
             )?;
             if !row.notes.is_empty() || !row.location.is_empty() {
                 self.db.set_notes(id, &row.notes, &row.location)?;
@@ -1107,10 +1212,14 @@ impl Runner {
         session: &Session,
         client: Option<&XimilarClient>,
         item_id: i64,
+        lanes: &Lanes,
+        start: tokio::sync::OwnedSemaphorePermit,
         cancel: &CancellationToken,
     ) -> Option<String> {
         self.emit_item(item_id);
-        let result = self.recognize_item(session, client, item_id, cancel).await;
+        let result = self
+            .recognize_item(session, client, item_id, lanes, start, cancel)
+            .await;
         let fatal = match result {
             Ok(()) => None,
             Err(Error::Api(ApiError::Cancelled)) => {
@@ -1155,6 +1264,8 @@ impl Runner {
         session: &Session,
         client: Option<&XimilarClient>,
         item_id: i64,
+        lanes: &Lanes,
+        start: tokio::sync::OwnedSemaphorePermit,
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item = self.db.item(item_id)?;
@@ -1162,13 +1273,16 @@ impl Runner {
         let only = self.db.only_stages(item_id)?;
         let stages: Vec<Stage> = session
             .options
-            .stages()
+            .pass()
             .into_iter()
             .filter(|s| only.as_ref().is_none_or(|only| only.contains(s)))
             .collect();
         let owed = self.db.stage(item_id)?;
+        // The start is for the first stage of a new pass. A card going on with one cut short waits where that
+        // stage waits, and lets the next card start.
+        let mut start = owed.is_none().then_some(start);
         let from = match owed {
-            Some(owed) => Stage::resume(&stages, owed),
+            Some(owed) => session.options.resume(&stages, owed),
             // A pass from the start: nothing of an earlier one counts.
             None => {
                 self.db.clear_jobs(item_id)?;
@@ -1182,10 +1296,11 @@ impl Runner {
                 self.emit_item(item_id);
             }
             let more = n + 1 < stages.len();
-            let Err(e) = self
-                .run_stage(stage, session, client, &item, more, cancel)
-                .await
-            else {
+            let done = self
+                .run_stage(stage, session, client, &item, more, lanes, cancel)
+                .await;
+            start.take();
+            let Err(e) = done else {
                 continue;
             };
             // A pass failing at its first stage is the card failing, and a call that may pass on a later run leaves
@@ -1208,6 +1323,7 @@ impl Runner {
     }
 
     /// One stage of a card's pass, by what the session's options say does it. `more`: other stages follow.
+    #[allow(clippy::too_many_arguments)]
     async fn run_stage(
         &self,
         stage: Stage,
@@ -1215,25 +1331,52 @@ impl Runner {
         client: Option<&XimilarClient>,
         item: &ItemDetail,
         more: bool,
+        lanes: &Lanes,
         cancel: &CancellationToken,
     ) -> Result<()> {
         let o = &session.options;
         let api = || client.ok_or(ApiError::NoToken);
+        // Each stage waits for room in the lane of what does it, and holds its place only while it does.
         match stage {
             Stage::Identify if o.agent() => {
                 self.identify_by_agent(session, item, more, cancel).await
             }
             Stage::Identify if o.identifies_locally() => {
+                let _place = lanes.take(&lanes.local, cancel).await?;
                 self.identify_locally(session, item, more).await
             }
-            Stage::Identify => self.identify(session, api()?, item, more, cancel).await,
-            Stage::Price if o.prices_by_agent() => self.price_by_agent(session, item, cancel).await,
-            Stage::Price => self.price_on_ebay(session, item, cancel).await,
-            Stage::Grade if o.grades_locally() => self.grade_locally(session, item).await,
-            Stage::Grade => self.submit_grading(session, api()?, item, cancel).await,
+            Stage::Identify => {
+                let client = api()?;
+                let _place = lanes.take(&lanes.api, cancel).await?;
+                self.identify(session, client, item, more, cancel).await
+            }
+            Stage::Price if o.prices_by_agent() => {
+                self.price_by_agent(session, item, lanes, cancel).await
+            }
+            Stage::Price if o.prices_locally() => {
+                self.price_by_listings_locally(session, item, lanes, cancel)
+                    .await
+            }
+            Stage::Price => self.price_on_ebay(session, item, lanes, cancel).await,
+            Stage::Grade if o.grades_locally() => {
+                let _place = lanes.take(&lanes.local, cancel).await?;
+                self.grade_locally(session, item).await
+            }
+            Stage::Grade => {
+                let client = api()?;
+                let _place = lanes.take(&lanes.api, cancel).await?;
+                self.submit_grading(session, client, item, cancel).await
+            }
             Stage::Crop if o.crops_by_agent() => self.crop_by_agent(session, item, cancel).await,
-            Stage::Crop if o.crops_locally() => self.crop_locally(session, item).await,
-            Stage::Crop => self.submit_crop(session, api()?, item, cancel).await,
+            Stage::Crop if o.crops_locally() => {
+                let _place = lanes.take(&lanes.local, cancel).await?;
+                self.crop_locally(session, item).await
+            }
+            Stage::Crop => {
+                let client = api()?;
+                let _place = lanes.take(&lanes.api, cancel).await?;
+                self.submit_crop(session, client, item, cancel).await
+            }
         }
     }
 
@@ -1377,14 +1520,27 @@ impl Runner {
         )
     }
 
-    /// Waits until an AI agent prices the identified card over MCP.
+    /// Waits until an AI agent prices the identified card over MCP: with a price of its own, or (`ebay_agent`)
+    /// by saying which of the eBay listings Cardloader found are the card.
     async fn price_by_agent(
         &self,
         session: &Session,
         item: &ItemDetail,
+        lanes: &Lanes,
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item_id = item.summary.id;
+        if session.options.agent_picks_listings() {
+            // Searched before the card waits, and again on every run: a card eBay can't be asked about (offline)
+            // never shows as waiting, and the listings an agent is handed are never ones the user's own search
+            // or ticks have changed since.
+            let found = self
+                .search_for_price(session, item_id, None, lanes, cancel)
+                .await?;
+            if found.listings.is_empty() {
+                return Ok(());
+            }
+        }
         match self
             .wait_for_agent(session, item_id, AgentTask::Price, cancel)
             .await?
@@ -1403,6 +1559,11 @@ impl Runner {
                 )?;
                 self.emit_item(item_id);
                 Ok(())
+            }
+            AgentAnswer::Kept { ids, note } => {
+                let note = note.trim();
+                let market = self.keep_ebay_listings(item_id, &ids, note)?;
+                self.price_from(item_id, &market, Some(note).filter(|n| !n.is_empty()))
             }
             AgentAnswer::Unpriced { note } => Err(Error::msg(format!("AI agent: {}", note.trim()))),
             _ => Err(Error::msg("AI agent: no price")),
@@ -1522,21 +1683,103 @@ impl Runner {
         &self,
         session: &Session,
         item: &ItemDetail,
+        lanes: &Lanes,
         cancel: &CancellationToken,
     ) -> Result<()> {
         let item_id = item.summary.id;
-        // The session's eBay site, else Settings' (`find_ebay_listings`).
-        let site = Some(session.options.ebay_site.clone()).filter(|s| !s.trim().is_empty());
-        let market = tokio::select! {
-            market = self.find_ebay_listings(item_id, None, false, None, site) => market?,
-            _ = cancel.cancelled() => return Err(ApiError::Cancelled.into()),
+        let market = self
+            .search_for_price(session, item_id, None, lanes, cancel)
+            .await?;
+        self.price_from(item_id, &market, None)
+    }
+
+    /// Prices the identified card from the eBay listings the local model says are the card: the search finds
+    /// lots, other parallels and other grades too, and the model keeps the card's own (`local::price`). None
+    /// kept, like none found, is a card without a price.
+    async fn price_by_listings_locally(
+        &self,
+        session: &Session,
+        item: &ItemDetail,
+        lanes: &Lanes,
+        cancel: &CancellationToken,
+    ) -> Result<()> {
+        let item_id = item.summary.id;
+        let found = self
+            .search_for_price(session, item_id, Some(LOCAL_LISTINGS), lanes, cancel)
+            .await?;
+        if found.listings.is_empty() {
+            return Ok(());
+        }
+        // The card as it is now: `item` was read before this pass identified it.
+        let card = self.db.item_summary(item_id)?;
+        let model = &session.options.local_model;
+        let verdicts = {
+            let _place = lanes.take(&lanes.local, cancel).await?;
+            self.local
+                .pick_listings(model, &card, &found.listings)
+                .await?
         };
-        if let Some(range) = market.range {
+        let kept: Vec<String> = found
+            .listings
+            .iter()
+            .zip(&verdicts)
+            .filter(|(_, kept)| **kept)
+            .map(|(listing, _)| listing.id.clone())
+            .collect();
+        let note = format!(
+            "The local model ({model}) kept {} of {} listings as this card.",
+            kept.len(),
+            found.listings.len()
+        );
+        let market = self.keep_ebay_listings(item_id, &kept, &note)?;
+        self.price_from(item_id, &market, None)
+    }
+
+    /// The card's eBay listings for its price stage, on the session's eBay site (else Settings'), unless the run
+    /// is stopped meanwhile.
+    async fn search_for_price(
+        &self,
+        session: &Session,
+        item_id: i64,
+        limit: Option<u32>,
+        lanes: &Lanes,
+        cancel: &CancellationToken,
+    ) -> Result<EbayMarket> {
+        let _place = lanes.take(&lanes.ebay, cancel).await?;
+        let site = Some(session.options.ebay_site.clone()).filter(|s| !s.trim().is_empty());
+        tokio::select! {
+            market = self.find_ebay_listings(item_id, None, false, limit, site) => market,
+            _ = cancel.cancelled() => Err(ApiError::Cancelled.into()),
+        }
+    }
+
+    /// The card's price is the median of its listings that count, in their currency; it keeps what it had when
+    /// none do.
+    fn price_from(&self, item_id: i64, market: &EbayMarket, note: Option<&str>) -> Result<()> {
+        if let Some(range) = &market.range {
             self.db
-                .save_price(item_id, range.median, &range.currency, None)?;
+                .save_price(item_id, range.median, &range.currency, note)?;
             self.emit_item(item_id);
         }
         Ok(())
+    }
+
+    /// Only these listings of the card's last search are the card: the range counts them alone. `note` says who
+    /// chose and why (an agent, the local model); the user's own choice has none, and takes theirs away.
+    pub fn keep_ebay_listings(
+        &self,
+        item_id: i64,
+        ids: &[String],
+        note: &str,
+    ) -> Result<EbayMarket> {
+        let mut market =
+            self.db.item(item_id)?.market.ok_or_else(|| {
+                Error::msg("search the card's listings first (find_ebay_listings)")
+            })?;
+        crate::ebay::browse::keep(&mut market, ids, note).map_err(Error::msg)?;
+        self.db.save_market(item_id, &market)?;
+        self.emit_item(item_id);
+        Ok(market)
     }
 
     /// Searches eBay for an identified card's active listings, by its fields or `query`, on `marketplace` (an eBay
@@ -2504,6 +2747,7 @@ pub(crate) mod tests {
             price: Some(300.0),
             notes: " crease ".into(),
             location: "Box 1".into(),
+            title: String::new(),
         };
         let edited = runner
             .edit_item(first, edit.clone(), &Reviewer::User)
@@ -2698,7 +2942,8 @@ pub(crate) mod tests {
         let server = MockServer::start().await;
         let side = |name: &str, d: f64| {
             json!({"_objects": [{"name": "Card", "_identification": {"best_match": {"name": name,
-                "full_name": format!("1986 Fleer {name} #57"), "year": 1986, "card_number": "57"},
+                "full_name": format!("1986 Fleer {name} #57"), "year": 1986, "card_number": "57",
+                "company": "Fleer", "team": "Chicago Bulls", "serial_number": "43/75"},
                 "distances": [d]}}]})
         };
         Mock::given(method("POST"))
@@ -2766,6 +3011,16 @@ pub(crate) mod tests {
             assert_eq!(item.status, ItemStatus::Done, "{item:?}");
             assert_eq!(item.card.name, "Michael Jordan");
             assert_eq!(item.id_type.as_deref(), Some("sport"));
+            let c = &item.card;
+            assert_eq!(
+                [
+                    c.brand.as_str(),
+                    c.team.as_str(),
+                    c.serial.as_str(),
+                    c.features.as_str()
+                ],
+                ["Fleer", "Chicago Bulls", "43/75", ""]
+            );
             let detail = db.item(item.id).unwrap();
             assert_eq!(detail.calls, 2, "the request + magic_ai");
             let raw = detail.recognition.unwrap();
@@ -3737,7 +3992,24 @@ pub(crate) mod tests {
         assert_eq!(refused.error.as_deref(), Some("Invalid category. (25005)"));
         assert_eq!(db.session(&session.id).unwrap().counts.ebay_drafts, 1);
 
-        // A new price updates the offer, with the pictures already on eBay.
+        // A new price updates the offer, with the pictures already on eBay; the title is the one the user's
+        // template makes by now.
+        runner
+            .settings
+            .update(Settings {
+                titles: vec![TitleTemplate {
+                    name: "Name first".into(),
+                    fields: vec![
+                        TitleField::Name,
+                        TitleField::Number,
+                        TitleField::Set,
+                        TitleField::Grade,
+                    ],
+                    ..Default::default()
+                }],
+                ..runner.settings.get()
+            })
+            .unwrap();
         runner
             .ebay_start(&session.id, drafts(&[(first, 15.0)]))
             .unwrap();
@@ -3746,6 +4018,24 @@ pub(crate) mod tests {
         let updates = bodies(&requests, "/sell/inventory/v1/offer/offer-1");
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0]["pricingSummary"]["price"]["value"], "15.00");
+        let titles = |requests: &[wiremock::Request]| -> Vec<String> {
+            bodies(
+                requests,
+                "/sell/inventory/v1/bulk_create_or_replace_inventory_item",
+            )
+            .iter()
+            .map(|b| {
+                b["requests"][0]["product"]["title"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect()
+        };
+        assert_eq!(
+            titles(&requests)[1],
+            "Charizard ex #125 Obsidian Flames PSA 10"
+        );
         assert_eq!(
             bodies(
                 &requests,
@@ -3761,6 +4051,39 @@ pub(crate) mod tests {
                 .count(),
             1,
             "the access token is reused"
+        );
+
+        // A title written for the card is the one listed, whatever the templates say.
+        let listed = db.item_summary(first).unwrap();
+        let own = ItemEdit {
+            card: listed.card.clone(),
+            price: listed.price,
+            title: "  Charizard ex  Obsidian Flames PSA 10 GEM MINT ".into(),
+            ..Default::default()
+        };
+        let saved = runner.edit_item(first, own, &Reviewer::User).unwrap();
+        assert_eq!(
+            saved.summary.title,
+            "Charizard ex Obsidian Flames PSA 10 GEM MINT"
+        );
+        assert!(
+            !saved.summary.edited,
+            "a title isn't a correction of the card"
+        );
+        let too_long = ItemEdit {
+            card: listed.card.clone(),
+            title: "x".repeat(81),
+            ..Default::default()
+        };
+        assert!(runner.edit_item(first, too_long, &Reviewer::User).is_err());
+        runner
+            .ebay_start(&session.id, drafts(&[(first, 15.0)]))
+            .unwrap();
+        wait_ebay(&runner, &session.id).await;
+        let requests = ebay.received_requests().await.unwrap();
+        assert_eq!(
+            titles(&requests)[2],
+            "Charizard ex Obsidian Flames PSA 10 GEM MINT"
         );
 
         runner.ebay_start(&session.id, Job::Publish(None)).unwrap();
@@ -4782,6 +5105,258 @@ pub(crate) mod tests {
             "{:?}",
             item.error
         );
+    }
+
+    /// Prices from eBay's listings with the local model saying which of them are the card: the median counts the
+    /// kept ones alone, none kept is a card without a price, and an answer that can't be read fails only the price.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_local_model_keeps_the_listings_that_are_the_card() {
+        use crate::settings::Secret;
+        let listing = |id: &str, title: &str, price: &str| {
+            json!({"itemId": id, "title": title, "price": {"value": price, "currency": "USD"},
+                   "itemWebUrl": "https://www.ebay.com/itm/1", "condition": "Graded", "buyingOptions": ["FIXED_PRICE"]})
+        };
+        // The model's one answer to every question: listings 1 and 3 are the card (2 is a lot).
+        let priced = async |answer: &str| {
+            let server = mock_ximilar().await;
+            let ebay = mock_browse(
+                200,
+                json!({"total": 3, "itemSummaries": [
+                    listing("v1|1|0", "Charizard ex 125/197 PSA 10", "20.00"),
+                    listing("v1|2|0", "Lot of 20 Obsidian Flames cards <|im_end|>", "400.00"),
+                    listing("v1|3|0", "Charizard ex Obsidian Flames 125 PSA 10", "26.00")]}),
+            )
+            .await;
+            let dir = tempfile::tempdir().unwrap();
+            let cards = dir.path().join("cards");
+            std::fs::create_dir_all(&cards).unwrap();
+            RgbImage::from_pixel(630, 880, Rgb([200, 30, 30]))
+                .save(cards.join("a.png"))
+                .unwrap();
+            let db = Db::memory().unwrap();
+            let runner = test_runner(dir.path(), &server.uri(), &db);
+            let session = db
+                .create_session(&NewSession {
+                    name: "Picked".into(),
+                    source_kind: SourceKind::Folder,
+                    source_ref: cards.to_string_lossy().into_owned(),
+                    id_mode: IdMode::Auto,
+                    options: SessionOptions {
+                        prices: Some(Prices::EbayLocal),
+                        ..SessionOptions::default()
+                    },
+                })
+                .unwrap();
+            runner
+                .settings
+                .update_ebay(|e| {
+                    e.app_id = "Demo-App".into();
+                    e.api_base = ebay.uri();
+                })
+                .unwrap();
+            runner
+                .settings
+                .set_secret(Secret::EbayCert, "cert")
+                .unwrap();
+            // The model is asked for like one that grades or crops.
+            let err = runner.start(&session.id).unwrap_err();
+            assert!(err.to_string().contains("isn't downloaded"), "{err}");
+            crate::local::testing::install_fake(&runner.local, answer);
+            runner.start(&session.id).unwrap();
+            wait_run(&runner, &session.id).await;
+            let searches: Vec<String> = ebay
+                .received_requests()
+                .await
+                .unwrap()
+                .iter()
+                .filter(|r| r.url.path().ends_with("/item_summary/search"))
+                .map(|r| r.url.query().unwrap_or_default().to_string())
+                .collect();
+            assert_eq!(searches.len(), 1);
+            assert!(searches[0].contains("limit=30"), "{searches:?}");
+            db.item(db.items(&session.id).unwrap()[0].id).unwrap()
+        };
+
+        let item = priced(r#"{"1": true, "2": false, "3": true}"#).await;
+        assert_eq!(item.summary.status, ItemStatus::Done);
+        assert_eq!(item.summary.price, Some(23.0), "the median of 20 and 26");
+        assert_eq!(item.price_note, None);
+        let market = item.market.unwrap();
+        assert_eq!(market.range.unwrap().count, 2);
+        assert_eq!(
+            market
+                .listings
+                .iter()
+                .map(|l| l.counted)
+                .collect::<Vec<_>>(),
+            [true, false, true]
+        );
+        assert_eq!(
+            market.note,
+            format!(
+                "The local model ({}) kept 2 of 3 listings as this card.",
+                crate::local::catalog::DEFAULT_MODEL
+            )
+        );
+
+        let none = priced(r#"{"1": false, "2": false, "3": false}"#).await;
+        // No listing is the card: it keeps the price it had (here the mock's price statistics, which a real
+        // answer wouldn't have unasked).
+        assert_eq!(
+            (none.summary.status, none.summary.price),
+            (ItemStatus::Done, Some(12.5))
+        );
+        assert!(none.summary.market_range.is_none());
+        assert!(none.market.unwrap().note.contains("kept 0 of 3"));
+
+        let unreadable = priced(r#"{"corners": 9}"#).await;
+        assert_eq!(unreadable.summary.status, ItemStatus::Error);
+        assert_eq!(unreadable.summary.card.name, "Charizard ex");
+        let error = unreadable.summary.error.unwrap_or_default();
+        assert!(
+            error.starts_with("price: ") && error.contains("couldn't be read"),
+            "{error}"
+        );
+        // Every listing found still counts: nobody said which don't.
+        assert_eq!(unreadable.summary.market_range.map(|r| r.count), Some(3));
+    }
+
+    /// Cards overlap: while the local model is still busy with the first card's eBay listings, the others are
+    /// identified, and every card's grade is asked of Ximilar, which nothing slower is allowed to hold up. One
+    /// request to Ximilar at a time is enough for that.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_next_card_is_identified_while_this_one_is_priced() {
+        use crate::settings::Secret;
+        let server = mock_ximilar().await;
+        let listing = |id: &str, price: &str| {
+            json!({"itemId": id, "title": "Charizard ex 125/197 PSA 10", "price": {"value": price, "currency": "USD"},
+                   "itemWebUrl": "https://www.ebay.com/itm/1", "condition": "Graded", "buyingOptions": ["FIXED_PRICE"]})
+        };
+        let ebay = mock_browse(
+            200,
+            json!({"total": 2, "itemSummaries": [listing("v1|1|0", "20.00"), listing("v1|2|0", "30.00")]}),
+        )
+        .await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        for name in ["a", "b", "c"] {
+            RgbImage::from_pixel(630, 880, Rgb([200, 30, 30]))
+                .save(cards.join(format!("{name}.png")))
+                .unwrap();
+        }
+        let db = Db::memory().unwrap();
+        let runner = test_runner(dir.path(), &server.uri(), &db);
+        runner
+            .settings
+            .update(Settings {
+                concurrency: 1,
+                ..runner.settings.get()
+            })
+            .unwrap();
+        runner
+            .settings
+            .update_ebay(|e| {
+                e.app_id = "Demo-App".into();
+                e.api_base = ebay.uri();
+            })
+            .unwrap();
+        runner
+            .settings
+            .set_secret(Secret::EbayCert, "cert")
+            .unwrap();
+        let options = SessionOptions {
+            prices: Some(Prices::EbayLocal),
+            grading: GradingMode::Grade,
+            ..SessionOptions::default()
+        };
+        // The grade, which Ximilar answers at once, comes before the local model's look at the listings.
+        assert_eq!(
+            options.pass(),
+            [Stage::Identify, Stage::Grade, Stage::Price]
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "Overlapping".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Auto,
+                options,
+            })
+            .unwrap();
+        let model =
+            crate::local::testing::install_gated(&runner.local, r#"{"1": true, "2": false}"#);
+        runner.start(&session.id).unwrap();
+
+        // The model answers nothing yet. All three cards get identified, graded and searched on eBay meanwhile.
+        let started = Instant::now();
+        loop {
+            let items = db.items(&session.id).unwrap();
+            let ahead = items.len() == 3
+                && items.iter().all(|i| {
+                    i.card.name == "Charizard ex"
+                        && i.grade.is_some()
+                        && i.market_range.as_ref().map(|r| r.count) == Some(2)
+                });
+            if ahead {
+                break;
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "the cards wait for one another: {:?}",
+                items
+                    .iter()
+                    .map(|i| (&i.card.name, i.grade, i.status))
+                    .collect::<Vec<_>>()
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(
+            runner.is_running(&session.id),
+            "the prices are still to come"
+        );
+        for item in db.items(&session.id).unwrap() {
+            assert_eq!(db.item(item.id).unwrap().market.unwrap().note, "");
+            assert_eq!(db.stage(item.id).unwrap(), Some(Stage::Price));
+        }
+
+        // Paused, the session starts nothing new: the card the model is busy with is finished, the two waiting
+        // for the model stay where they are until it is resumed.
+        runner.pause(&session.id).unwrap();
+        model.open();
+        let priced = || {
+            db.items(&session.id)
+                .unwrap()
+                .iter()
+                .filter(|i| !db.item(i.id).unwrap().market.unwrap().note.is_empty())
+                .count()
+        };
+        let started = Instant::now();
+        while priced() == 0 {
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "no card priced"
+            );
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        assert_eq!(priced(), 1, "a paused session went on pricing");
+        assert!(runner.is_running(&session.id));
+        runner.start(&session.id).unwrap();
+        wait_run(&runner, &session.id).await;
+        let s = db.session(&session.id).unwrap();
+        assert_eq!(s.status, SessionStatus::Completed, "{s:?}");
+        for item in db.items(&session.id).unwrap() {
+            assert_eq!(item.status, ItemStatus::Done, "{item:?}");
+            assert_eq!(item.price, Some(20.0), "the one listing the model kept");
+            assert!(db
+                .item(item.id)
+                .unwrap()
+                .market
+                .unwrap()
+                .note
+                .contains("kept 1 of 2"));
+        }
     }
 
     /// Stopping a session keeps every card its source had sent: each has its item, queued for the next run (a

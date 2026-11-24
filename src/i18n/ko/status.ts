@@ -60,7 +60,14 @@ const messages: Messages<typeof en> = {
     grade: "전체 등급",
     centering: "센터링만",
   },
-  prices: { off: "끔", ximilar: "Ximilar", ebay: "eBay", agent: "AI 에이전트" },
+  prices: {
+    off: "끔",
+    ximilar: "Ximilar",
+    ebay: "eBay",
+    agent: "AI 에이전트",
+    ebay_local: "eBay + 로컬 모델",
+    ebay_agent: "eBay + AI 에이전트",
+  },
   stageBy: "{stage}: {by}",
   gradingShort: {
     off: "끔",
@@ -87,6 +94,10 @@ const messages: Messages<typeof en> = {
     year: "연도",
     series: "시리즈",
     subcategory: "카테고리",
+    brand: "브랜드",
+    team: "팀",
+    serial: "시리얼 넘버",
+    features: "특징",
   },
   noMatch: "일치 항목 없음",
   via: {

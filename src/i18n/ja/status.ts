@@ -60,7 +60,14 @@ const messages: Messages<typeof en> = {
     grade: "本格グレード",
     centering: "センタリングのみ",
   },
-  prices: { off: "オフ", ximilar: "Ximilar", ebay: "eBay", agent: "AIエージェント" },
+  prices: {
+    off: "オフ",
+    ximilar: "Ximilar",
+    ebay: "eBay",
+    agent: "AIエージェント",
+    ebay_local: "eBay＋ローカルモデル",
+    ebay_agent: "eBay＋AIエージェント",
+  },
   stageBy: "{stage}：{by}",
   gradingShort: {
     off: "オフ",
@@ -87,6 +94,10 @@ const messages: Messages<typeof en> = {
     year: "年",
     series: "シリーズ",
     subcategory: "カテゴリー",
+    brand: "ブランド",
+    team: "チーム",
+    serial: "シリアルナンバー",
+    features: "特徴",
   },
   noMatch: "一致なし",
   via: {

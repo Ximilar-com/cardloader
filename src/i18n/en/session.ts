@@ -216,24 +216,31 @@ export default {
     none: "No identified card to add to: cards that are waiting, running or not identified are left out.",
   },
   agentPrompt: {
-    identify: "Identify the cards of the Cardloader session {name} (id {id}) via MCP.",
-    price: "Price the cards of the Cardloader session {name} (id {id}) via MCP.",
-    crop: "Crop the cards of the Cardloader session {name} (id {id}) via MCP.",
+    identify:
+      "Identify the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
+    price:
+      "Price the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
+    crop: "Crop the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
+    identifyPrice:
+      "Identify and price the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
+    identifyCrop:
+      "Identify and crop the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
+    priceCrop:
+      "Price and crop the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
+    identifyPriceCrop:
+      "Identify, price and crop the cards of the Cardloader session {name} (id {id}) via MCP, and keep going until no card waits for you.",
     copy: "Copy the prompt",
   },
   agentCropping: {
-    one: "<b>{count} card</b> waits for your AI agent to find its corners. Ask it, e.g. in Claude: “Crop the cards of the Cardloader session {name} (id {id}) via MCP.”",
-    other:
-      "<b>{count} cards</b> wait for your AI agent to find their corners. Ask it, e.g. in Claude: “Crop the cards of the Cardloader session {name} (id {id}) via MCP.”",
+    one: "<b>{count} card</b> waits for your AI agent to find its corners. Ask it, e.g. in Claude: “{prompt}”",
+    other: "<b>{count} cards</b> wait for your AI agent to find their corners. Ask it, e.g. in Claude: “{prompt}”",
   },
   agentPricing: {
-    one: "<b>{count} card</b> waits for your AI agent’s price. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name} (id {id}) via MCP.”",
-    other:
-      "<b>{count} cards</b> wait for your AI agent’s prices. Ask it, e.g. in Claude: “Price the cards of the Cardloader session {name} (id {id}) via MCP.”",
+    one: "<b>{count} card</b> waits for your AI agent’s price. Ask it, e.g. in Claude: “{prompt}”",
+    other: "<b>{count} cards</b> wait for your AI agent’s prices. Ask it, e.g. in Claude: “{prompt}”",
   },
   agentWaiting: {
-    one: "<b>{count} card</b> waits for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name} (id {id}) via MCP.”",
-    other:
-      "<b>{count} cards</b> wait for your AI agent. Ask it, e.g. in Claude: “Identify the cards of the Cardloader session {name} (id {id}) via MCP.”",
+    one: "<b>{count} card</b> waits for your AI agent. Ask it, e.g. in Claude: “{prompt}”",
+    other: "<b>{count} cards</b> wait for your AI agent. Ask it, e.g. in Claude: “{prompt}”",
   },
 };

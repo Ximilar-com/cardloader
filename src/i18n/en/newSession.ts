@@ -105,6 +105,18 @@ export default {
   identifyAs: "Identify as",
   grading: "Grading",
   imagesPerCard: "Images per card",
+  /** Under "Images per card": what the choice does, and what goes wrong when it doesn't fit the images. */
+  pairingWarning: {
+    single: {
+      title: "Every image becomes its own card.",
+      text: "If the images also include the cards’ backs, each back is analysed as another card, with its own API calls and price. Choose “Front + back pairs” then.",
+    },
+    frontBack: {
+      title: "Every two images become one card.",
+      text: "Fronts and backs are paired by name (card_front / card_back, card_F / card_B), otherwise two at a time in order: front, back, front, back. With fronts only, every second card would be taken for the back of the one before it and left out.",
+    },
+    odd: "This folder has an odd number of images ({count}): one card would be without its back, or the pairs are shifted. Check that no side is missing.",
+  },
   conditionScale: "Condition scale",
   priceStats: "Price statistics",
   readSlabs: "Read graded slab labels",
@@ -227,17 +239,25 @@ export default {
     ximilar: "Ximilar price statistics",
     ebay: "eBay listings",
     agent: "AI agent (MCP)",
+    ebay_local: "eBay listings + local model",
+    ebay_agent: "eBay listings + AI agent (MCP)",
   },
   priceHints: {
     ximilar: "Comes with Ximilar’s identification",
     ebay: "The median of the card’s active listings",
     agent: "Claude or another agent connected over MCP",
+    ebay_local: "The local model keeps the listings that are the card",
+    ebay_agent: "Your agent checks the listings and their pictures",
   },
   priceNotes: {
     ximilar: "Ximilar’s market prices come with each identification, at no extra cost.",
     ebay: "Once a card is identified, Cardloader searches its active fixed-price eBay listings with your eBay keyset and takes their median as its price. The listings stay on the card.",
     agent:
       "Your AI agent prices each card once it is identified: ask it, e.g. in Claude, to price the cards of this session in Cardloader.",
+    ebay_local:
+      "Once a card is identified, Cardloader searches its active fixed-price eBay listings with your eBay keyset. The local model reads their titles and keeps the ones that are this card (the same card, variant and grade; no lots), and their median becomes its price. The listings stay on the card, with the ones left out greyed.",
+    ebay_agent:
+      "Once a card is identified, Cardloader searches its active fixed-price eBay listings with your eBay keyset and hands them to your AI agent with their pictures and the card’s. The agent keeps the listings that are this card and their median becomes its price: ask it, e.g. in Claude, to price the cards of this session in Cardloader.",
   },
   needsEbay: "Add your eBay keyset in Settings so Cardloader can search eBay’s listings for prices.",
   needsAgentsPrices: "Turn on AI agents, with “Run & review”, in Settings so your agent can price the cards.",

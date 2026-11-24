@@ -310,9 +310,15 @@ impl VisionModel for LlamaVision {
             .map(|image| MtmdBitmap::from_buffer(&mtmd, image, false))
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| err("cannot read the image")(&e))?;
-        // One marker per image, in order, before the question that names them.
-        let markers = vec![mtmd::mtmd_default_marker(); images.len()].join("\n");
-        let content = format!("{markers}\n{prompt}");
+        // One marker per image, in order, before the question that names them; a question about text alone
+        // (`LocalModels::pick_listings`) has none.
+        let content = match images.len() {
+            0 => prompt.to_string(),
+            n => format!(
+                "{}\n{prompt}",
+                vec![mtmd::mtmd_default_marker(); n].join("\n")
+            ),
+        };
         let mut text = match &self.prompting {
             Prompting::Turn(turn) => catalog::write_turn(turn, &content),
             Prompting::Template(template) => {
@@ -338,8 +344,8 @@ impl VisionModel for LlamaVision {
         let needed = chunks.total_tokens() + max_tokens as usize;
         if needed > self.context_tokens as usize {
             return Err(Error::msg(format!(
-                "the pictures and the answer take {needed} tokens, more than the model's context of {}: raise \
-                 context_tokens or lower card_long_edge in the model's catalog entry",
+                "the question, its pictures and the answer take {needed} tokens, more than the model's context \
+                 of {}: raise context_tokens or lower card_long_edge in the model's catalog entry",
                 self.context_tokens
             )));
         }

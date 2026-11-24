@@ -25,8 +25,9 @@ export type IdMode = "auto" | "tcg" | "sport" | "comics" | "slab";
 export type Engine = "ximilar" | "local" | "agent";
 export type GradingMode = "off" | "condition" | "grade" | "centering";
 /** Where identified cards' prices come from: none, Ximilar's price statistics (with its identification), the card's
- * active eBay listings, or an AI agent over MCP. */
-export type Prices = "off" | "ximilar" | "ebay" | "agent";
+ * active eBay listings, or an AI agent over MCP. `ebay` counts every listing found; with `ebay_local` the local
+ * model, and with `ebay_agent` the agent, first keeps the listings that are the card. */
+export type Prices = "off" | "ximilar" | "ebay" | "agent" | "ebay_local" | "ebay_agent";
 /** A step of a card's pass, in order. */
 export type Stage = "identify" | "price" | "grade" | "crop";
 /** What a session does with each card: identify it (and grade, price…), or only grade it, tell its condition or crop
@@ -179,6 +180,13 @@ export interface CardFields {
   series: string;
   year: string;
   subcategory: string;
+  /** Who made the card ("Topps"). Like the three below, a detail a listing title can use; typing one doesn't accept the card. */
+  brand: string;
+  team: string;
+  /** The copy's serial number as printed ("43/75"). */
+  serial: string;
+  /** What a seller says about the card in a title ("RC Auto"): only ever typed. */
+  features: string;
 }
 
 export interface SlabLabel {
@@ -231,6 +239,8 @@ export interface ItemSummary extends CardFields {
   notes: string;
   /** Where the card is kept: a box, a binder page. */
   location: string;
+  /** The listing title someone wrote for this card; "" = the one its template makes. */
+  title: string;
   updatedAt: string;
   /** The card's eBay listing, once one was attempted. */
   ebay: EbayListing | null;
@@ -308,6 +318,8 @@ export interface ItemEdit extends CardFields {
   price: number | null;
   notes: string;
   location: string;
+  /** The card's own listing title; "" = automatic. */
+  title: string;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -370,6 +382,8 @@ export interface Settings {
   /** Where local models run: "" = the best GPU there is (else the CPU), "cpu", or a GPU's name ("Vulkan1"). */
   localDevice: string;
   ebay: EbaySettings;
+  /** The user's listing title templates, the first that fits a card first; none = the built-in titles. */
+  titles: TitleTemplate[];
   mcp: McpSettings;
 }
 
@@ -445,12 +459,77 @@ export interface EbaySetup {
   locations: Named[];
 }
 
+/** What a listing takes in its title. */
+export const MAX_TITLE = 80;
+
+/** One part of a listing title. */
+export type TitleField =
+  | "year"
+  | "game"
+  | "brand"
+  | "set"
+  | "setCode"
+  | "name"
+  | "series"
+  | "features"
+  | "serial"
+  | "number"
+  | "team"
+  | "grade";
+
+/** The parts of a listing title in the user's order, for the cards it is for. */
+export interface TitleTemplate {
+  id: string;
+  name: string;
+  /** The kind of card it is for. */
+  kind: "any" | "tcg" | "sport";
+  /** Which of them: every one, those in a graded slab, or those whose features name an autograph. */
+  only: "any" | "graded" | "autograph";
+  fields: TitleField[];
+}
+
+/** One change for many cards: a text added to (or put in place of) their titles or one of their fields. */
+export interface BulkEdit {
+  field: "title" | "features" | "brand" | "team" | "series";
+  /** `replace` with no text empties the field; a title is then the automatic one again. */
+  place: "start" | "end" | "replace";
+  text: string;
+}
+
+/** A card's listing title, now and after a change. */
+export interface TitlePreview {
+  /** null: a made-up card, shown while there are no cards yet. */
+  itemId: number | null;
+  seq: number;
+  thumbPath: string | null;
+  /** The title as it is. */
+  before: string;
+  /** The title after the change asked about; without one, the same. */
+  title: string;
+  /** `title` is the card's own, not a template's. */
+  custom: boolean;
+  /** What the template makes for the card, whether or not it has its own title. */
+  automatic: string;
+  /** The template that makes it; "" = the built-in one. */
+  template: string;
+  /** Parts the card has that didn't fit. */
+  leftOut: TitleField[];
+  /** The change asked about changes this card. */
+  changed: boolean;
+  /** Why the card has no listing title, or can't take the change. */
+  problem: string | null;
+}
+
 /** One card in the "List on eBay" dialog. */
 export interface EbayPreview {
   itemId: number;
   seq: number;
   thumbPath: string | null;
   title: string;
+  /** The title is the card's own, not a template's. */
+  customTitle: boolean;
+  /** Parts the card has that didn't fit into the title. */
+  leftOut: TitleField[];
   category: string | null;
   condition: string | null;
   /** The price it is offered at, else Ximilar's price. */
@@ -774,6 +853,15 @@ export const api = {
     invoke<CardSearch>("search_cards", { query, filter, limit }),
   /** Saves what the user typed: the card fields and price (once identified), notes and location. */
   updateItem: (id: number, edit: ItemEdit) => invoke<ItemDetail>("update_item", { id, edit }),
+  /**
+   * The listing titles of the cards named (else of the newest cards, else of made-up ones): as they are, with
+   * templates not saved yet, or as a change to many cards would make them.
+   */
+  previewTitles: (query: { itemIds?: number[]; edit?: BulkEdit; templates?: TitleTemplate[] }) =>
+    invoke<TitlePreview[]>("preview_titles", { query }),
+  /** Adds a text to the listing titles or a field of many cards; cards that can't take it are skipped. */
+  editItems: (itemIds: number[], edit: BulkEdit) =>
+    invoke<{ changed: number; skipped: number }>("edit_items", { itemIds, edit }),
   /** Turns a card's image upright when Ximilar found it upside down (cardloader's copies only). */
   turnItem: (id: number) => invoke<ItemDetail>("turn_item", { id }),
   /** Turns upright those of the cards Ximilar found upside down; the others are counted as skipped. */

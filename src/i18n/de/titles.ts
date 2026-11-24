@@ -1,0 +1,105 @@
+import type { Messages } from "..";
+import type en from "../en/titles";
+
+const messages: Messages<typeof en> = {
+  section: {
+    title: "Angebotstitel",
+    text: "Welche Teile einer Karte ihren Angebotstitel auf eBay, Whatnot und Shopify bilden, und in welcher Reihenfolge. Die erste Vorlage, die für eine Karte gilt, bildet ihren Titel; Karten ohne Vorlage behalten den üblichen Titel. Ein Titel, der länger als {max} Zeichen würde, lässt das Unwichtigste weg, statt sein Ende zu verlieren.",
+  },
+  add: "Vorlage hinzufügen",
+  newName: "Vorlage {n}",
+  name: "Name",
+  kind: {
+    label: "Für",
+    any: "Alle Karten",
+    sport: "Sportkarten",
+    tcg: "Sammelkarten",
+  },
+  only: {
+    label: "Nur",
+    any: "Alle davon",
+    graded: "Gegradete Karten",
+    gradedHint: "in einem Slab, dessen Label gelesen wurde",
+    autograph: "Autogramme",
+    autographHint: "Merkmale nennen Auto oder Autograph",
+  },
+  parts: "Teile, in Reihenfolge",
+  addPart: "Teil hinzufügen…",
+  noParts: "Ohne Teile bildet diese Vorlage keine Titel.",
+  moveEarlier: "{field} nach vorn",
+  moveLater: "{field} nach hinten",
+  removePart: "{field} entfernen",
+  moveUp: "Vor der Vorlage darüber verwenden",
+  moveDown: "Nach der Vorlage darunter verwenden",
+  remove: "Vorlage entfernen",
+  field: {
+    year: "Jahr",
+    game: "Spiel oder Sportart",
+    brand: "Marke",
+    set: "Set",
+    setCode: "Set-Code",
+    name: "Name",
+    series: "Serie",
+    features: "Merkmale",
+    serial: "Seriennummer",
+    number: "Kartennummer",
+    team: "Team",
+    grade: "Grade",
+  },
+  preview: {
+    title: "Vorschau",
+    yours: "Deine neuesten Karten, mit den Titeln dieser Vorlagen.",
+    examples: "Beispielkarten, mit den Titeln dieser Vorlagen.",
+    builtin: "Üblicher Titel",
+    custom: "Diese Karte hat ihren eigenen Titel",
+  },
+  count: "{count}/{max}",
+  countHint: "Ein Angebotstitel fasst {max} Zeichen",
+  tooLong: "Der Titel ist {count} Zeichen lang; ein Angebot fasst {max}.",
+  leftOut: "Aus Platzgründen weggelassen: {fields}",
+  custom: "Eigener",
+  customHint: "Für diese Karte geschrieben: Vorlagen ändern ihn nicht",
+  listingTitle: "Angebotstitel",
+  backToAutomatic: "Zurück zum automatischen Titel",
+  automaticHint: "Leer: der Titel aus der Vorlage.",
+  bulk: {
+    button: "Bearbeiten…",
+    buttonTitle: "Einen Text zu den Titeln oder einem Feld dieser Karten hinzufügen",
+    title: { one: "{count} Karte bearbeiten", other: "{count} Karten bearbeiten" },
+    field: {
+      label: "Hinzufügen zu",
+      title: "Angebotstitel",
+    },
+    place: {
+      label: "Wo",
+      end: "Am Ende",
+      start: "Am Anfang",
+      replace: "Stattdessen",
+    },
+    text: "Text",
+    textPlaceholder: "PSA 9, Flagship, …",
+    hint: {
+      title:
+        "Jeder Titel wird um den Text herum in {max} Zeichen eingepasst und ist dann der eigene Titel der Karte: Vorlagen ändern ihn nicht mehr.",
+      titleReplace:
+        "Jede Karte bekommt diesen Titel (höchstens {max} Zeichen). Ohne Text bekommen die Karten wieder ihre automatischen Titel.",
+      field: "Ein Titel zeigt den Text dort, wo seine Vorlage diesen Teil hat.",
+      series:
+        "Die Serie unterscheidet eine Karte von einer anderen: Eine Änderung übernimmt diese Karten und verwirft ihre eBay-Preisspannen.",
+    },
+    unchanged: "Keine Änderung",
+    summary: { one: "{count} Karte wird geändert", other: "{count} Karten werden geändert" },
+    summarySkipped: {
+      one: "{count} Karte wird geändert · bei {skipped} geht es nicht",
+      other: "{count} Karten werden geändert · bei {skipped} geht es nicht",
+    },
+    apply: { one: "{count} Karte ändern", other: "{count} Karten ändern" },
+    applyNone: "Ändern",
+    toast: { one: "{count} Karte geändert", other: "{count} Karten geändert" },
+    toastSkipped: {
+      one: "{count} Karte geändert · {skipped} übersprungen",
+      other: "{count} Karten geändert · {skipped} übersprungen",
+    },
+  },
+};
+export default messages;

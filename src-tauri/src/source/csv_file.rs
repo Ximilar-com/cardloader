@@ -35,6 +35,11 @@ enum Column {
     Distance,
     Notes,
     Location,
+    Brand,
+    Team,
+    Serial,
+    Features,
+    Title,
 }
 
 /// Normalised header → column. The first matching header wins.
@@ -96,7 +101,22 @@ const ALIASES: &[(Column, &[&str])] = &[
             "card_num",
         ],
     ),
-    (Column::Series, &["series", "sub_set", "subset", "brand"]),
+    (
+        Column::Series,
+        &["series", "sub_set", "subset", "parallel", "variant"],
+    ),
+    (
+        Column::Brand,
+        &["brand", "company", "manufacturer", "maker"],
+    ),
+    (Column::Team, &["team", "club"]),
+    (
+        Column::Serial,
+        &["serial", "serial_number", "serial_no", "numbered"],
+    ),
+    (Column::Features, &["features", "feature", "attributes"]),
+    // Not "title": files of other tools name the card so, and it is read as the name.
+    (Column::Title, &["listing_title", "ebay_title"]),
     (Column::Year, &["year", "date", "release_year"]),
     (
         Column::Category,
@@ -137,6 +157,8 @@ pub struct CsvRow {
     pub distance: Option<f64>,
     pub notes: String,
     pub location: String,
+    /// The card's own listing title, as Cardloader's export writes it.
+    pub title: String,
 }
 
 impl CsvRow {
@@ -192,6 +214,11 @@ fn field_name(c: Column) -> &'static str {
         Column::Distance => "distance",
         Column::Notes => "notes",
         Column::Location => "location",
+        Column::Brand => "brand",
+        Column::Team => "team",
+        Column::Serial => "serial number",
+        Column::Features => "features",
+        Column::Title => "listing title",
     }
 }
 
@@ -326,6 +353,16 @@ pub fn parse(text: &str, base: &Path) -> Result<CsvFile> {
                 Column::SetCode => row.card.set_code = text,
                 Column::CardNumber => row.card.card_number = text.trim_start_matches('#').into(),
                 Column::Series => row.card.series = text,
+                Column::Brand => row.card.brand = text,
+                Column::Team => row.card.team = text,
+                Column::Serial => row.card.serial = text,
+                Column::Features => row.card.features = text,
+                // One longer than a listing takes was never Cardloader's: the card keeps its automatic title.
+                Column::Title => {
+                    if text.chars().count() <= crate::ebay::listing::MAX_TITLE {
+                        row.title = text;
+                    }
+                }
                 Column::Year => row.card.year = text,
                 Column::Category => row.card.subcategory = text,
                 Column::IdType => {
@@ -466,6 +503,32 @@ mod tests {
         assert_eq!(r.price, Some(18500.5));
         assert_eq!(r.condition.as_deref(), Some("Near Mint"));
         assert!(r.front.is_none());
+    }
+
+    #[test]
+    fn reads_the_details_and_a_cards_own_title() {
+        let long = "word ".repeat(20);
+        let text = format!(
+            "title,brand,team,serial,features,listing_title\n\
+             Jazz Chisholm Jr.,Topps,New York Yankees,43/75,RC Auto,2026 Topps Jazz Chisholm Jr. RC Auto\n\
+             Aaron Judge,,,,,{long}\n"
+        );
+        let file = parse(&text, Path::new("/")).unwrap();
+        let a = &file.rows[0];
+        // "title" is how other tools' files name the card; a brand is no longer read as the series.
+        assert_eq!(a.card.name, "Jazz Chisholm Jr.");
+        assert_eq!(
+            [
+                &a.card.brand,
+                &a.card.team,
+                &a.card.serial,
+                &a.card.features,
+                &a.card.series
+            ],
+            ["Topps", "New York Yankees", "43/75", "RC Auto", ""]
+        );
+        assert_eq!(a.title, "2026 Topps Jazz Chisholm Jr. RC Auto");
+        assert_eq!(file.rows[1].title, "", "longer than a listing takes");
     }
 
     #[test]

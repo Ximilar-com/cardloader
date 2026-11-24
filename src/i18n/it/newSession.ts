@@ -93,6 +93,17 @@ const messages: Messages<typeof en> = {
   identifyAs: "Identifica come",
   grading: "Gradazione",
   imagesPerCard: "Immagini per carta",
+  pairingWarning: {
+    single: {
+      title: "Ogni immagine diventa una carta.",
+      text: "Se le immagini comprendono anche i retri, ogni retro viene analizzato come un’altra carta, con le sue chiamate API e il suo prezzo. In quel caso scegli «Coppie fronte + retro».",
+    },
+    frontBack: {
+      title: "Ogni due immagini formano una carta.",
+      text: "Fronti e retri sono abbinati per nome (card_front / card_back, card_F / card_B), altrimenti a due a due in ordine: fronte, retro, fronte, retro. Con soli fronti, una carta su due verrebbe presa per il retro della precedente e lasciata fuori.",
+    },
+    odd: "Questa cartella ha un numero dispari di immagini ({count}): una carta resterebbe senza retro, oppure le coppie sono sfasate. Controlla che non manchi un lato.",
+  },
   conditionScale: "Scala delle condizioni",
   priceStats: "Statistiche prezzi",
   readSlabs: "Leggi le etichette degli slab gradati",
@@ -228,17 +239,29 @@ const messages: Messages<typeof en> = {
   keepOne: "Una sessione fa almeno una di queste attività.",
   identifyLocked: "Questa sessione ha delle carte: continua a identificarle, o continua a non farlo.",
   priceWith: "Prezzi con",
-  priceEngines: { ximilar: "Statistiche prezzi Ximilar", ebay: "Inserzioni eBay", agent: "Agente IA (MCP)" },
+  priceEngines: {
+    ximilar: "Statistiche prezzi Ximilar",
+    ebay: "Inserzioni eBay",
+    agent: "Agente IA (MCP)",
+    ebay_local: "Inserzioni eBay + modello locale",
+    ebay_agent: "Inserzioni eBay + agente IA (MCP)",
+  },
   priceHints: {
     ximilar: "Arrivano con l’identificazione di Ximilar",
     ebay: "La mediana delle inserzioni attive della carta",
     agent: "Claude o un altro agente collegato tramite MCP",
+    ebay_local: "Il modello locale tiene le inserzioni che sono la carta",
+    ebay_agent: "Il tuo agente controlla le inserzioni e le loro foto",
   },
   priceNotes: {
     ximilar: "I prezzi di mercato di Ximilar arrivano con ogni identificazione, senza costi aggiuntivi.",
     ebay: "Una volta identificata una carta, Cardloader cerca le sue inserzioni eBay attive a prezzo fisso con il tuo keyset eBay e ne prende la mediana come prezzo. Le inserzioni restano sulla carta.",
     agent:
       "Il tuo agente IA dà un prezzo a ogni carta una volta identificata: chiedigli, ad es. in Claude, di dare un prezzo alle carte di questa sessione in Cardloader.",
+    ebay_local:
+      "Una volta identificata una carta, Cardloader cerca le sue inserzioni eBay attive a prezzo fisso con il tuo keyset eBay. Il modello locale legge i titoli e tiene quelle che sono questa carta (la stessa carta, variante e voto; niente lotti), e la loro mediana diventa il prezzo. Le inserzioni restano sulla carta, quelle scartate in grigio.",
+    ebay_agent:
+      "Una volta identificata una carta, Cardloader cerca le sue inserzioni eBay attive a prezzo fisso con il tuo keyset eBay e le passa al tuo agente IA, con le loro foto e quelle della carta. L’agente tiene le inserzioni che sono questa carta e la loro mediana diventa il prezzo: chiedigli, ad es. in Claude, di dare un prezzo alle carte di questa sessione in Cardloader.",
   },
   needsEbay:
     "Aggiungi il tuo keyset eBay nelle Impostazioni perché Cardloader possa cercare i prezzi nelle inserzioni eBay.",

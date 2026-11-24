@@ -17,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 use super::imgbb::Hosting;
 use super::{csv_line, graded_condition, PricedItem, Skipped};
 use crate::ebay::listing::{self, Kind, Listing, Preview};
-use crate::model::{CardCondition, ItemDetail, ItemSummary};
+use crate::model::{CardCondition, ItemDetail, ItemSummary, TitleTemplate};
 use crate::runner::Runner;
 use crate::ximilar::http::ApiError;
 
@@ -242,8 +242,13 @@ pub fn products(cards: &[Card], grouping: Grouping) -> Vec<Product> {
         let at = match by_key.get(&handle) {
             Some(&at) if !own => at,
             _ => {
-                // An ungraded card's title has no grade: every copy of the card fits it.
-                let title = card.plan.title.clone();
+                // An ungraded card's title has no grade: every copy of the card fits it, unless it is the
+                // title someone wrote for one copy.
+                let title = if own {
+                    card.plan.title.clone()
+                } else {
+                    card.plan.automatic.clone()
+                };
                 let mut tags: Vec<String> =
                     [c.subcategory.as_str(), c.set_name.as_str(), c.year.as_str()]
                         .iter()
@@ -389,8 +394,9 @@ pub fn inventory_csv(products: &[Product], location: &str) -> String {
 }
 
 /// `grading`: the card's grading record, which names the scale of its condition.
-pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
-    let plan = listing::plan(item);
+pub fn preview(item: &ItemSummary, grading: Option<&Value>, titles: &[TitleTemplate]) -> Preview {
+    let plan = listing::plan(item, titles);
+    let (custom_title, left_out) = Preview::titled(&plan);
     let (category, condition) = match &plan {
         Ok(p) => {
             let leaf = self::category(item, p.kind)
@@ -414,6 +420,8 @@ pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
             .as_ref()
             .map(|p| p.title.clone())
             .unwrap_or_else(|_| item.card.full_name.clone()),
+        custom_title,
+        left_out,
         category,
         condition,
         price: item
@@ -454,6 +462,7 @@ pub async fn export(
     let mut hosting = Hosting::new(runner, options.upload_images && products_file)?;
     let mut export = Export::default();
     let mut cards = Vec::new();
+    let titles = runner.settings.get().titles;
     for (done, p) in priced.iter().enumerate() {
         if cancel.is_cancelled() {
             return Err(ApiError::Cancelled.into());
@@ -465,7 +474,7 @@ pub async fn export(
                 reason,
             })
         };
-        match listing::plan(&item.summary) {
+        match listing::plan(&item.summary, &titles) {
             Err(why) => skip(&mut export, why.replace("on eBay ", "on Shopify ")),
             Ok(_) if products_file && !(p.price.is_finite() && p.price > 0.0) => {
                 skip(&mut export, "no price".into())
@@ -517,7 +526,7 @@ mod tests {
             grade: "10".into(),
             certificate: cert.into(),
         });
-        let plan = listing::plan(&item.summary).unwrap();
+        let plan = listing::plan(&item.summary, &[]).unwrap();
         let images = vec![
             format!("https://i.ibb.co/{event}/front.jpg"),
             format!("https://i.ibb.co/{event}/back.jpg"),

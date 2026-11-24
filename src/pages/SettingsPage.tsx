@@ -44,6 +44,7 @@ import {
 } from "../components/NewSessionDialog";
 import { useSetupWizard } from "../components/SetupWizard";
 import { ShortcutsList } from "../components/Shortcuts";
+import TitleTemplates from "../components/TitleTemplates";
 import { ebaySiteOptions } from "../lib/ebaySites";
 import { IS_MAC } from "../lib/shortcuts";
 import Select, { optionsOf, type SelectOption } from "../components/Select";
@@ -52,6 +53,7 @@ import { LANGUAGES } from "../i18n/languages";
 import {
   api,
   errorText,
+  MAX_TITLE,
   type AppInfo,
   type ClaudeDesktop,
   type ConnectionCheck,
@@ -568,7 +570,12 @@ export default function SettingsPage() {
               </>
             )}
             {tab === "ebay" && (
-              <EbayTab view={view} draft={draft} setEbay={setEbay} applyView={applyView} setError={setError} />
+              <>
+                <EbayTab view={view} draft={draft} setEbay={setEbay} applyView={applyView} setError={setError} />
+                <Section title={t("titles.section.title")} text={t("titles.section.text", { max: MAX_TITLE })}>
+                  <TitleTemplates templates={draft.titles ?? []} onChange={(titles) => set("titles", titles)} />
+                </Section>
+              </>
             )}
             {tab === "scanner" && (
               <Section

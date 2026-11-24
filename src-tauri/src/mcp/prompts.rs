@@ -100,7 +100,7 @@ fn review(session: &str) -> String {
     format!(
         "Review the cards of the Cardloader session \"{session}\".
 
-1. Call list_cards with session_id \"{session}\" and filter to_review (page with offset while `more` is true).
+1. Call list_cards with session \"{session}\" and filter to_review (page with offset while `more` is true).
 2. For each card, call get_card and look at the front picture (and the back, if there is one). Read the printed \
 name, collector number, set symbol or code, and year.
 3. If the picture shows the card's match, accept it with accept_cards and a short note of what matched, e.g. \
@@ -149,7 +149,7 @@ waitingForAgent. If none runs, ask the user for a folder and create_session with
             .to_string(),
     };
     let session_arg = session
-        .map(|s| format!(" with session_id \"{s}\""))
+        .map(|s| format!(" with session \"{s}\""))
         .unwrap_or_default();
     format!(
         "Identify the cards of a Cardloader session yourself, from their pictures.
@@ -165,6 +165,8 @@ the card number as printed (with its letters), the year, the variant or parallel
 what you read. If you can't tell a card, send it with unidentified and say why: never guess a name.
 5. Repeat from 2 until next_cards_to_identify says finished.
 
+A session can have more for you (identified cards waiting for your price, cards to crop): when a tool's next names another tool, go on with it, until every one says finished.
+
 The user reviews every card you identify. At the end, say how many cards you identified, which ones you were \
 unsure of, and which you couldn't identify."
     )
@@ -174,7 +176,7 @@ fn ebay_prices(session: &str) -> String {
     format!(
         "Find what the identified cards of the Cardloader session \"{session}\" ask on eBay now.
 
-1. Call list_cards with session_id \"{session}\" (page with offset while `more` is true). Skip cards that aren't \
+1. Call list_cards with session \"{session}\" (page with offset while `more` is true). Skip cards that aren't \
 identified (no name), and cards that already have an ebayRange unless the user asks again.
 2. For each card, call find_ebay_listings. It searches by the card's name, set and number; if it finds nothing or \
 mostly other cards, call it again with a better query (e.g. the player, year, set and parallel, or fewer words).
@@ -194,11 +196,12 @@ fn price(session: Option<&str>) -> String {
             "1. The session \"{session}\" is waiting for you (start it with run_session if it isn't running)."
         ),
         None => "1. Call list_sessions: a running session priced by an AI agent counts the cards waitingForPrice. \
-If none runs, ask the user for a folder and create_session with prices \"agent\"."
+If none runs, ask the user for a folder and create_session with prices \"agent\" (you find each price), or \
+\"ebay_agent\" (Cardloader searches eBay and you say which listings are the card)."
             .to_string(),
     };
     let session_arg = session
-        .map(|s| format!(" with session_id \"{s}\""))
+        .map(|s| format!(" with session \"{s}\""))
         .unwrap_or_default();
     format!(
         "Price the cards of a Cardloader session yourself, as they are identified.
@@ -212,7 +215,15 @@ next_cards_to_price says webSearch is true.
 4. Send the prices with price_cards (in US dollars, or give each price's currency, e.g. EUR for ebay.de): several cards in one call when you have them, each with a short note of how you got \
 it (e.g. \"median of 6 listings, no lots\"). If you can't find a price, send the card with unpriced and say why: \
 never guess.
-5. Repeat from 2 until next_cards_to_price says finished.
+5. A card that comes with listings (a session with prices \"ebay_agent\") is priced by Cardloader, from the \
+listings you keep. Read their titles and hold their pictures against the card's own; ask listing_pictures for \
+larger ones of those you aren't sure of. Keep the listings that are this card as it is: the same card and number, \
+the same variant or parallel, the same state (a raw card: ungraded listings; a slab: the same grader and grade); \
+no lots, reprints or other cards. Send their ids with price_cards as listing_ids instead of a price, with a note \
+on what you left out; an empty list when none is the card.
+6. Repeat from 2 until next_cards_to_price says finished.
+
+A session can have more for you (identified cards waiting for your price, cards to crop): when a tool's next names another tool, go on with it, until every one says finished.
 
 At the end, list the cards you priced with their prices, and the ones you couldn't price with why."
     )
@@ -234,7 +245,7 @@ waitingForCrop. If none runs, ask the user for a folder and create_session with 
             .to_string(),
     };
     let session_arg = session
-        .map(|s| format!(" with session_id \"{s}\""))
+        .map(|s| format!(" with session \"{s}\""))
         .unwrap_or_default();
     format!(
         "Find the cards of a Cardloader session in their pictures yourself, so Cardloader can cut them out.
@@ -253,6 +264,8 @@ again if not. Every picture costs tokens, so don't preview what is plainly right
 card with a back picture needs the back's corners too, or no_back with why. If a picture shows no card, send the \
 card with uncropped and say why: never guess.
 6. Repeat from 2 until next_cards_to_crop says finished.
+
+A session can have more for you (identified cards waiting for your price, cards to crop): when a tool's next names another tool, go on with it, until every one says finished.
 
 At the end, say how many cards you cropped, where the pictures are (cropsFolder), and list the ones you couldn't \
 crop with why."

@@ -3,6 +3,11 @@
 //! It never opens the database: it relays each JSON-RPC line to the running app's server (address in
 //! `<config>/mcp.json`, token from Settings) and writes the answers back, one per line. Requests run side by
 //! side, so a long `wait_for_session` doesn't hold up the others. On macOS it opens the app when it isn't running.
+//!
+//! A client starts it once and keeps it for days, while the app behind it is updated, restarted or given other
+//! permissions. The client only asks for the tools again when told they changed, so the bridge watches `mcp.json`
+//! and says so (`notifications/tools/list_changed`): Claude Desktop went on offering the 31 tools of the app it
+//! first met to an app that had 35, and an agent asked to crop found no tool for it.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,6 +25,8 @@ use crate::settings::{Secret, SettingsStore};
 
 /// How long the app may take to start and open its server.
 const LAUNCH_WAIT: Duration = Duration::from_secs(30);
+/// How often `mcp.json` is read for another app or other permissions behind the bridge.
+const WATCH_EVERY: Duration = Duration::from_secs(2);
 
 pub fn run() -> i32 {
     let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -53,6 +60,8 @@ pub(super) struct Bridge {
     /// The protocol version the client and server agreed on, sent with every later request.
     version: std::sync::Mutex<Option<String>>,
     launched: std::sync::Mutex<bool>,
+    /// The app (its pid) and the tools it had on offer when the client last asked for the list.
+    listed: std::sync::Mutex<Option<(u32, String)>>,
 }
 
 async fn relay() -> Result<()> {
@@ -63,6 +72,21 @@ async fn relay() -> Result<()> {
     let stdout = Arc::new(Mutex::new(tokio::io::stdout()));
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     let mut tasks = tokio::task::JoinSet::new();
+    let watch = {
+        let (bridge, stdout) = (bridge.clone(), stdout.clone());
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(WATCH_EVERY).await;
+                if bridge.tools_changed() {
+                    let note =
+                        json!({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"});
+                    let mut out = stdout.lock().await;
+                    let _ = out.write_all(format!("{note}\n").as_bytes()).await;
+                    let _ = out.flush().await;
+                }
+            }
+        })
+    };
     while let Some(line) = lines.next_line().await? {
         if line.trim().is_empty() {
             continue;
@@ -78,6 +102,7 @@ async fn relay() -> Result<()> {
         });
     }
     while tasks.join_next().await.is_some() {}
+    watch.abort();
     Ok(())
 }
 
@@ -93,6 +118,7 @@ impl Bridge {
             target: Mutex::new(None),
             version: std::sync::Mutex::new(None),
             launched: std::sync::Mutex::new(false),
+            listed: std::sync::Mutex::new(None),
         })
     }
 
@@ -103,15 +129,27 @@ impl Bridge {
             Err(e) => return vec![rpc_error(Value::Null, -32700, &format!("parse error: {e}"))],
         };
         let id = message.get("method").and(message.get("id")).cloned();
+        let lists_tools = message["method"] == "tools/list";
         match self.forward(line).await {
-            Ok(replies) => {
-                for reply in &replies {
+            Ok(mut replies) => {
+                for reply in &mut replies {
                     if let Some(v) = reply
                         .pointer("/result/protocolVersion")
                         .and_then(Value::as_str)
                     {
                         *self.version.lock().unwrap() = Some(v.to_string());
                     }
+                    // The server answers each request on its own and can't say later that its tools changed;
+                    // the bridge can (`tools_changed`), so the promise to is the bridge's.
+                    if let Some(tools) = reply
+                        .pointer_mut("/result/capabilities/tools")
+                        .and_then(Value::as_object_mut)
+                    {
+                        tools.insert("listChanged".into(), json!(true));
+                    }
+                }
+                if lists_tools {
+                    *self.listed.lock().unwrap() = self.offered();
                 }
                 replies
             }
@@ -208,6 +246,29 @@ impl Bridge {
         });
         *cached = Some(target.clone());
         Ok(target)
+    }
+
+    /// What `mcp.json` says of the app serving agents now: its pid and what decides its tools.
+    fn offered(&self) -> Option<(u32, String)> {
+        let text = std::fs::read_to_string(endpoint_file(&self.config_dir)).ok()?;
+        let endpoint: Endpoint = serde_json::from_str(&text).ok()?;
+        Some((endpoint.pid, endpoint.tools))
+    }
+
+    /// Whether the client's tool list is of another app, or of other permissions, than the one serving now: said
+    /// once per change. Nothing while no app serves (there is no list to read), or before the client asked for one.
+    pub(super) fn tools_changed(&self) -> bool {
+        let Some(now) = self.offered() else {
+            return false;
+        };
+        let mut listed = self.listed.lock().unwrap();
+        match listed.as_ref() {
+            Some(then) if *then != now => {
+                *listed = Some(now);
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The running app's address, if it answers there.

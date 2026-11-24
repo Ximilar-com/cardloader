@@ -220,25 +220,33 @@ const messages: Messages<typeof en> = {
     none: "Nessuna carta identificata a cui aggiungere: quelle in attesa, in corso o non identificate sono escluse.",
   },
   agentPrompt: {
-    identify: "Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.",
-    price: "Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.",
-    crop: "Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP.",
+    identify:
+      "Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP, e continua finché nessuna carta ti aspetta.",
+    price:
+      "Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP, e continua finché nessuna carta ti aspetta.",
+    crop: "Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP, e continua finché nessuna carta ti aspetta.",
+    identifyPrice:
+      "Identifica le carte della sessione Cardloader {name} (id {id}) e dai loro un prezzo tramite MCP, e continua finché nessuna carta ti aspetta.",
+    identifyCrop:
+      "Identifica e ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP, e continua finché nessuna carta ti aspetta.",
+    priceCrop:
+      "Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) e ritagliale tramite MCP, e continua finché nessuna carta ti aspetta.",
+    identifyPriceCrop:
+      "Identifica le carte della sessione Cardloader {name} (id {id}), dai loro un prezzo e ritagliale tramite MCP, e continua finché nessuna carta ti aspetta.",
     copy: "Copia il prompt",
   },
   agentCropping: {
-    one: "<b>{count} carta</b> attende che il tuo agente IA ne trovi gli angoli. Chiedigli, ad es. in Claude: “Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
+    one: "<b>{count} carta</b> attende che il tuo agente IA ne trovi gli angoli. Chiedigli, ad es. in Claude: “{prompt}”",
     other:
-      "<b>{count} carte</b> attendono che il tuo agente IA ne trovi gli angoli. Chiedigli, ad es. in Claude: “Ritaglia le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
+      "<b>{count} carte</b> attendono che il tuo agente IA ne trovi gli angoli. Chiedigli, ad es. in Claude: “{prompt}”",
   },
   agentPricing: {
-    one: "<b>{count} carta</b> attende il prezzo del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
-    other:
-      "<b>{count} carte</b> attendono i prezzi del tuo agente IA. Chiedigli, ad es. in Claude: “Dai un prezzo alle carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
+    one: "<b>{count} carta</b> attende il prezzo del tuo agente IA. Chiedigli, ad es. in Claude: “{prompt}”",
+    other: "<b>{count} carte</b> attendono i prezzi del tuo agente IA. Chiedigli, ad es. in Claude: “{prompt}”",
   },
   agentWaiting: {
-    one: "<b>{count} carta</b> attende il tuo agente IA. Chiedigli, ad es. in Claude: “Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
-    other:
-      "<b>{count} carte</b> attendono il tuo agente IA. Chiedigli, ad es. in Claude: “Identifica le carte della sessione Cardloader {name} (id {id}) tramite MCP.”",
+    one: "<b>{count} carta</b> attende il tuo agente IA. Chiedigli, ad es. in Claude: “{prompt}”",
+    other: "<b>{count} carte</b> attendono il tuo agente IA. Chiedigli, ad es. in Claude: “{prompt}”",
   },
 };
 export default messages;

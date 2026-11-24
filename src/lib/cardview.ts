@@ -203,11 +203,15 @@ const CARD_FIELDS: (keyof CardFields)[] = [
   "series",
   "year",
   "subcategory",
+  "brand",
+  "team",
+  "serial",
+  "features",
 ];
 
 export function editOf(i: ItemSummary): ItemEdit {
   const card = Object.fromEntries(CARD_FIELDS.map((k) => [k, i[k] ?? ""])) as unknown as CardFields;
-  return { ...card, price: i.price, notes: i.notes ?? "", location: i.location ?? "" };
+  return { ...card, price: i.price, notes: i.notes ?? "", location: i.location ?? "", title: i.title ?? "" };
 }
 
 export function rowFromItem(i: ItemSummary): Row {
@@ -383,7 +387,18 @@ export function matchOf(response: Json): { ident: Json | null; slab: Json | null
   return { ident, slab };
 }
 
-const FIELDS: (keyof CardFieldsLike)[] = ["setName", "setCode", "cardNumber", "year", "series", "subcategory"];
+const FIELDS: (keyof CardFieldsLike)[] = [
+  "setName",
+  "setCode",
+  "cardNumber",
+  "year",
+  "series",
+  "subcategory",
+  "brand",
+  "team",
+  "serial",
+  "features",
+];
 
 interface CardFieldsLike {
   setName: string;
@@ -392,10 +407,15 @@ interface CardFieldsLike {
   year: string;
   series: string;
   subcategory: string;
+  /** Cards Cloud rows have none of these four. */
+  brand?: string;
+  team?: string;
+  serial?: string;
+  features?: string;
 }
 
 function fields(c: CardFieldsLike): [string, string][] {
-  return FIELDS.map((k) => [t(`status.field.${k}`), c[k]] as [string, string]).filter(([, v]) => !!v);
+  return FIELDS.map((k) => [t(`status.field.${k}`), c[k] ?? ""] as [string, string]).filter(([, v]) => !!v);
 }
 
 export function viewFromItem(i: ItemDetail): CardView {

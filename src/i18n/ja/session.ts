@@ -208,22 +208,29 @@ const messages: Messages<typeof en> = {
     none: "追加できる識別済みカードがありません（待機中・処理中・未識別のカードは除外されます）。",
   },
   agentPrompt: {
-    identify: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを識別して",
-    price: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードに価格を付けて",
-    crop: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを切り抜いて",
+    identify: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを、待っているカードがなくなるまで識別して",
+    price: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードに、待っているカードがなくなるまで価格を付けて",
+    crop: "MCP経由でCardloaderのセッション {name}（ID {id}）のカードを、待っているカードがなくなるまで切り抜いて",
+    identifyPrice:
+      "MCP経由でCardloaderのセッション {name}（ID {id}）のカードについて、待っているカードがなくなるまで識別と価格付けをして",
+    identifyCrop:
+      "MCP経由でCardloaderのセッション {name}（ID {id}）のカードについて、待っているカードがなくなるまで識別と切り抜きをして",
+    priceCrop:
+      "MCP経由でCardloaderのセッション {name}（ID {id}）のカードについて、待っているカードがなくなるまで価格付けと切り抜きをして",
+    identifyPriceCrop:
+      "MCP経由でCardloaderのセッション {name}（ID {id}）のカードについて、待っているカードがなくなるまで識別・価格付け・切り抜きをして",
     copy: "プロンプトをコピー",
   },
   agentCropping: {
     other:
-      "<b>{count}枚のカード</b>がAIエージェントによる四隅の検出を待っています。Claudeなどで「MCP経由でCardloaderのセッション {name}（ID {id}）のカードを切り抜いて」と頼んでください。",
+      "<b>{count}枚のカード</b>がAIエージェントによる四隅の検出を待っています。Claudeなどで「{prompt}」と頼んでください。",
   },
   agentPricing: {
     other:
-      "<b>{count}枚のカード</b>がAIエージェントの価格付けを待っています。Claudeなどで「MCP経由でCardloaderのセッション {name}（ID {id}）のカードに価格を付けて」と頼んでください。",
+      "<b>{count}枚のカード</b>がAIエージェントの価格付けを待っています。Claudeなどで「{prompt}」と頼んでください。",
   },
   agentWaiting: {
-    other:
-      "<b>{count}枚のカード</b>がAIエージェントを待っています。Claudeなどで「MCP経由でCardloaderのセッション {name}（ID {id}）のカードを識別して」と頼んでください。",
+    other: "<b>{count}枚のカード</b>がAIエージェントを待っています。Claudeなどで「{prompt}」と頼んでください。",
   },
 };
 export default messages;

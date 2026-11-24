@@ -402,6 +402,11 @@ pub fn parse(endpoint: Endpoint, resp: &Value) -> Recognition {
             series: first_non_empty(&[s("series"), s("sub_set"), s("brand")]),
             year: s("year"),
             subcategory: s("subcategory"),
+            // What sport_id's matches say besides (seen in its answers, not in Ximilar's docs).
+            brand: first_non_empty(&[s("company"), s("brand")]),
+            team: s("team"),
+            serial: s("serial_number"),
+            features: String::new(),
         }
     };
     if out.card.full_name.is_empty() {
@@ -940,6 +945,24 @@ mod tests {
                     "alternatives": [{"full_name": "Dark Gyarados Team Rocket (RO) #25"}],
                     "distances": [0.35, 0.38]}}]}],
             "status": {"code": 200}})
+    }
+
+    #[test]
+    fn reads_who_made_a_sports_card_its_team_and_serial_number() {
+        let resp = json!({"records": [{"_objects": [{"name": "Card", "_identification": {
+            "best_match": {"name": "Jazz Chisholm Jr.", "set_name": "Finest", "sub_set": "Lava",
+                "company": "Topps", "team": "New York Yankees", "serial_number": "43/75",
+                "card_type": "Rookie Card"},
+            "distances": [0.2]},
+            "_tags": {"Autograph": [{"name": "signed", "prob": 0.9}]}}]}]});
+        let card = parse(Endpoint::Sport, &resp).card;
+        assert_eq!(
+            [&card.brand, &card.team, &card.serial, &card.series],
+            ["Topps", "New York Yankees", "43/75", "Lava"]
+        );
+        // What a title says about the card is only ever typed: a guessed "Auto" would describe it wrongly.
+        assert_eq!(card.features, "");
+        assert_eq!(parse(Endpoint::Tcg, &tcg_response()).card.brand, "");
     }
 
     #[test]

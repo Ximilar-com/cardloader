@@ -223,25 +223,33 @@ const messages: Messages<typeof en> = {
     none: "Nenhuma carta identificada para completar: as que aguardam, estão em execução ou não foram identificadas ficam de fora.",
   },
   agentPrompt: {
-    identify: "Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.",
-    price: "Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.",
-    crop: "Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP.",
+    identify:
+      "Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP, e continue até que nenhuma carta espere por você.",
+    price:
+      "Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP, e continue até que nenhuma carta espere por você.",
+    crop: "Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP, e continue até que nenhuma carta espere por você.",
+    identifyPrice:
+      "Identifique as cartas da sessão {name} (id {id}) do Cardloader e defina o preço delas via MCP, e continue até que nenhuma carta espere por você.",
+    identifyCrop:
+      "Identifique e recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP, e continue até que nenhuma carta espere por você.",
+    priceCrop:
+      "Defina o preço das cartas da sessão {name} (id {id}) do Cardloader e recorte-as via MCP, e continue até que nenhuma carta espere por você.",
+    identifyPriceCrop:
+      "Identifique as cartas da sessão {name} (id {id}) do Cardloader, defina o preço delas e recorte-as via MCP, e continue até que nenhuma carta espere por você.",
     copy: "Copiar o prompt",
   },
   agentCropping: {
-    one: "<b>{count} carta</b> aguarda seu agente de IA encontrar os cantos dela. Peça a ele, ex. no Claude: “Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
+    one: "<b>{count} carta</b> aguarda seu agente de IA encontrar os cantos dela. Peça a ele, ex. no Claude: “{prompt}”",
     other:
-      "<b>{count} cartas</b> aguardam seu agente de IA encontrar os cantos delas. Peça a ele, ex. no Claude: “Recorte as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
+      "<b>{count} cartas</b> aguardam seu agente de IA encontrar os cantos delas. Peça a ele, ex. no Claude: “{prompt}”",
   },
   agentPricing: {
-    one: "<b>{count} carta</b> aguarda o preço do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
-    other:
-      "<b>{count} cartas</b> aguardam os preços do seu agente de IA. Peça a ele, ex. no Claude: “Defina o preço das cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
+    one: "<b>{count} carta</b> aguarda o preço do seu agente de IA. Peça a ele, ex. no Claude: “{prompt}”",
+    other: "<b>{count} cartas</b> aguardam os preços do seu agente de IA. Peça a ele, ex. no Claude: “{prompt}”",
   },
   agentWaiting: {
-    one: "<b>{count} carta</b> aguarda seu agente de IA. Peça a ele, ex. no Claude: “Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
-    other:
-      "<b>{count} cartas</b> aguardam seu agente de IA. Peça a ele, ex. no Claude: “Identifique as cartas da sessão {name} (id {id}) do Cardloader via MCP.”",
+    one: "<b>{count} carta</b> aguarda seu agente de IA. Peça a ele, ex. no Claude: “{prompt}”",
+    other: "<b>{count} cartas</b> aguardam seu agente de IA. Peça a ele, ex. no Claude: “{prompt}”",
   },
 };
 export default messages;

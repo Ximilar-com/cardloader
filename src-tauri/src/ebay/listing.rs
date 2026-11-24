@@ -8,14 +8,15 @@
 use serde::Serialize;
 use serde_json::{json, Map, Value};
 
+use crate::ebay::title;
 pub use crate::model::CardCondition;
-use crate::model::{EbayListing, ItemSummary};
+use crate::model::{EbayListing, ItemSummary, TitleField, TitleTemplate};
 use crate::settings::EbaySettings;
 use crate::ximilar::recognition::{SPORTS, TCG_GAMES};
 
 /// The Inventory API's bulk calls take at most this many.
 pub const MAX_BATCH: usize = 25;
-const MAX_TITLE: usize = 80;
+pub const MAX_TITLE: usize = 80;
 const MAX_ASPECT: usize = 65;
 const MAX_SKU: usize = 50;
 const MAX_CERT: usize = 30;
@@ -142,6 +143,14 @@ pub struct Listing {
     pub kind: Kind,
     pub graded: Option<Graded>,
     pub title: String,
+    /// The title is the card's own (`ItemSummary::title`), not a template's.
+    pub custom: bool,
+    /// The title its template makes, whether or not the card has its own.
+    pub automatic: String,
+    /// The template that made `automatic`; empty = the built-in one.
+    pub template: String,
+    /// Parts the card has that didn't fit into `automatic`.
+    pub left_out: Vec<TitleField>,
 }
 
 impl Listing {
@@ -153,18 +162,28 @@ impl Listing {
     }
 }
 
-/// How the card would be listed, or why it can't be.
-pub fn plan(item: &ItemSummary) -> Result<Listing, String> {
+/// How the card would be listed, or why it can't be. `titles`: the user's title templates
+/// (`Settings::titles`).
+pub fn plan(item: &ItemSummary, titles: &[TitleTemplate]) -> Result<Listing, String> {
     if item.card.name.trim().is_empty() {
         return Err("the card isn't identified".into());
     }
     let kind = kind(item)?;
     let graded = graded(item, kind)?;
-    let title = title(item, kind, graded.as_ref());
+    let made = title::compose(&item.card, kind, graded.as_ref(), titles, MAX_TITLE);
+    let own = clip(&item.title, MAX_TITLE);
     Ok(Listing {
         kind,
         graded,
-        title,
+        custom: !own.is_empty(),
+        title: if own.is_empty() {
+            made.text.clone()
+        } else {
+            own
+        },
+        automatic: made.text,
+        template: made.template,
+        left_out: made.left_out,
     })
 }
 
@@ -299,7 +318,7 @@ fn ebay_game(game: &str) -> String {
 }
 
 /// How sellers write a game in titles.
-fn title_game(game: &str) -> &str {
+pub(crate) fn title_game(game: &str) -> &str {
     match game {
         "Magic The Gathering" => "MTG",
         "YuGiOh!" => "Yu-Gi-Oh!",
@@ -308,48 +327,7 @@ fn title_game(game: &str) -> &str {
     }
 }
 
-/// `2023 Pokemon Obsidian Flames Charizard ex #125 PSA 10`, without the game, year and set (in that order)
-/// when it is too long.
-fn title(item: &ItemSummary, kind: Kind, graded: Option<&Graded>) -> String {
-    let card = &item.card;
-    let game = match kind {
-        Kind::Tcg => title_game(&card.subcategory).to_string(),
-        Kind::Sport => String::new(),
-    };
-    let number =
-        (!card.card_number.trim().is_empty()).then(|| format!("#{}", card.card_number.trim()));
-    let grade = graded.map(|g| format!("{} {}", g.grader, g.grade));
-    let parts = |with_game: bool, with_year: bool, with_set: bool| -> String {
-        [
-            with_year.then(|| card.year.clone()),
-            with_game.then(|| game.clone()),
-            with_set.then(|| card.set_name.clone()),
-            Some(card.name.clone()),
-            number.clone(),
-            grade.clone(),
-        ]
-        .into_iter()
-        .flatten()
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
-    };
-    for (with_game, year, set) in [
-        (true, true, true),
-        (false, true, true),
-        (false, false, true),
-        (false, false, false),
-    ] {
-        let text = parts(with_game, year, set);
-        if text.chars().count() <= MAX_TITLE {
-            return text;
-        }
-    }
-    clip_words(&parts(false, false, false), MAX_TITLE)
-}
-
-fn clip_words(text: &str, limit: usize) -> String {
+pub(crate) fn clip_words(text: &str, limit: usize) -> String {
     if text.chars().count() <= limit {
         return text.to_string();
     }
@@ -530,6 +508,10 @@ pub struct Preview {
     pub seq: i64,
     pub thumb_path: Option<String>,
     pub title: String,
+    /// The title is the card's own, not a template's.
+    pub custom_title: bool,
+    /// Parts the card has that didn't fit into the title.
+    pub left_out: Vec<TitleField>,
     pub category: Option<String>,
     pub condition: Option<String>,
     /// The price it is offered at, else Ximilar's price.
@@ -539,8 +521,20 @@ pub struct Preview {
     pub problem: Option<String>,
 }
 
-pub fn preview(item: &ItemSummary) -> Preview {
-    let planned = plan(item);
+impl Preview {
+    /// Whether the planned title is the card's own, and what didn't fit into it.
+    pub fn titled(plan: &Result<Listing, String>) -> (bool, Vec<TitleField>) {
+        match plan {
+            Ok(p) if !p.custom => (false, p.left_out.clone()),
+            Ok(_) => (true, Vec::new()),
+            Err(_) => (false, Vec::new()),
+        }
+    }
+}
+
+pub fn preview(item: &ItemSummary, titles: &[TitleTemplate]) -> Preview {
+    let planned = plan(item, titles);
+    let (custom_title, left_out) = Preview::titled(&planned);
     let price = item
         .ebay
         .as_ref()
@@ -556,6 +550,8 @@ pub fn preview(item: &ItemSummary) -> Preview {
             .as_ref()
             .map(|l| l.title.clone())
             .unwrap_or_else(|_| item.card.full_name.clone()),
+        custom_title,
+        left_out,
         category: planned
             .as_ref()
             .ok()
@@ -571,6 +567,15 @@ pub fn preview(item: &ItemSummary) -> Preview {
 mod tests {
     use super::*;
     use crate::model::{CardFields, ItemStatus, SlabLabel};
+
+    /// Without templates of the user's, as most of these cards are listed.
+    fn plan(item: &ItemSummary) -> Result<Listing, String> {
+        super::plan(item, &[])
+    }
+
+    fn preview(item: &ItemSummary) -> Preview {
+        super::preview(item, &[])
+    }
 
     fn card(id_type: &str, subcategory: &str, slab: Option<(&str, &str, &str)>) -> ItemSummary {
         ItemSummary {
@@ -613,6 +618,7 @@ mod tests {
             review_note: String::new(),
             notes: String::new(),
             location: String::new(),
+            title: String::new(),
             ebay: None,
             market_range: None,
         }
@@ -709,8 +715,9 @@ mod tests {
             title(&item),
             "Worldwake Prerelease Promos and a long name Jace, the Mind Sculptor #125 BGS 9"
         );
+        // What still fits comes back, instead of every part that was tried before it going too.
         item.card.set_name += " that goes on and on";
-        assert_eq!(title(&item), "Jace, the Mind Sculptor #125 BGS 9");
+        assert_eq!(title(&item), "2023 MTG Jace, the Mind Sculptor #125 BGS 9");
         item.card.name = "word ".repeat(30);
         assert!(title(&item).chars().count() <= MAX_TITLE);
     }

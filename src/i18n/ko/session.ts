@@ -209,22 +209,24 @@ const messages: Messages<typeof en> = {
     none: "추가할 식별된 카드가 없습니다. 대기 중, 처리 중 또는 식별되지 않은 카드는 제외됩니다.",
   },
   agentPrompt: {
-    identify: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 식별해 줘",
-    price: "MCP로 Cardloader 세션 {name}(ID {id})의 카드 가격을 매겨 줘",
-    crop: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 잘라 줘",
+    identify: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 기다리는 카드가 없을 때까지 식별해 줘",
+    price: "MCP로 Cardloader 세션 {name}(ID {id})의 카드 가격을 기다리는 카드가 없을 때까지 매겨 줘",
+    crop: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 기다리는 카드가 없을 때까지 잘라 줘",
+    identifyPrice: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 기다리는 카드가 없을 때까지 식별하고 가격을 매겨 줘",
+    identifyCrop: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 기다리는 카드가 없을 때까지 식별하고 잘라 줘",
+    priceCrop: "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 기다리는 카드가 없을 때까지 가격을 매기고 잘라 줘",
+    identifyPriceCrop:
+      "MCP로 Cardloader 세션 {name}(ID {id})의 카드를 기다리는 카드가 없을 때까지 식별하고 가격을 매기고 잘라 줘",
     copy: "프롬프트 복사",
   },
   agentCropping: {
-    other:
-      "<b>카드 {count}장</b>이 AI 에이전트가 모서리를 찾기를 기다립니다. Claude 등에서 ‘MCP로 Cardloader 세션 {name}(ID {id})의 카드를 잘라 줘’라고 요청하세요.",
+    other: "<b>카드 {count}장</b>이 AI 에이전트가 모서리를 찾기를 기다립니다. Claude 등에서 ‘{prompt}’라고 요청하세요.",
   },
   agentPricing: {
-    other:
-      "<b>카드 {count}장</b>이 AI 에이전트의 가격을 기다립니다. Claude 등에서 ‘MCP로 Cardloader 세션 {name}(ID {id})의 카드 가격을 매겨 줘’라고 요청하세요.",
+    other: "<b>카드 {count}장</b>이 AI 에이전트의 가격을 기다립니다. Claude 등에서 ‘{prompt}’라고 요청하세요.",
   },
   agentWaiting: {
-    other:
-      "<b>카드 {count}장</b>이 AI 에이전트를 기다립니다. Claude 등에서 ‘MCP로 Cardloader 세션 {name}(ID {id})의 카드를 식별해 줘’라고 요청하세요.",
+    other: "<b>카드 {count}장</b>이 AI 에이전트를 기다립니다. Claude 등에서 ‘{prompt}’라고 요청하세요.",
   },
 };
 export default messages;

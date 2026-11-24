@@ -36,6 +36,10 @@ const PORT_TRIES: u16 = 10;
 pub struct Endpoint {
     pub port: u16,
     pub pid: u32,
+    /// What decides the tools on offer (`tools_stamp`): with `pid`, how the bridge sees that the list a client
+    /// holds may be another app's or other permissions'.
+    #[serde(default)]
+    pub tools: String,
 }
 
 impl Endpoint {
@@ -46,6 +50,21 @@ impl Endpoint {
 
 pub fn endpoint_file(config_dir: &Path) -> PathBuf {
     config_dir.join("mcp.json")
+}
+
+/// The app's version and the tool groups agents are allowed: when either changes, so may `tools/list`.
+fn tools_stamp(mcp: &crate::settings::McpSettings) -> String {
+    let groups = [
+        mcp.allow_run,
+        mcp.allow_delete,
+        mcp.allow_market,
+        mcp.allow_settings,
+    ];
+    let allowed: String = groups
+        .iter()
+        .map(|on| if *on { '1' } else { '0' })
+        .collect();
+    format!("{}:{allowed}", env!("CARGO_PKG_VERSION"))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -89,12 +108,20 @@ impl McpServer {
     }
 
     /// Starts or stops the server as Settings say (and moves it when the port changed). What agents may do is
-    /// read from Settings on every call, so changing that needs no restart.
+    /// read from Settings on every call, so changing that needs no restart: only `mcp.json` says it changed, for
+    /// the bridge to tell its client.
     pub async fn apply(&self) {
         let wanted = self.state.settings.get().mcp;
         let mut running = self.running.lock().await;
-        if let Some(r) = running.as_ref() {
+        if let Some(r) = running.as_mut() {
             if wanted.enabled && r.requested == wanted.port {
+                let tools = tools_stamp(&wanted);
+                if r.endpoint.tools != tools {
+                    r.endpoint.tools = tools;
+                    if let Err(e) = self.write_endpoint(&r.endpoint) {
+                        tracing::warn!("MCP server: {e}");
+                    }
+                }
                 return;
             }
             r.cancel.cancel();
@@ -144,18 +171,24 @@ impl McpServer {
         let endpoint = Endpoint {
             port,
             pid: std::process::id(),
+            tools: tools_stamp(&self.state.settings.get().mcp),
         };
-        std::fs::create_dir_all(&self.config_dir)?;
-        std::fs::write(
-            endpoint_file(&self.config_dir),
-            serde_json::to_vec_pretty(&endpoint)?,
-        )?;
+        self.write_endpoint(&endpoint)?;
         tracing::info!("MCP server on {}", endpoint.url());
         Ok(Running {
             requested,
             endpoint,
             cancel,
         })
+    }
+
+    fn write_endpoint(&self, endpoint: &Endpoint) -> Result<()> {
+        std::fs::create_dir_all(&self.config_dir)?;
+        std::fs::write(
+            endpoint_file(&self.config_dir),
+            serde_json::to_vec_pretty(endpoint)?,
+        )?;
+        Ok(())
     }
 
     fn router(&self, cancel: CancellationToken) -> axum::Router {

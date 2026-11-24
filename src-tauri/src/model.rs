@@ -48,8 +48,17 @@ str_enum!(
 str_enum!(
     /// Where an identified card's price comes from: none, the price statistics Ximilar's identification returns
     /// (only when Ximilar identifies), the card's active eBay listings (Browse API, the user's keyset), or an AI
-    /// agent over MCP (`next_cards_to_price` / `price_cards`).
-    Prices { Off = "off", Ximilar = "ximilar", Ebay = "ebay", Agent = "agent" } default Off
+    /// agent over MCP (`next_cards_to_price` / `price_cards`). `Ebay` counts every listing the search finds;
+    /// `EbayLocal` and `EbayAgent` have the local model, or the agent, keep only the listings that are the card
+    /// first. Each of the three takes the median of what counts.
+    Prices {
+        Off = "off",
+        Ximilar = "ximilar",
+        Ebay = "ebay",
+        Agent = "agent",
+        EbayLocal = "ebay_local",
+        EbayAgent = "ebay_agent",
+    } default Off
 );
 
 str_enum!(
@@ -59,21 +68,13 @@ str_enum!(
 );
 
 str_enum!(
-    /// A step of a card's pass through a session, in order (`SessionOptions::stages`). A pass cut short goes on at
-    /// the stage the card still owes (`items.stage`), so nothing already paid for is asked again.
+    /// A step of a card's pass through a session (`SessionOptions::stages` lists them; a pass takes them in the
+    /// order of `SessionOptions::pass`). A pass cut short goes on at the stage the card still owes
+    /// (`items.stage`), so nothing already paid for is asked again.
     Stage { Identify = "identify", Price = "price", Grade = "grade", Crop = "crop" } default Identify
 );
 
 impl Stage {
-    /// Where a card owing `owed` goes on in a pass of `stages`: at that stage, or at the next one the session
-    /// still has when its options dropped it since (none: the pass is over).
-    pub fn resume(stages: &[Stage], owed: Stage) -> usize {
-        stages
-            .iter()
-            .position(|s| *s as u8 >= owed as u8)
-            .unwrap_or(stages.len())
-    }
-
     pub fn find(text: &str) -> Option<Self> {
         [Stage::Identify, Stage::Price, Stage::Grade, Stage::Crop]
             .into_iter()
@@ -346,8 +347,9 @@ impl SessionOptions {
     pub fn stages(&self) -> Vec<Stage> {
         [
             (self.identifies(), Stage::Identify),
+            // Ximilar's prices come with its identification: no stage of their own.
             (
-                matches!(self.prices(), Prices::Ebay | Prices::Agent),
+                !matches!(self.prices(), Prices::Off | Prices::Ximilar),
                 Stage::Price,
             ),
             (self.grading_mode() != GradingMode::Off, Stage::Grade),
@@ -364,6 +366,61 @@ impl SessionOptions {
             Engine::Agent => Engine::Ximilar,
             engine => engine,
         }
+    }
+
+    /// How long a stage may hold a card up, which is what orders a pass: 0 identifying it (a price needs to know
+    /// the card; nothing else does, but it is what the user waits for), 1 a call answered at once (Ximilar, an
+    /// eBay search), 2 the model on this computer (one card at a time, tens of seconds each), 3 an AI agent
+    /// (whenever it comes, if it does).
+    fn wait(&self, stage: Stage) -> u8 {
+        let (quick, local, agent) = (1, 2, 3);
+        match stage {
+            Stage::Identify => 0,
+            Stage::Price => match self.prices() {
+                Prices::Agent | Prices::EbayAgent => agent,
+                Prices::EbayLocal => local,
+                _ => quick,
+            },
+            Stage::Grade if self.grades_locally() => local,
+            Stage::Grade => quick,
+            Stage::Crop if self.crops_by_agent() => agent,
+            Stage::Crop if self.crops_locally() => local,
+            Stage::Crop => quick,
+        }
+    }
+
+    /// `stages` in the order a card's pass takes them: identification first, then what answers at once before
+    /// what the local model does, and what waits for an AI agent last. A grade asked of Ximilar is then never
+    /// held up behind a price an agent hasn't given yet, and grading and crops don't need the card identified.
+    pub fn in_pass_order(&self, mut stages: Vec<Stage>) -> Vec<Stage> {
+        stages.sort_by_key(|s| (self.wait(*s), *s as u8));
+        stages
+    }
+
+    /// The session's stages in the order a card's pass takes them (`in_pass_order`).
+    pub fn pass(&self) -> Vec<Stage> {
+        self.in_pass_order(self.stages())
+    }
+
+    /// Where a card owing `owed` goes on in a pass of `stages` (in pass order): at that stage, or, when the
+    /// options dropped it since, at the first one left that would have followed it (none: the pass is over).
+    pub fn resume(&self, stages: &[Stage], owed: Stage) -> usize {
+        if let Some(at) = stages.iter().position(|s| *s == owed) {
+            return at;
+        }
+        let mut with = stages.to_vec();
+        with.push(owed);
+        let with = self.in_pass_order(with);
+        let after: Vec<Stage> = with
+            .iter()
+            .skip_while(|s| **s != owed)
+            .skip(1)
+            .copied()
+            .collect();
+        stages
+            .iter()
+            .position(|s| after.contains(s))
+            .unwrap_or(stages.len())
     }
 
     /// Where the cards' prices come from. Only identified cards are priced, and Ximilar's price statistics come
@@ -411,9 +468,17 @@ impl SessionOptions {
         self.crops() && self.crop_engine() == Engine::Agent
     }
 
-    /// Identified, graded or cropped by the model on this computer.
+    /// Priced from the eBay listings the model on this computer keeps.
+    pub fn prices_locally(&self) -> bool {
+        self.prices() == Prices::EbayLocal
+    }
+
+    /// Identified, graded, cropped or priced by the model on this computer.
     pub fn uses_local(&self) -> bool {
-        self.identifies_locally() || self.grades_locally() || self.crops_locally()
+        self.identifies_locally()
+            || self.grades_locally()
+            || self.crops_locally()
+            || self.prices_locally()
     }
 
     /// Identified by an AI agent over MCP. An agent identifies, prices and finds corners; it never grades.
@@ -421,19 +486,23 @@ impl SessionOptions {
         self.engine == Engine::Agent && self.identifies()
     }
 
-    /// Priced by an AI agent over MCP.
+    /// Priced by an AI agent over MCP: on its own, or from the eBay listings Cardloader found for it.
     pub fn prices_by_agent(&self) -> bool {
-        self.prices() == Prices::Agent
+        matches!(self.prices(), Prices::Agent | Prices::EbayAgent)
     }
 
-    /// An AI agent identifies, prices or crops the cards.
-    pub fn uses_agent(&self) -> bool {
-        self.agent() || self.prices_by_agent() || self.crops_by_agent()
+    /// The agent that prices the cards gets each card's eBay listings and says which are the card; the price is
+    /// Cardloader's (their median), not the agent's.
+    pub fn agent_picks_listings(&self) -> bool {
+        self.prices() == Prices::EbayAgent
     }
 
-    /// Prices the cards from their active eBay listings.
+    /// Prices the cards from their active eBay listings, whoever says which of them count.
     pub fn uses_ebay(&self) -> bool {
-        self.prices() == Prices::Ebay
+        matches!(
+            self.prices(),
+            Prices::Ebay | Prices::EbayLocal | Prices::EbayAgent
+        )
     }
 
     /// Calls the Ximilar API for something: identifying, grading, cropping or syncing. A session whose stages all
@@ -552,6 +621,18 @@ pub struct CardFields {
     pub series: String,
     pub year: String,
     pub subcategory: String,
+    /// Who made the card ("Topps"). This and the three below are details of the card, not what tells it from
+    /// another: Cards Cloud doesn't take them, and typing one leaves the review as it was.
+    #[serde(default)]
+    pub brand: String,
+    #[serde(default)]
+    pub team: String,
+    /// The copy's serial number as printed ("43/75").
+    #[serde(default)]
+    pub serial: String,
+    /// What a seller says about the card in a title ("RC Auto"): only ever typed, by the user, a CSV or an agent.
+    #[serde(default)]
+    pub features: String,
 }
 
 impl CardFields {
@@ -565,6 +646,10 @@ impl CardFields {
             &mut self.series,
             &mut self.year,
             &mut self.subcategory,
+            &mut self.brand,
+            &mut self.team,
+            &mut self.serial,
+            &mut self.features,
         ] {
             *field = field.trim().to_string();
         }
@@ -580,6 +665,146 @@ impl CardFields {
             .collect::<Vec<_>>()
             .join(" ")
     }
+}
+
+/// One part of a listing title (`ebay::title`). A name this version doesn't know (a file from a newer one) reads
+/// as `Unknown` and is left out: a settings file that doesn't parse would lose every setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitleField {
+    Year,
+    /// The game, or the sport.
+    Game,
+    Brand,
+    Set,
+    SetCode,
+    Name,
+    /// The variant, parallel or insert (`CardFields::series`).
+    Series,
+    Features,
+    Serial,
+    /// `#125`.
+    Number,
+    Team,
+    /// A slab's grader and grade: `PSA 9.5`.
+    Grade,
+    #[serde(other)]
+    Unknown,
+}
+
+/// The kind of card a title template is for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitleKind {
+    #[default]
+    Any,
+    Tcg,
+    Sport,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Which of those cards a title template is for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TitleOnly {
+    #[default]
+    Any,
+    /// Cards in a slab whose label was read.
+    Graded,
+    /// Cards whose features say so ("Auto", "Autograph").
+    Autograph,
+    #[serde(other)]
+    Unknown,
+}
+
+/// The parts of a listing title, in the user's order, for the cards it is for. The first template in the settings
+/// that fits a card makes its title.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TitleTemplate {
+    pub id: String,
+    pub name: String,
+    pub kind: TitleKind,
+    pub only: TitleOnly,
+    pub fields: Vec<TitleField>,
+}
+
+/// What a change to many cards at once writes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EditField {
+    /// The card's own listing title.
+    Title,
+    Features,
+    Brand,
+    Team,
+    Series,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EditPlace {
+    Start,
+    End,
+    /// Instead of what is there; with no text, the field is emptied (a title: automatic again).
+    Replace,
+}
+
+/// One change for many cards: a text added to (or put in place of) one of their fields or their titles.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BulkEdit {
+    pub field: EditField,
+    pub place: EditPlace,
+    pub text: String,
+}
+
+/// Whose titles to show (`AppState::preview_titles`): the cards named, else the newest identified ones, else
+/// made-up ones.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TitleQuery {
+    pub item_ids: Option<Vec<i64>>,
+    /// A change not made yet: the titles are the ones it would give.
+    pub edit: Option<BulkEdit>,
+    /// Templates not saved yet, instead of the stored ones.
+    pub templates: Option<Vec<TitleTemplate>>,
+}
+
+/// A card's listing title, now and after a change.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TitlePreview {
+    /// None: a made-up card, shown while there are no cards yet.
+    pub item_id: Option<i64>,
+    pub seq: i64,
+    pub thumb_path: Option<String>,
+    /// The title as it is.
+    pub before: String,
+    /// The title after the change asked about; without one, the same.
+    pub title: String,
+    /// `title` is the card's own, not a template's.
+    pub custom: bool,
+    /// What the template makes for the card, whether or not it has its own title.
+    pub automatic: String,
+    /// The template that makes it; empty = the built-in one.
+    pub template: String,
+    /// Parts the card has that didn't fit.
+    pub left_out: Vec<TitleField>,
+    /// The change asked about changes this card.
+    pub changed: bool,
+    /// Why the card has no listing title, or can't take the change.
+    pub problem: Option<String>,
+}
+
+/// What a change to many cards did.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditedItems {
+    pub changed: usize,
+    /// Cards that couldn't take it (their title would be too long, they aren't identified).
+    pub skipped: usize,
 }
 
 /// What a graded slab's label says, when the card is in one.
@@ -630,6 +855,9 @@ pub struct ItemSummary {
     pub notes: String,
     /// Where the card is kept: a box, a binder page.
     pub location: String,
+    /// The listing title someone wrote for this card; empty = the one its template makes (`ebay::title`).
+    #[serde(default)]
+    pub title: String,
     /// The card's eBay listing, once one was attempted.
     pub ebay: Option<EbayListing>,
     /// What its active eBay listings ask, once they were searched.
@@ -786,6 +1014,9 @@ pub struct ItemEdit {
     pub price: Option<f64>,
     pub notes: String,
     pub location: String,
+    /// The card's own listing title; empty = automatic.
+    #[serde(default)]
+    pub title: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -929,19 +1160,68 @@ mod tests {
             [Identify, Grade],
             "Ximilar's prices come with its identification"
         );
-        assert_eq!(Stage::resume(&[Identify, Price, Grade], Price), 1);
+        let o = SessionOptions::default();
+        assert_eq!(o.resume(&[Identify, Price, Grade], Price), 1);
         assert_eq!(
-            Stage::resume(&[Identify, Grade], Price),
+            o.resume(&[Identify, Grade], Price),
             1,
             "prices dropped since"
         );
         assert_eq!(Stage::find("price"), Some(Price));
 
         // A card owing a stage goes on there; when the options dropped the stage since, at the next one left.
-        assert_eq!(Stage::resume(&[Identify, Grade, Crop], Grade), 1);
-        assert_eq!(Stage::resume(&[Identify, Crop], Grade), 1);
-        assert_eq!(Stage::resume(&[Crop], Crop), 0);
-        assert_eq!(Stage::resume(&[Identify], Crop), 1, "nothing left to do");
+        assert_eq!(o.resume(&[Identify, Grade, Crop], Grade), 1);
+        assert_eq!(o.resume(&[Identify, Crop], Grade), 1);
+        assert_eq!(o.resume(&[Crop], Crop), 0);
+        assert_eq!(o.resume(&[Identify], Crop), 1, "nothing left to do");
+    }
+
+    /// A pass takes a card's stages by how long each may hold it up: identified first, then what answers at
+    /// once, then the local model's work, then what waits for an AI agent.
+    #[test]
+    fn a_pass_takes_the_quick_stages_before_the_slow_ones() {
+        use Stage::*;
+        let all = |prices, grade_engine, crop_engine| SessionOptions {
+            prices: Some(prices),
+            grading: GradingMode::Grade,
+            grade_engine: Some(grade_engine),
+            save_crops: true,
+            crop_engine: Some(crop_engine),
+            ..SessionOptions::default()
+        };
+        // All by Ximilar and eBay: the order they are listed in.
+        let quick = all(Prices::Ebay, Engine::Ximilar, Engine::Ximilar);
+        assert_eq!(quick.pass(), [Identify, Price, Grade, Crop]);
+        assert_eq!(quick.pass(), quick.stages());
+        // A price that waits for an agent comes last: the grade and the crop don't wait for it.
+        let agent_prices = all(Prices::EbayAgent, Engine::Ximilar, Engine::Ximilar);
+        assert_eq!(agent_prices.pass(), [Identify, Grade, Crop, Price]);
+        assert_eq!(agent_prices.stages(), [Identify, Price, Grade, Crop]);
+        // The local model's listings after Ximilar's grade, before the corners an agent finds.
+        let mixed = all(Prices::EbayLocal, Engine::Ximilar, Engine::Agent);
+        assert_eq!(mixed.pass(), [Identify, Grade, Price, Crop]);
+        let local = all(Prices::Ebay, Engine::Local, Engine::Ximilar);
+        assert_eq!(local.pass(), [Identify, Price, Crop, Grade]);
+        // Identifying is first even when an agent does it.
+        let by_agent = SessionOptions {
+            engine: Engine::Agent,
+            ..all(Prices::Ebay, Engine::Ximilar, Engine::Ximilar)
+        };
+        assert_eq!(by_agent.pass()[0], Identify);
+
+        // A card goes on at the stage it owes, in that order.
+        let pass = agent_prices.pass();
+        assert_eq!(agent_prices.resume(&pass, Crop), 2);
+        assert_eq!(agent_prices.resume(&pass, Price), 3);
+        // The options dropped the crops since: what would have followed them is the price.
+        let dropped = SessionOptions {
+            save_crops: false,
+            ..agent_prices.clone()
+        };
+        assert_eq!(dropped.pass(), [Identify, Grade, Price]);
+        assert_eq!(dropped.resume(&dropped.pass(), Crop), 2);
+        // Prices added to finished cards alone (`only_stages`): nothing left once they are dropped.
+        assert_eq!(agent_prices.resume(&[Grade], Price), 1);
     }
 
     /// What a session's options mean is written twice, here and in `src/lib/format.ts` (`gradingOf`, `usesApi`,
@@ -1030,7 +1310,29 @@ mod tests {
             prices: Some(Prices::Agent),
             ..with(Engine::Local, GradingMode::Off, false)
         };
-        assert!(agent_prices.uses_agent() && !agent_prices.agent() && !agent_prices.uses_api());
+        assert!(
+            agent_prices.prices_by_agent() && !agent_prices.agent() && !agent_prices.uses_api()
+        );
+        assert!(!agent_prices.uses_ebay() && !agent_prices.agent_picks_listings());
+        // eBay's listings, with the local model or an agent saying which are the card.
+        let picked_here = SessionOptions {
+            prices: Some(Prices::EbayLocal),
+            ..with(Engine::Agent, GradingMode::Off, false)
+        };
+        assert!(
+            picked_here.uses_ebay() && picked_here.uses_local() && picked_here.prices_locally()
+        );
+        assert!(!picked_here.prices_by_agent() && !picked_here.uses_api());
+        let picked_by_agent = SessionOptions {
+            prices: Some(Prices::EbayAgent),
+            ..picked_here.clone()
+        };
+        assert!(picked_by_agent.uses_ebay() && !picked_by_agent.uses_local());
+        assert!(picked_by_agent.prices_by_agent() && picked_by_agent.agent_picks_listings());
+        assert_eq!(
+            picked_by_agent.stages(),
+            vec![Stage::Identify, Stage::Price]
+        );
 
         // Crops are Ximilar's unless they say otherwise, whatever identifies; cut here, they need no token.
         let crops = |engine, crop_engine| SessionOptions {
@@ -1041,7 +1343,7 @@ mod tests {
         let cut_here = crops(Engine::Local, Some(Engine::Local));
         assert!(cut_here.crops_locally() && cut_here.uses_local() && !cut_here.uses_api());
         let by_agent = crops(Engine::Local, Some(Engine::Agent));
-        assert!(by_agent.crops_by_agent() && by_agent.uses_agent() && !by_agent.agent());
+        assert!(by_agent.crops_by_agent() && !by_agent.agent());
         assert!(!by_agent.uses_api());
         assert!(crops(Engine::Ximilar, Some(Engine::Agent)).uses_api());
         let crop_only = SessionOptions {

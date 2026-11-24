@@ -645,5 +645,101 @@
     "cropEngine": "local",
     "prices": "off",
     "stages": ["identify"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "prices": "ebay_local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
+    "prices": "ebay_local",
+    "stages": ["identify", "price"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "local",
+      "prices": "ebay_local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": false,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "local",
+    "cropEngine": "ximilar",
+    "prices": "ebay_local",
+    "stages": ["identify", "price"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "ximilar",
+      "prices": "ebay_agent",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": false,
+    "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
+    "prices": "ebay_agent",
+    "stages": ["identify", "price"]
+  },
+  {
+    "options": {
+      "task": "identify",
+      "engine": "agent",
+      "gradeEngine": "local",
+      "prices": "ebay_agent",
+      "grading": "grade",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "grade",
+    "usesApi": false,
+    "agent": true,
+    "crops": false,
+    "gradeEngine": "local",
+    "cropEngine": "ximilar",
+    "prices": "ebay_agent",
+    "stages": ["identify", "price", "grade"]
+  },
+  {
+    "options": {
+      "task": "crop",
+      "engine": "ximilar",
+      "prices": "ebay_local",
+      "grading": "off",
+      "saveCrops": false,
+      "syncRemote": false,
+      "priceStats": true
+    },
+    "gradingMode": "off",
+    "usesApi": true,
+    "agent": false,
+    "crops": true,
+    "gradeEngine": "ximilar",
+    "cropEngine": "ximilar",
+    "prices": "off",
+    "stages": ["crop"]
   }
 ]

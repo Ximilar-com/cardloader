@@ -4,6 +4,7 @@
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import type {
+  BulkEdit,
   EbayListing,
   EbayPreview,
   EbayProgress,
@@ -16,7 +17,11 @@ import type {
   ModelStatus,
   Session,
   SettingsView,
+  TitleField,
+  TitlePreview,
+  TitleTemplate,
 } from "./api";
+import { MAX_TITLE } from "./api";
 import { matchOf, needsReview, representativePrice, rotationOf, tier } from "./cardview";
 import { EBAY_SITES } from "./ebaySites";
 import { addMoney } from "./format";
@@ -102,6 +107,7 @@ const settings: SettingsView = {
     locationKey: "home",
     username: "demo-seller",
   },
+  titles: [],
   mcp: {
     enabled: true,
     port: 47821,
@@ -222,6 +228,11 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     series: "",
     year,
     subcategory,
+    brand: subcategory === "Baseball" ? "Topps" : "",
+    team: subcategory === "Baseball" ? "Los Angeles Angels" : "",
+    serial: "",
+    features: "",
+    title: "",
     confidence: distance <= 0.3 ? "high" : distance <= 0.4 ? "medium" : "low",
     distance,
     price,
@@ -393,6 +404,8 @@ function makeCrop(sessionId: string, seq: number): ItemDetail {
     cardNumber: "",
     year: "",
     subcategory: "",
+    brand: "",
+    team: "",
     confidence: null,
     distance: null,
     price: null,
@@ -565,19 +578,26 @@ function searchCards(query: string, filter: string, limit: number) {
   return {
     cards: found.slice(0, limit),
     total: found.length,
-    value: found.reduce((n, c) => n + (c.price ?? 0), 0),
+    value: found.reduce((n, c) => n + (c.priceCurrency === "USD" ? (c.price ?? 0) : 0), 0),
+    values: addMoney(found.map((c) => (c.price ? [{ currency: c.priceCurrency, total: c.price }] : []))),
   };
 }
 
 /** What `update_item` does in Rust (without the full name rebuilt). */
 function updateItem(id: number, edit: ItemEdit): ItemDetail {
   const item = [...items.values()].flat().find((i) => i.id === id)!;
-  const { notes, location, ...card } = edit;
+  const { notes, location, title, brand, team, serial, features, ...card } = edit;
   const changed = (Object.keys(card) as (keyof typeof card)[]).some((k) => (item[k] ?? "") !== (card[k] ?? ""));
-  // Only a change to the card or its price is a review: notes and the location alone leave it as it was.
+  // Only a change to the card or its price is a review: notes, the location, the card's details and its listing
+  // title alone leave it as it was.
   Object.assign(item, changed ? { ...card, edited: true, reviewed: true, agentReviewed: false, reviewNote: "" } : {}, {
     notes: notes.trim(),
     location: location.trim(),
+    title: title.trim(),
+    brand: brand.trim(),
+    team: team.trim(),
+    serial: serial.trim(),
+    features: features.trim(),
     updatedAt: now(),
   });
   void emit("item-updated", summary(item));
@@ -1028,9 +1048,154 @@ async function compareDemo(sessionId: string, runId: string, modelId: string) {
   };
 }
 
+/** What a title that is too long does without, what it needs most first (`ebay/title.rs`). */
+const TITLE_IMPORTANCE: TitleField[] = [
+  "serial",
+  "features",
+  "series",
+  "set",
+  "setCode",
+  "brand",
+  "year",
+  "game",
+  "team",
+];
+const TITLE_KEPT: TitleField[] = ["name", "number", "grade"];
+
+/** Roughly the Rust title: the first template for the card, fitted into `room` by leaving out what matters least. */
+function composeTitle(i: ItemSummary, templates: TitleTemplate[], room = MAX_TITLE) {
+  const sport = i.idType === "sport";
+  const text: Record<TitleField, string> = {
+    year: i.year,
+    game: i.subcategory,
+    brand: i.brand,
+    set: i.setName,
+    setCode: i.setCode,
+    name: i.name,
+    series: i.series,
+    features: i.features,
+    serial: i.serial,
+    number: i.cardNumber ? `#${i.cardNumber}` : "",
+    team: i.team,
+    grade: i.slab ? `${i.slab.company} ${i.slab.grade}` : "",
+  };
+  const own = templates.find(
+    (t) =>
+      (t.kind === "any" || t.kind === (sport ? "sport" : "tcg")) &&
+      (t.only === "any" || (t.only === "graded" ? !!i.slab : /(^|\W)auto/i.test(i.features))) &&
+      t.fields.some((f) => text[f]),
+  );
+  const builtin: TitleField[] = sport
+    ? ["year", "set", "name", "number", "grade"]
+    : ["year", "game", "set", "name", "number", "grade"];
+  const words = (f: TitleField) =>
+    text[f]
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+  const says: TitleField[] = ["game", "brand", "set", "series", "name", "team", "features"];
+  let parts = (own?.fields ?? builtin).filter((f) => text[f]);
+  // A part another one already says ("Topps" in "Topps Chrome") isn't repeated; the least important goes first.
+  for (const f of [...TITLE_IMPORTANCE].reverse()) {
+    if (f === "set" || f === "serial" || !parts.includes(f)) continue;
+    const said = parts.some((o) => o !== f && says.includes(o) && words(f).every((w) => words(o).includes(w)));
+    if (said) parts = parts.filter((p) => p !== f);
+  }
+  const inside = new Set(parts.filter((f) => TITLE_KEPT.includes(f)));
+  const join = () =>
+    parts
+      .filter((f) => inside.has(f))
+      .map((f) => text[f])
+      .join(" ");
+  for (const f of TITLE_IMPORTANCE) {
+    if (!parts.includes(f)) continue;
+    inside.add(f);
+    if ([...join()].length > room) inside.delete(f);
+  }
+  return {
+    text: [...join()].slice(0, room).join(""),
+    template: own?.name ?? "",
+    leftOut: parts.filter((f) => !inside.has(f)),
+  };
+}
+
 function ebayTitle(i: ItemDetail): string {
-  const grade = i.slab ? ` ${i.slab.company} ${i.slab.grade}` : "";
-  return `${i.year} ${i.setName} ${i.name} #${i.cardNumber}${grade}`.slice(0, 80);
+  return i.title || composeTitle(i, settings.titles).text;
+}
+
+/** A change to many cards, as `ebay/title.rs` applies it: undefined = nothing changes, a string = why not. */
+function bulkEdited(i: ItemSummary, edit: BulkEdit, templates: TitleTemplate[]): ItemSummary | string | undefined {
+  if (i.status !== "done" || !i.name) return "the card isn't identified";
+  const added = edit.text.trim().replace(/\s+/g, " ");
+  if (!added && edit.place !== "replace") return "no text to add";
+  const says = (text: string) => ` ${text.toLowerCase()} `.includes(` ${added.toLowerCase()} `);
+  const joined = (text: string) =>
+    (edit.place === "replace" ? added : edit.place === "start" ? `${added} ${text}` : `${text} ${added}`).trim();
+  if (edit.field !== "title") {
+    if (edit.place !== "replace" && says(i[edit.field])) return undefined;
+    const value = joined(i[edit.field]);
+    return value === i[edit.field] ? undefined : { ...i, [edit.field]: value };
+  }
+  let title: string;
+  if (edit.place === "replace") title = added;
+  else if (i.title) {
+    if (says(i.title)) return undefined;
+    title = joined(i.title);
+  } else {
+    if (says(composeTitle(i, templates).text)) return undefined;
+    const made = composeTitle(i, templates, MAX_TITLE - [...added].length - 1);
+    if (!made.text.includes(i.name)) return "the text leaves no room for the card's name, number and grade";
+    title = joined(made.text);
+  }
+  const length = [...title].length;
+  if (length > MAX_TITLE) return `the title would be ${length} characters long; a listing takes ${MAX_TITLE}`;
+  return title === i.title ? undefined : { ...i, title };
+}
+
+function titlePreview(i: ItemSummary, edit: BulkEdit | undefined, templates: TitleTemplate[]): TitlePreview {
+  const before = i.title || composeTitle(i, templates).text;
+  const edited = edit ? bulkEdited(i, edit, templates) : undefined;
+  const after = typeof edited === "object" ? edited : i;
+  const made = composeTitle(after, templates);
+  return {
+    itemId: i.id || null,
+    seq: i.seq,
+    thumbPath: i.thumbPath,
+    before,
+    title: after.title || made.text,
+    custom: !!after.title,
+    automatic: made.text,
+    template: made.template,
+    leftOut: after.title ? [] : made.leftOut,
+    changed: typeof edited === "object",
+    problem: typeof edited === "string" ? edited : null,
+  };
+}
+
+function previewTitles(query: { itemIds?: number[]; edit?: BulkEdit; templates?: TitleTemplate[] }): TitlePreview[] {
+  const all = [...items.values()].flat();
+  const cards = query.itemIds
+    ? query.itemIds.flatMap((id) => all.filter((i) => i.id === id))
+    : all.filter((i) => i.status === "done" && i.name).slice(0, 6);
+  return cards.map((i) => titlePreview(i, query.edit, query.templates ?? settings.titles));
+}
+
+function editItems(ids: number[], edit: BulkEdit) {
+  const all = [...items.values()].flat();
+  let [changed, skipped] = [0, 0];
+  const sessions = new Set<string>();
+  for (const item of ids.flatMap((id) => all.filter((i) => i.id === id))) {
+    const edited = bulkEdited(item, edit, settings.titles);
+    if (typeof edited === "string") skipped++;
+    if (typeof edited !== "object") continue;
+    // The series tells the card from another: a correction, as typing it is.
+    Object.assign(item, edited, edit.field === "series" ? { edited: true, reviewed: true } : {}, { updatedAt: now() });
+    changed++;
+    sessions.add(item.sessionId);
+    void emit("item-updated", summary(item));
+  }
+  for (const id of sessions) void emit("session-updated", session(id));
+  return { changed, skipped };
 }
 
 function ebayPreview(i: ItemDetail): EbayPreview {
@@ -1041,6 +1206,8 @@ function ebayPreview(i: ItemDetail): EbayPreview {
     seq: i.seq,
     thumbPath: i.thumbPath,
     title: ebayTitle(i),
+    customTitle: !!i.title,
+    leftOut: i.title ? [] : composeTitle(i, settings.titles).leftOut,
     category: i.idType === "sport" ? "Sports Trading Card Singles" : "CCG Individual Cards",
     condition: i.slab ? `Graded · ${i.slab.company} ${i.slab.grade}` : "Ungraded",
     price,
@@ -1089,6 +1256,8 @@ function exportPreview(i: ItemDetail, format: string): EbayPreview {
       ...p,
       ebay: null,
       title: `${i.name} #${i.cardNumber}`,
+      customTitle: false,
+      leftOut: [],
       category: `${i.subcategory} · ${i.setName}`,
       condition: i.condition ? `${i.condition} (from grading)` : "Ungraded",
       problem: sport
@@ -1481,6 +1650,17 @@ export function installDemo() {
           );
           for (const i of list) {
             if (add.prices) i.price = i.price ?? 19.99;
+            // eBay's listings stay on the card; where the local model or an agent chose among them, with its note.
+            if (add.prices?.startsWith("ebay")) {
+              const note =
+                add.prices === "ebay_local"
+                  ? "The local model (qwen3.5-4b) kept 7 of 9 listings as this card."
+                  : add.prices === "ebay_agent"
+                    ? "Left out a lot of 20 cards and a graded copy."
+                    : "";
+              Object.assign(i, withMarket(i, note));
+              i.price = i.marketRange?.median ?? i.price;
+            }
             if (add.grading && add.grading !== "off") i.grade = i.grade ?? 8.5;
             if (add.crops && i.previewPath) {
               // As a card cut here is kept: the corners someone found, no picture of Ximilar's.
@@ -1535,6 +1715,10 @@ export function installDemo() {
         }
         case "update_item":
           return updateItem(a.id, a.edit);
+        case "preview_titles":
+          return previewTitles(a.query);
+        case "edit_items":
+          return editItems(a.itemIds, a.edit);
         case "review_items":
           // As in Rust: the user accepting a card an agent accepted makes it theirs.
           return changeItems(

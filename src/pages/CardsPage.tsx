@@ -2,9 +2,10 @@
 // each there are.
 
 import clsx from "clsx";
-import { Bot, CircleQuestionMark, Check, ExternalLink, MapPin, RotateCw, Search, Undo2, X } from "lucide-react";
+import { Bot, CircleQuestionMark, Check, ExternalLink, MapPin, Pencil, RotateCw, Search, Undo2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import BulkEditDialog from "../components/BulkEditDialog";
 import DetailPanel from "../components/DetailPanel";
 import { ErrorNote } from "../components/Modal";
 import { RenameDialog } from "../components/SessionActions";
@@ -37,6 +38,8 @@ export default function CardsPage() {
   const [detail, setDetail] = useState<ItemDetail | null>(null);
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [locating, setLocating] = useState<ItemSummary[] | null>(null);
+  /** The ticked cards a text is being added to (their titles, or a field). */
+  const [editing, setEditing] = useState<number[] | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(
@@ -173,6 +176,13 @@ export default function CardsPage() {
                 <Undo2 className="h-3.5 w-3.5" /> {t("cards.unaccept")}
               </button>
             )}
+            <button
+              className="btn px-2 py-1 text-xs"
+              onClick={() => setEditing(checkedCards.map((c) => c.id))}
+              title={t("titles.bulk.buttonTitle")}
+            >
+              <Pencil className="h-3.5 w-3.5" /> {t("titles.bulk.button")}
+            </button>
             <button className="btn px-2 py-1 text-xs" onClick={() => setLocating(checkedCards)}>
               <MapPin className="h-3.5 w-3.5" /> {t("cards.setLocation")}
             </button>
@@ -287,6 +297,7 @@ export default function CardsPage() {
               .catch(toastError)
           }
           onUnaccept={() => api.reviewItems(detail.sessionId, [detail.id], false).catch(toastError)}
+          listing={{ id: detail.id, rev: detail.updatedAt }}
           onEdit={(edit) => api.updateItem(detail.id, edit).then(setDetail)}
           onTurn={() =>
             api
@@ -318,6 +329,9 @@ export default function CardsPage() {
         />
       )}
 
+      {editing && (
+        <BulkEditDialog itemIds={editing} onClose={() => setEditing(null)} onDone={() => setChecked(new Set())} />
+      )}
       {locating && (
         <RenameDialog
           title={t("cards.location.title", { count: locating.length })}

@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::model::*;
+use crate::ximilar::recognition::{self, Endpoint};
 
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/001_init.sql"),
@@ -25,6 +26,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/011_price_note.sql"),
     include_str!("../migrations/012_only_stages.sql"),
     include_str!("../migrations/013_price_currency.sql"),
+    include_str!("../migrations/014_titles.sql"),
 ];
 
 #[derive(Clone)]
@@ -75,6 +77,11 @@ const ITEM_SUMMARY: &[&str] = &[
     "agent_reviewed",
     "review_note",
     "market_range",
+    "brand",
+    "team",
+    "serial",
+    "features",
+    "title",
 ];
 
 /// Totals by currency, as a query's `json_group_array` gives them.
@@ -132,8 +139,9 @@ const TO_REVIEW: &str =
     "(i.status IN ('done', 'grading') AND i.reviewed = 0 AND i.id_type IS NOT NULL)";
 
 /// The card is another one now (a new recognition, another candidate picked, its fields typed): the eBay listings
-/// found for what it was, and the agent's reasons for its price, say nothing about it.
-const OTHER_CARD: &str = "market = NULL, market_range = NULL, price_note = NULL";
+/// found for what it was, and the agent's reasons for its price, say nothing about it. Nor does the listing title
+/// written for it, which a typed field keeps: correcting a name isn't a reason to lose a title someone wrote.
+const OTHER_CARD: &str = "market = NULL, market_range = NULL, price_note = NULL, title = NULL";
 
 /// The async card-grader jobs a card can wait for at once, each a row of `item_jobs` (migration 010). A price
 /// is never a job that is out: its row only keeps why the card's price stage failed.
@@ -210,6 +218,45 @@ fn close_job(
     }
 }
 
+/// The migration (014) that added the columns `fill_details` fills.
+const DETAILS_MIGRATION: usize = 14;
+
+/// Cards identified before migration 014 get their brand, team and serial number from the answer they kept, which
+/// always had them. Only a card that still is what its answer says: one whose fields were typed, or imported
+/// with other values, is left alone. Nothing else about the card changes (no revision, no `updated_at`).
+fn fill_details(conn: &Connection) -> rusqlite::Result<usize> {
+    let mut stmt = conn.prepare(
+        "SELECT id, COALESCE(name, ''), COALESCE(card_number, ''), recognition FROM items
+         WHERE edited = 0 AND recognition IS NOT NULL AND (recognition LIKE '%\"company\"%'
+            OR recognition LIKE '%\"team\"%' OR recognition LIKE '%\"serial_number\"%')",
+    )?;
+    let cards = stmt
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut filled = 0;
+    for (id, name, number, raw) in cards {
+        let Ok(raw) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let card = recognition::parse(Endpoint::of_raw(&raw), &raw["response"]).card;
+        if card.name.trim() != name.trim() || card.card_number.trim() != number.trim() {
+            continue;
+        }
+        filled += conn.execute(
+            "UPDATE items SET brand = ?2, team = ?3, serial = ?4 WHERE id = ?1",
+            params![id, card.brand.trim(), card.team.trim(), card.serial.trim()],
+        )?;
+    }
+    Ok(filled)
+}
+
 impl Db {
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -229,6 +276,12 @@ impl Db {
         for (i, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
             conn.execute_batch(sql)?;
             conn.execute_batch(&format!("PRAGMA user_version = {}", i + 1))?;
+            if i + 1 == DETAILS_MIGRATION {
+                // Never an error: the columns are there, and failing here would add them again on every start.
+                if let Err(e) = fill_details(&conn) {
+                    tracing::warn!("older cards keep no brand, team and serial number: {e}");
+                }
+            }
         }
         Ok(Db(Arc::new(Mutex::new(conn))))
     }
@@ -517,6 +570,7 @@ impl Db {
         grade: Option<f64>,
         condition: Option<&str>,
         grading: Option<&Value>,
+        title: &str,
     ) -> Result<i64> {
         let ts = now();
         let key = (!front.is_empty()).then(|| crate::source::file_key(std::path::Path::new(front)));
@@ -526,10 +580,11 @@ impl Db {
                 "INSERT INTO items (session_id, seq, event_id, front_path, back_path, thumb_path, preview_path,
                     back_preview_path, status, id_type, name, full_name, set_name, set_code, card_number, series,
                     year, subcategory, confidence, distance, price, grade, condition, grading, rev,
-                    analyzed_at, created_at, updated_at, reviewed, price_currency)
+                    analyzed_at, created_at, updated_at, reviewed, price_currency, brand, team, serial,
+                    features, title)
                  VALUES (?1, (SELECT COALESCE(MAX(seq), 0) + 1 FROM items WHERE session_id = ?1),
                     ?2, ?3, ?4, ?5, ?6, ?7, 'done', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19,
-                    ?20, ?21, ?22, 1, ?23, ?23, ?23, 1, ?24)",
+                    ?20, ?21, ?22, 1, ?23, ?23, ?23, 1, ?24, ?25, ?26, ?27, ?28, NULLIF(?29, ''))",
                 params![
                     session_id,
                     event_id,
@@ -554,7 +609,12 @@ impl Db {
                     condition,
                     grading.map(|g| g.to_string()),
                     ts,
-                    price_currency.and_then(stored_currency)
+                    price_currency.and_then(stored_currency),
+                    card.brand,
+                    card.team,
+                    card.serial,
+                    card.features,
+                    title.trim()
                 ],
             )?;
             Ok(c.last_insert_rowid())
@@ -750,7 +810,8 @@ impl Db {
                     distance = ?12, price = ?13, price_currency = NULL, recognition = ?14, calls = calls + ?15, status = ?16,
                     error = NULL, analyzed_at = ?17, updated_at = ?17, rev = rev + 1, slab_company = ?18,
                     slab_grade = ?19, slab_certificate = ?20, reviewed = 0, edited = 0,
-                    agent_reviewed = 0, review_note = NULL, {OTHER_CARD}
+                    agent_reviewed = 0, review_note = NULL, brand = ?21, team = ?22, serial = ?23,
+                    features = ?24, {OTHER_CARD}
                  WHERE id = ?1"
                 ),
                 params![
@@ -774,6 +835,10 @@ impl Db {
                     slab.map(|s| &s.company),
                     slab.map(|s| &s.grade),
                     slab.map(|s| &s.certificate),
+                    card.brand,
+                    card.team,
+                    card.serial,
+                    card.features,
                 ],
             )
         })?;
@@ -801,7 +866,8 @@ impl Db {
                         series = ?7, year = ?8, subcategory = ?9, confidence = ?10, distance = ?11, price = ?12,
                         price_currency = NULL,
                         recognition = ?13, picks = picks + 1, reviewed = 1, edited = 0, updated_at = ?14,
-                        agent_reviewed = ?15, review_note = ?16, {OTHER_CARD}
+                        agent_reviewed = ?15, review_note = ?16, brand = ?17, team = ?18, serial = ?19,
+                        features = ?20, {OTHER_CARD}
                      WHERE id = ?1"
                 ),
                 params![
@@ -820,7 +886,11 @@ impl Db {
                     raw.to_string(),
                     ts,
                     by.is_agent(),
-                    by.note()
+                    by.note(),
+                    card.brand,
+                    card.team,
+                    card.serial,
+                    card.features,
                 ],
             )
         })?;
@@ -830,7 +900,9 @@ impl Db {
     /// The user typed the card's fields or price. Like a pick, it reaches Cards Cloud as a PATCH (`picks`
     /// counts it); notes and the location stay local. Only a changed card or price accepts it: notes or a location
     /// alone leave the review as it was (a card to review stays so, the user's accept stays theirs). Changed card
-    /// fields drop its eBay listings (`OTHER_CARD`); a new price alone doesn't.
+    /// fields drop its eBay listings (`OTHER_CARD`); a new price alone doesn't. The card's details (brand, team,
+    /// serial number, features) and its listing title are saved like notes: they are what many cards get at once,
+    /// which must not accept matches nobody looked at, and Cards Cloud takes none of them.
     pub fn save_edit(&self, id: i64, edit: &ItemEdit, by: &Reviewer) -> Result<()> {
         let card = &edit.card;
         self.with(|c| {
@@ -847,6 +919,7 @@ impl Db {
                     picks = picks + (SELECT changed FROM card), edited = edited OR (SELECT changed FROM card),
                     name = ?2, full_name = ?3, set_name = ?4, set_code = ?5, card_number = ?6, series = ?7,
                     year = ?8, subcategory = ?9, price = ?10, notes = ?11, location = ?12,
+                    brand = ?16, team = ?17, serial = ?18, features = ?19, title = NULLIF(?20, ''),
                     reviewed = reviewed OR (SELECT changed FROM card), updated_at = ?13,
                     agent_reviewed = CASE WHEN (SELECT changed FROM card) THEN ?14 ELSE agent_reviewed END,
                     review_note = CASE WHEN (SELECT changed FROM card) THEN ?15 ELSE review_note END
@@ -866,7 +939,12 @@ impl Db {
                     edit.location,
                     now(),
                     by.is_agent(),
-                    by.note()
+                    by.note(),
+                    card.brand,
+                    card.team,
+                    card.serial,
+                    card.features,
+                    edit.title
                 ],
             )
         })?;
@@ -1516,6 +1594,10 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
             series: text(col!("series"))?,
             year: text(col!("year"))?,
             subcategory: text(col!("subcategory"))?,
+            brand: text(col!("brand"))?,
+            team: text(col!("team"))?,
+            serial: text(col!("serial"))?,
+            features: text(col!("features"))?,
         },
         confidence: r.get(col!("confidence"))?,
         distance: r.get(col!("distance"))?,
@@ -1536,6 +1618,7 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         review_note: text(col!("review_note"))?,
         notes: text(col!("notes"))?,
         location: text(col!("location"))?,
+        title: text(col!("title"))?,
         ebay: ebay_listing(r)?,
         market_range: json_col(r.get(col!("market_range"))?)
             .and_then(|v| serde_json::from_value(v).ok()),
@@ -2221,6 +2304,7 @@ mod tests {
                 price,
                 notes: notes.into(),
                 location: String::new(),
+                title: String::new(),
             };
             db.save_edit(id, &edit, &Reviewer::User).unwrap()
         };
@@ -2285,5 +2369,148 @@ mod tests {
         assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Grading);
         db.save_crop(ids[1], &Value::Null, &[], None).unwrap();
         assert_eq!(db.item_summary(ids[1]).unwrap().status, ItemStatus::Done);
+    }
+
+    #[test]
+    fn details_and_a_title_are_saved_like_notes() {
+        let db = Db::memory().unwrap();
+        let s = session(&db);
+        let id = queued_card(&db, &s);
+        let card = CardFields {
+            name: "Jazz Chisholm Jr.".into(),
+            brand: "Topps".into(),
+            ..Default::default()
+        };
+        db.save_recognition(
+            id,
+            "sport",
+            &card,
+            Some("high"),
+            None,
+            None,
+            None,
+            &Value::Null,
+            1,
+            ItemStatus::Done,
+        )
+        .unwrap();
+        let listing = MarketListing {
+            id: "v1|1|0".into(),
+            price: 5.0,
+            currency: "USD".into(),
+            counted: true,
+            ..Default::default()
+        };
+        let market = EbayMarket {
+            range: PriceRange::of(std::slice::from_ref(&listing)),
+            listings: vec![listing],
+            ..Default::default()
+        };
+        db.save_market(id, &market).unwrap();
+
+        let mut edit = ItemEdit {
+            card: CardFields {
+                features: "RC Auto".into(),
+                team: "New York Yankees".into(),
+                serial: "43/75".into(),
+                ..card.clone()
+            },
+            title: "2026 Topps Jazz Chisholm Jr. RC Auto 43/75".into(),
+            ..Default::default()
+        };
+        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        let saved = db.item_summary(id).unwrap();
+        assert_eq!(saved.card, edit.card);
+        assert_eq!(saved.title, edit.title);
+        // What many cards get at once accepts none of them, and isn't a correction Cards Cloud would take.
+        assert!(!saved.reviewed && !saved.edited && !saved.picked);
+        assert!(saved.market_range.is_some());
+
+        // A typed name is a correction, and the title someone wrote stays.
+        edit.card.name = "Jazz Chisholm".into();
+        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        let saved = db.item_summary(id).unwrap();
+        assert!(saved.reviewed && saved.edited);
+        assert_eq!(saved.title, edit.title);
+
+        edit.title.clear();
+        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        assert_eq!(db.item_summary(id).unwrap().title, "");
+
+        // Another candidate is another card: its details are the candidate's, and the title is automatic again.
+        edit.title = "A title".into();
+        db.save_edit(id, &edit, &Reviewer::User).unwrap();
+        db.save_pick(
+            id,
+            &card,
+            Some("high"),
+            None,
+            None,
+            &Value::Null,
+            &Reviewer::User,
+        )
+        .unwrap();
+        let picked = db.item_summary(id).unwrap();
+        assert_eq!(picked.title, "");
+        assert_eq!(
+            (picked.card.brand.as_str(), picked.card.features.as_str()),
+            ("Topps", "")
+        );
+    }
+
+    #[test]
+    fn older_cards_get_their_details_from_the_answer_they_kept() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in &MIGRATIONS[..DETAILS_MIGRATION - 1] {
+            conn.execute_batch(sql).unwrap();
+        }
+        let answer = |name: &str| {
+            json!({"endpoint": "collectibles/v2/sport_id", "id_type": "sport", "response": {"records": [{
+                "_id": "front",
+                "_objects": [{"name": "Card", "bound_box": [0, 0, 10, 10], "_identification": {
+                    "best_match": {"name": name, "card_number": "AU-9", "company": "Topps",
+                        "team": "New York Yankees", "serial_number": "43/75"},
+                    "distances": [0.2]}}]}]}})
+            .to_string()
+        };
+        conn.execute_batch(&format!(
+            "PRAGMA user_version = {};
+             INSERT INTO sessions (id, name, source_kind, id_mode, options, status, created_at)
+                VALUES ('s', 'Old', 'folder', 'sport', '{{}}', 'completed', '');",
+            DETAILS_MIGRATION - 1
+        ))
+        .unwrap();
+        let insert = "INSERT INTO items (session_id, seq, event_id, front_path, status, id_type, name, card_number,
+                edited, recognition, rev, created_at, updated_at)
+            VALUES ('s', ?1, ?1, '/a.jpg', 'done', 'sport', ?2, 'AU-9', ?3, ?4, 3, '', 'before')";
+        let rows = [
+            (1, "Jazz Chisholm Jr.", 0, Some(answer("Jazz Chisholm Jr."))),
+            // Typed since, imported as another card, never answered, an answer that doesn't parse.
+            (2, "Jazz Chisholm", 1, Some(answer("Jazz Chisholm"))),
+            (3, "Aaron Judge", 0, Some(answer("Jazz Chisholm Jr."))),
+            (4, "Jazz Chisholm Jr.", 0, None),
+            (5, "Jazz Chisholm Jr.", 0, Some("{\"company\"".to_string())),
+        ];
+        for (seq, name, edited, raw) in rows {
+            conn.execute(insert, params![seq, name, edited, raw])
+                .unwrap();
+        }
+        let db = Db::init(conn).unwrap();
+        let cards = db.items("s").unwrap();
+        let details = |i: &ItemSummary| {
+            [
+                i.card.brand.clone(),
+                i.card.team.clone(),
+                i.card.serial.clone(),
+            ]
+        };
+        assert_eq!(details(&cards[0]), ["Topps", "New York Yankees", "43/75"]);
+        assert_eq!(
+            (cards[0].updated_at.as_str(), cards[0].synced),
+            ("before", false)
+        );
+        for untouched in &cards[1..] {
+            assert_eq!(details(untouched), ["", "", ""], "card {}", untouched.seq);
+        }
     }
 }

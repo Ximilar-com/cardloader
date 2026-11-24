@@ -220,25 +220,33 @@ const messages: Messages<typeof en> = {
     none: "Keine erkannte Karte zum Ergänzen: wartende, laufende oder nicht erkannte Karten werden ausgelassen.",
   },
   agentPrompt: {
-    identify: "Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.",
-    price: "Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.",
-    crop: "Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu.",
+    identify:
+      "Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP, bis keine Karte mehr auf dich wartet.",
+    price:
+      "Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP, bis keine Karte mehr auf dich wartet.",
+    crop: "Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu, bis keine Karte mehr auf dich wartet.",
+    identifyPrice:
+      "Erkenne und bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP, bis keine Karte mehr auf dich wartet.",
+    identifyCrop:
+      "Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP und schneide sie zu, bis keine Karte mehr auf dich wartet.",
+    priceCrop:
+      "Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP und schneide sie zu, bis keine Karte mehr auf dich wartet.",
+    identifyPriceCrop:
+      "Erkenne und bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP und schneide sie zu, bis keine Karte mehr auf dich wartet.",
     copy: "Prompt kopieren",
   },
   agentCropping: {
-    one: "<b>{count} Karte</b> wartet darauf, dass dein KI-Agent ihre Ecken findet. Bitte ihn, z. B. in Claude: „Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu.“",
+    one: "<b>{count} Karte</b> wartet darauf, dass dein KI-Agent ihre Ecken findet. Bitte ihn, z. B. in Claude: „{prompt}“",
     other:
-      "<b>{count} Karten</b> warten darauf, dass dein KI-Agent ihre Ecken findet. Bitte ihn, z. B. in Claude: „Schneide die Karten der Cardloader-Sitzung {name} (id {id}) über MCP zu.“",
+      "<b>{count} Karten</b> warten darauf, dass dein KI-Agent ihre Ecken findet. Bitte ihn, z. B. in Claude: „{prompt}“",
   },
   agentPricing: {
-    one: "<b>{count} Karte</b> wartet auf den Preis deines KI-Agenten. Bitte ihn, z. B. in Claude: „Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.“",
-    other:
-      "<b>{count} Karten</b> warten auf die Preise deines KI-Agenten. Bitte ihn, z. B. in Claude: „Bepreise die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.“",
+    one: "<b>{count} Karte</b> wartet auf den Preis deines KI-Agenten. Bitte ihn, z. B. in Claude: „{prompt}“",
+    other: "<b>{count} Karten</b> warten auf die Preise deines KI-Agenten. Bitte ihn, z. B. in Claude: „{prompt}“",
   },
   agentWaiting: {
-    one: "<b>{count} Karte</b> wartet auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.“",
-    other:
-      "<b>{count} Karten</b> warten auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „Erkenne die Karten der Cardloader-Sitzung {name} (id {id}) über MCP.“",
+    one: "<b>{count} Karte</b> wartet auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „{prompt}“",
+    other: "<b>{count} Karten</b> warten auf deinen KI-Agenten. Bitte ihn, z. B. in Claude: „{prompt}“",
   },
 };
 export default messages;

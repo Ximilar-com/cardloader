@@ -93,6 +93,17 @@ const messages: Messages<typeof en> = {
   identifyAs: "Identificar como",
   grading: "Gradación",
   imagesPerCard: "Imágenes por carta",
+  pairingWarning: {
+    single: {
+      title: "Cada imagen se convierte en una carta.",
+      text: "Si las imágenes incluyen también los reversos, cada reverso se analiza como otra carta, con sus propias llamadas a la API y su precio. En ese caso elige «Pares anverso + reverso».",
+    },
+    frontBack: {
+      title: "Cada dos imágenes forman una carta.",
+      text: "Anversos y reversos se emparejan por nombre (card_front / card_back, card_F / card_B); si no, de dos en dos por orden: anverso, reverso, anverso, reverso. Si solo hay anversos, una de cada dos cartas se tomaría por el reverso de la anterior y se quedaría fuera.",
+    },
+    odd: "Esta carpeta tiene un número impar de imágenes ({count}): una carta quedaría sin reverso, o los pares están desplazados. Comprueba que no falte ningún lado.",
+  },
   conditionScale: "Escala de estado",
   priceStats: "Estadísticas de precios",
   readSlabs: "Leer etiquetas de slabs gradados",
@@ -233,17 +244,25 @@ const messages: Messages<typeof en> = {
     ximilar: "Estadísticas de precios de Ximilar",
     ebay: "Anuncios de eBay",
     agent: "Agente de IA (MCP)",
+    ebay_local: "Anuncios de eBay + modelo local",
+    ebay_agent: "Anuncios de eBay + agente de IA (MCP)",
   },
   priceHints: {
     ximilar: "Vienen con la identificación de Ximilar",
     ebay: "La mediana de los anuncios activos de la carta",
     agent: "Claude u otro agente conectado por MCP",
+    ebay_local: "El modelo local se queda con los anuncios que son la carta",
+    ebay_agent: "Tu agente revisa los anuncios y sus fotos",
   },
   priceNotes: {
     ximilar: "Los precios de mercado de Ximilar vienen con cada identificación, sin coste adicional.",
     ebay: "Una vez identificada una carta, Cardloader busca sus anuncios activos de precio fijo en eBay con tu keyset de eBay y toma su mediana como precio. Los anuncios se quedan en la carta.",
     agent:
       "Tu agente de IA pone precio a cada carta una vez identificada: pídele, p. ej. en Claude, que ponga precio a las cartas de esta sesión en Cardloader.",
+    ebay_local:
+      "Una vez identificada una carta, Cardloader busca sus anuncios activos de precio fijo en eBay con tu keyset de eBay. El modelo local lee los títulos y se queda con los que son esta carta (la misma carta, variante y nota; sin lotes), y su mediana pasa a ser el precio. Los anuncios se quedan en la carta, con los descartados en gris.",
+    ebay_agent:
+      "Una vez identificada una carta, Cardloader busca sus anuncios activos de precio fijo en eBay con tu keyset de eBay y se los pasa a tu agente de IA, con sus fotos y las de la carta. El agente se queda con los anuncios que son esta carta y su mediana pasa a ser el precio: pídele, p. ej. en Claude, que ponga precio a las cartas de esta sesión en Cardloader.",
   },
   needsEbay: "Añade tu keyset de eBay en Ajustes para que Cardloader pueda buscar precios en los anuncios de eBay.",
   needsAgentsPrices:

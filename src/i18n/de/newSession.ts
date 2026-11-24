@@ -93,6 +93,17 @@ const messages: Messages<typeof en> = {
   identifyAs: "Erkennen als",
   grading: "Grading",
   imagesPerCard: "Bilder pro Karte",
+  pairingWarning: {
+    single: {
+      title: "Jedes Bild wird eine eigene Karte.",
+      text: "Enthalten die Bilder auch die Rückseiten, wird jede Rückseite als weitere Karte analysiert, mit eigenen API-Aufrufen und eigenem Preis. Wähle dann „Paare aus Vorder- + Rückseite“.",
+    },
+    frontBack: {
+      title: "Je zwei Bilder werden eine Karte.",
+      text: "Vorder- und Rückseiten werden nach Namen gepaart (card_front / card_back, card_F / card_B), sonst der Reihe nach je zwei: vorn, hinten, vorn, hinten. Sind es nur Vorderseiten, würde jede zweite Karte als Rückseite der vorigen genommen und fehlen.",
+    },
+    odd: "Dieser Ordner hat eine ungerade Zahl von Bildern ({count}): Eine Karte bliebe ohne Rückseite, oder die Paare sind verschoben. Prüfe, ob eine Seite fehlt.",
+  },
   conditionScale: "Zustandsskala",
   priceStats: "Preisstatistik",
   readSlabs: "Etiketten bewerteter Slabs lesen",
@@ -230,17 +241,29 @@ const messages: Messages<typeof en> = {
   keepOne: "Eine Sitzung macht mindestens eines davon.",
   identifyLocked: "Diese Sitzung hat Karten: Sie erkennt sie weiter, oder weiter nicht.",
   priceWith: "Preise mit",
-  priceEngines: { ximilar: "Ximilar-Preisstatistik", ebay: "eBay-Angebote", agent: "KI-Agent (MCP)" },
+  priceEngines: {
+    ximilar: "Ximilar-Preisstatistik",
+    ebay: "eBay-Angebote",
+    agent: "KI-Agent (MCP)",
+    ebay_local: "eBay-Angebote + lokales Modell",
+    ebay_agent: "eBay-Angebote + KI-Agent (MCP)",
+  },
   priceHints: {
     ximilar: "Kommt mit der Erkennung von Ximilar",
     ebay: "Der Median der aktiven Angebote der Karte",
     agent: "Claude oder ein anderer per MCP verbundener Agent",
+    ebay_local: "Das lokale Modell behält die Angebote, die die Karte sind",
+    ebay_agent: "Dein Agent prüft die Angebote und ihre Bilder",
   },
   priceNotes: {
     ximilar: "Ximilars Marktpreise kommen mit jeder Erkennung, ohne Zusatzkosten.",
     ebay: "Sobald eine Karte erkannt ist, sucht Cardloader mit deinem eBay-Keyset ihre aktiven eBay-Angebote zum Festpreis und nimmt deren Median als Preis. Die Angebote bleiben an der Karte.",
     agent:
       "Dein KI-Agent bepreist jede Karte, sobald sie erkannt ist: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu bepreisen.",
+    ebay_local:
+      "Sobald eine Karte erkannt ist, sucht Cardloader mit deinem eBay-Keyset ihre aktiven eBay-Angebote zum Festpreis. Das lokale Modell liest die Titel und behält die Angebote, die diese Karte sind (dieselbe Karte, Variante und Bewertung; keine Konvolute), und deren Median wird ihr Preis. Die Angebote bleiben an der Karte, die aussortierten ausgegraut.",
+    ebay_agent:
+      "Sobald eine Karte erkannt ist, sucht Cardloader mit deinem eBay-Keyset ihre aktiven eBay-Angebote zum Festpreis und übergibt sie deinem KI-Agenten, mit ihren Bildern und denen der Karte. Der Agent behält die Angebote, die diese Karte sind, und deren Median wird ihr Preis: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu bepreisen.",
   },
   needsEbay:
     "Füge in den Einstellungen dein eBay-Keyset hinzu, damit Cardloader eBay-Angebote nach Preisen durchsuchen kann.",

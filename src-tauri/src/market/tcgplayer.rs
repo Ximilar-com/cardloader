@@ -79,6 +79,9 @@ pub fn preview(item: &ItemSummary, grading: Option<&Value>) -> Preview {
         seq: item.seq,
         thumb_path: item.thumb_path.clone(),
         title: format!("{}{number}", card.name),
+        // TCGplayer's products have their own names: the list only says which card is meant.
+        custom_title: false,
+        left_out: Vec::new(),
         category: Some(
             [product_line(&card.subcategory), card.set_name.as_str()]
                 .iter()

@@ -13,6 +13,7 @@ import sessions from "./sessions";
 import settings from "./settings";
 import sidebar from "./sidebar";
 import status from "./status";
+import titles from "./titles";
 import wizard from "./wizard";
 
 const messages: Messages<typeof en> = {
@@ -30,5 +31,6 @@ const messages: Messages<typeof en> = {
   market,
   ebay,
   models,
+  titles,
 };
 export default messages;

@@ -269,7 +269,8 @@ impl Work {
             self.item_error(id, "the card needs a price");
             return Ok(None);
         }
-        let listing = match listing::plan(&item.summary) {
+        let titles = self.runner.settings.get().titles;
+        let listing = match listing::plan(&item.summary, &titles) {
             Ok(l) => l,
             Err(why) => {
                 self.item_error(id, &why);

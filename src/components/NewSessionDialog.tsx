@@ -19,6 +19,7 @@ import {
   Search,
   Settings,
   ShoppingBag,
+  TriangleAlert,
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -55,6 +56,8 @@ import {
   cropsOf,
   gradingOf,
   idModeLabels,
+  pricedByAgent,
+  pricedOnEbay,
   pricesOf,
   sourceLabels,
   TASK_CHOICES,
@@ -206,6 +209,9 @@ export default function NewSessionDialog({
     };
   }, [folder, kind]);
   const imageCount = counted?.folder === folder ? counted.n : null;
+  const pairingKey = options?.pairing === "front_back" ? "frontBack" : "single";
+  // Pairs can't come out even: a side is missing, or the folder holds fronts only.
+  const oddPairs = kind === "folder" && pairingKey === "frontBack" && imageCount != null && imageCount % 2 === 1;
 
   useEffect(() => {
     if (!csvPath || kind !== "csv") return;
@@ -291,12 +297,14 @@ export default function NewSessionDialog({
   const cropEngine = options ? cropEngineOf(options) : "ximilar";
   const cropsLocally = savesCrops && cropEngine === "local";
   const agentCrops = savesCrops && cropEngine === "agent";
-  const usesLocal = identifiesLocally || gradesLocally || cropsLocally;
   const prices: Prices = options ? pricesOf(options) : "off";
+  // eBay's listings price the cards, with the local model or an agent saying which of them are the card.
+  const pricesLocally = prices === "ebay_local";
+  const usesLocal = identifiesLocally || pricesLocally || gradesLocally || cropsLocally;
   // An AI agent connected over MCP identifies the cards, prices them, or finds them in their pictures.
   const agent = !!options && agentOf(options);
-  const agentPrices = prices === "agent";
-  const ebayPrices = prices === "ebay";
+  const agentPrices = pricedByAgent(prices);
+  const ebayPrices = pricedOnEbay(prices);
   // A local session holds one kind of cards (Auto and slabs are the API's).
   const sessionIdMode = identifiesLocally ? localKind(idMode) : idMode;
   // What "Images per card" goes back to when a local session stops reading backs.
@@ -371,7 +379,13 @@ export default function NewSessionDialog({
       models &&
       !model && {
         text: t("newSession.needsModel"),
-        tab: identifiesLocally ? ("identify" as const) : gradesLocally ? ("grade" as const) : ("crop" as const),
+        tab: identifiesLocally
+          ? ("identify" as const)
+          : pricesLocally
+            ? ("prices" as const)
+            : gradesLocally
+              ? ("grade" as const)
+              : ("crop" as const),
         settings: "models",
       },
     (agent || agentPrices) &&
@@ -773,6 +787,22 @@ export default function NewSessionDialog({
                 options={pairingOptions()}
               />
             </div>
+            {/* The one choice the app can't check: wrong, it doubles the cards or drops every second one. */}
+            <div
+              role="note"
+              className="selectable col-span-2 -mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+            >
+              <TriangleAlert className="mt-px h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="space-y-1">
+                <p>
+                  <b>{t(`newSession.pairingWarning.${pairingKey}.title`)}</b>{" "}
+                  {t(`newSession.pairingWarning.${pairingKey}.text`)}
+                </p>
+                {oddPairs && (
+                  <p className="font-medium">{t("newSession.pairingWarning.odd", { count: imageCount ?? 0 })}</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -898,7 +928,7 @@ export default function NewSessionDialog({
                     />
                   </div>
                   {/* eBay's listings (searched here, or by the agent) on one of its sites, in that site's currency. */}
-                  {prices === "ebay" || prices === "agent" ? (
+                  {ebayPrices || agentPrices ? (
                     <div>
                       <label className="label">{t("detail.market.site")}</label>
                       <Select
@@ -913,6 +943,11 @@ export default function NewSessionDialog({
                   {prices !== "off" && (
                     <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.priceNotes.${prices}`)}</p>
                   )}
+                  {/* The model that says which listings are the card: the one the session identifies with. */}
+                  {pricesLocally && !identifiesLocally && modelField}
+                  {pricesLocally && identifiesLocally && (
+                    <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.sameModel")}</p>
+                  )}
                 </>
               )}
 
@@ -926,7 +961,7 @@ export default function NewSessionDialog({
                       options={engineOptions(false)}
                     />
                   </div>
-                  {gradesLocally && !identifiesLocally ? modelField : <div />}
+                  {gradesLocally && !identifiesLocally && !pricesLocally ? modelField : <div />}
                   {gradesLocally && identifiesLocally && (
                     <p className="col-span-2 -mt-2 text-xs text-slate-500">{t("newSession.sameModel")}</p>
                   )}
@@ -959,7 +994,7 @@ export default function NewSessionDialog({
                     <label className="label">{t("newSession.cropWith")}</label>
                     <Select value={cropEngine} onChange={(v) => set("cropEngine", v)} options={engineOptions()} />
                   </div>
-                  {cropsLocally && !identifiesLocally && !gradesLocally ? modelField : <div />}
+                  {cropsLocally && !identifiesLocally && !pricesLocally && !gradesLocally ? modelField : <div />}
                   <p className="col-span-2 -mt-2 text-xs text-slate-500">{t(`newSession.cropNotes.${cropEngine}`)}</p>
                   {cropFields(options)}
                 </>
@@ -1365,8 +1400,8 @@ const TASK_ICONS: Record<TaskChoice, typeof Search> = {
 
 /** Where prices come from; Ximilar's come only with its identification. */
 export function priceOptions(ximilarIdentifies: boolean): SelectOption<Prices>[] {
-  const icons = { ximilar: Cloud, ebay: ShoppingBag, agent: Bot };
-  return (["ximilar", "ebay", "agent"] as const).map((value) => ({
+  const icons = { ximilar: Cloud, ebay: ShoppingBag, ebay_local: Cpu, ebay_agent: Bot, agent: Bot };
+  return (["ximilar", "ebay", "ebay_local", "ebay_agent", "agent"] as const).map((value) => ({
     value,
     label: t(`newSession.priceEngines.${value}`),
     hint: t(`newSession.priceHints.${value}`),

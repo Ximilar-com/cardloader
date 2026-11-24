@@ -135,9 +135,33 @@ pub fn encode_within(
     long_edge: u32,
     max_base64: usize,
 ) -> Result<(String, (u32, u32))> {
+    within(fit_long_edge(&open(path)?, long_edge), max_base64)
+}
+
+/// A picture that came as bytes (a listing's, fetched from eBay) as a base64 JPEG with its long edge capped.
+pub fn encode_bytes(bytes: &[u8], long_edge: u32, quality: u8) -> Result<(String, (u32, u32))> {
+    let img = fit_long_edge(&image::load_from_memory(bytes)?, long_edge);
+    Ok((
+        b64(&jpeg_bytes(&img, quality)?),
+        (img.width(), img.height()),
+    ))
+}
+
+/// [`encode_bytes`] in at most `max_base64` characters, as [`encode_within`] fits a file.
+pub fn encode_bytes_within(
+    bytes: &[u8],
+    long_edge: u32,
+    max_base64: usize,
+) -> Result<(String, (u32, u32))> {
+    within(
+        fit_long_edge(&image::load_from_memory(bytes)?, long_edge),
+        max_base64,
+    )
+}
+
+fn within(mut img: DynamicImage, max_base64: usize) -> Result<(String, (u32, u32))> {
     // Base64 writes three bytes as four characters.
     let max_bytes = max_base64 / 4 * 3;
-    let mut img = fit_long_edge(&open(path)?, long_edge);
     loop {
         let mut jpeg = Vec::new();
         for quality in FITTING_QUALITIES {

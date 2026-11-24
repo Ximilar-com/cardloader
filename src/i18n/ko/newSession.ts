@@ -85,6 +85,17 @@ const messages: Messages<typeof en> = {
   identifyAs: "식별 유형",
   grading: "그레이딩",
   imagesPerCard: "카드당 이미지",
+  pairingWarning: {
+    single: {
+      title: "이미지 하나가 카드 한 장이 됩니다.",
+      text: "이미지에 뒷면도 들어 있으면 뒷면마다 다른 카드로 분석되어 API 호출과 가격이 따로 붙습니다. 그럴 때는 ‘앞면 + 뒷면 쌍’을 선택하세요.",
+    },
+    frontBack: {
+      title: "이미지 두 개가 카드 한 장이 됩니다.",
+      text: "앞면과 뒷면은 이름(card_front / card_back, card_F / card_B)으로 짝을 짓고, 없으면 순서대로 두 개씩(앞, 뒤, 앞, 뒤) 짝을 짓습니다. 앞면만 있으면 카드 두 장 중 한 장이 앞 카드의 뒷면으로 처리되어 빠집니다.",
+    },
+    odd: "이 폴더의 이미지 수가 홀수({count}개)입니다. 뒷면 없는 카드가 한 장 생기거나 짝이 밀려 있습니다. 빠진 면이 없는지 확인하세요.",
+  },
   conditionScale: "상태 기준",
   priceStats: "가격 통계",
   readSlabs: "그레이딩 슬랩 라벨 읽기",
@@ -217,17 +228,29 @@ const messages: Messages<typeof en> = {
   keepOne: "세션은 이 중 하나 이상을 합니다.",
   identifyLocked: "이 세션에는 카드가 있습니다: 식별 여부는 바꿀 수 없습니다.",
   priceWith: "가격 산정 방법",
-  priceEngines: { ximilar: "Ximilar 가격 통계", ebay: "eBay 판매 목록", agent: "AI 에이전트(MCP)" },
+  priceEngines: {
+    ximilar: "Ximilar 가격 통계",
+    ebay: "eBay 판매 목록",
+    agent: "AI 에이전트(MCP)",
+    ebay_local: "eBay 판매 목록 + 로컬 모델",
+    ebay_agent: "eBay 판매 목록 + AI 에이전트(MCP)",
+  },
   priceHints: {
     ximilar: "Ximilar 식별과 함께 제공",
     ebay: "카드의 판매 중 목록 가격의 중앙값",
     agent: "MCP로 연결한 Claude 등의 에이전트",
+    ebay_local: "로컬 모델이 이 카드의 목록만 남깁니다",
+    ebay_agent: "에이전트가 목록과 사진을 확인합니다",
   },
   priceNotes: {
     ximilar: "Ximilar의 시세는 식별할 때마다 추가 비용 없이 함께 제공됩니다.",
     ebay: "카드가 식별되면 Cardloader가 eBay 키셋으로 그 카드의 판매 중인 고정가 eBay 목록을 검색하고 그 중앙값을 가격으로 정합니다. 목록은 카드에 남습니다.",
     agent:
       "AI 에이전트가 식별된 카드마다 가격을 매깁니다. Claude 등에서 ‘Cardloader의 이 세션 카드 가격을 매겨 줘’라고 요청하세요.",
+    ebay_local:
+      "카드가 식별되면 Cardloader가 eBay 키셋으로 그 카드의 판매 중인 고정가 eBay 목록을 검색합니다. 로컬 모델이 제목을 읽고 이 카드인 목록(같은 카드, 변형, 등급. 묶음 판매 제외)만 남기며, 그 중앙값이 가격이 됩니다. 목록은 카드에 남고 제외된 목록은 회색으로 표시됩니다.",
+    ebay_agent:
+      "카드가 식별되면 Cardloader가 eBay 키셋으로 그 카드의 판매 중인 고정가 eBay 목록을 검색해 목록 사진, 카드 사진과 함께 AI 에이전트에게 넘깁니다. 에이전트가 이 카드인 목록만 남기고 그 중앙값이 가격이 됩니다. Claude 등에서 ‘Cardloader의 이 세션 카드 가격을 매겨 줘’라고 요청하세요.",
   },
   needsEbay: "Cardloader가 eBay 목록에서 가격을 검색할 수 있도록 설정에서 eBay 키셋을 추가하세요.",
   needsAgentsPrices: "에이전트가 카드 가격을 매길 수 있도록 설정에서 AI 에이전트를 ‘실행 및 검토’와 함께 켜세요.",

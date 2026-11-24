@@ -220,25 +220,33 @@ const messages: Messages<typeof en> = {
     none: "No hay cartas identificadas a las que añadir: se omiten las que esperan, se están procesando o no están identificadas.",
   },
   agentPrompt: {
-    identify: "Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",
-    price: "Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",
-    crop: "Recorta las cartas de la sesión {name} (id {id}) de Cardloader vía MCP.",
+    identify:
+      "Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP, y sigue hasta que ninguna carta te espere.",
+    price:
+      "Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP, y sigue hasta que ninguna carta te espere.",
+    crop: "Recorta las cartas de la sesión {name} (id {id}) de Cardloader vía MCP, y sigue hasta que ninguna carta te espere.",
+    identifyPrice:
+      "Identifica las cartas de la sesión {name} (id {id}) de Cardloader y ponles precio vía MCP, y sigue hasta que ninguna carta te espere.",
+    identifyCrop:
+      "Identifica y recorta las cartas de la sesión {name} (id {id}) de Cardloader vía MCP, y sigue hasta que ninguna carta te espere.",
+    priceCrop:
+      "Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader y recórtalas vía MCP, y sigue hasta que ninguna carta te espere.",
+    identifyPriceCrop:
+      "Identifica las cartas de la sesión {name} (id {id}) de Cardloader, ponles precio y recórtalas vía MCP, y sigue hasta que ninguna carta te espere.",
     copy: "Copiar el prompt",
   },
   agentCropping: {
-    one: "<b>{count} carta</b> espera a que tu agente de IA encuentre sus esquinas. Pídele, p. ej. en Claude: «Recorta las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
+    one: "<b>{count} carta</b> espera a que tu agente de IA encuentre sus esquinas. Pídele, p. ej. en Claude: «{prompt}»",
     other:
-      "<b>{count} cartas</b> esperan a que tu agente de IA encuentre sus esquinas. Pídele, p. ej. en Claude: «Recorta las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
+      "<b>{count} cartas</b> esperan a que tu agente de IA encuentre sus esquinas. Pídele, p. ej. en Claude: «{prompt}»",
   },
   agentPricing: {
-    one: "<b>{count} carta</b> espera el precio de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
-    other:
-      "<b>{count} cartas</b> esperan los precios de tu agente de IA. Pídele, p. ej. en Claude: «Pon precio a las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
+    one: "<b>{count} carta</b> espera el precio de tu agente de IA. Pídele, p. ej. en Claude: «{prompt}»",
+    other: "<b>{count} cartas</b> esperan los precios de tu agente de IA. Pídele, p. ej. en Claude: «{prompt}»",
   },
   agentWaiting: {
-    one: "<b>{count} carta</b> espera a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
-    other:
-      "<b>{count} cartas</b> esperan a tu agente de IA. Pídele, p. ej. en Claude: «Identifica las cartas de la sesión {name} (id {id}) de Cardloader vía MCP».",
+    one: "<b>{count} carta</b> espera a tu agente de IA. Pídele, p. ej. en Claude: «{prompt}»",
+    other: "<b>{count} cartas</b> esperan a tu agente de IA. Pídele, p. ej. en Claude: «{prompt}»",
   },
 };
 export default messages;

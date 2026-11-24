@@ -9,6 +9,7 @@ import type { CardCondition, EbayPreview } from "../lib/api";
 import { fileUrl, parseAmount } from "../lib/format";
 import { Check } from "./NewSessionDialog";
 import type { SelectOption } from "./Select";
+import { CustomTitleMark, leftOutText, TitleCount } from "./TitleParts";
 
 /** The conditions of ungraded cards: the labels are marketplace condition names (English), the hints translated. */
 export function conditions(): SelectOption<CardCondition>[] {
@@ -221,9 +222,14 @@ function CardRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-slate-400 tabular-nums">{c.seq}</span>
-          <span className="truncate text-sm font-medium" title={c.title}>
+          <span
+            className="truncate text-sm font-medium"
+            title={[c.title, leftOutText(c.leftOut)].filter(Boolean).join("\n")}
+          >
             {c.title || "—"}
           </span>
+          {c.customTitle && <CustomTitleMark />}
+          {c.title && !c.problem && <TitleCount text={c.title} />}
           {badge}
         </div>
         <div className="truncate text-xs text-slate-500">{note}</div>

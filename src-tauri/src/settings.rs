@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Result;
 use crate::model::{
-    CropFormat, Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind, Task,
+    CropFormat, Engine, GradingMode, IdMode, Pairing, ScanSettings, SourceKind, Task, TitleTemplate,
 };
 
 pub const DEFAULT_API_BASE: &str = "https://api.ximilar.com";
@@ -89,6 +89,9 @@ pub struct Settings {
     /// ("Vulkan1"). See `local::Device`.
     pub local_device: String,
     pub ebay: EbaySettings,
+    /// The user's listing title templates, the first that fits a card first; none = the built-in titles. Not
+    /// eBay's alone: Whatnot and Shopify take the same title.
+    pub titles: Vec<TitleTemplate>,
     /// AI agents driving the app over MCP.
     pub mcp: McpSettings,
     /// Replaces ImgBB's API host (tests); empty = ImgBB.
@@ -218,6 +221,7 @@ impl Default for Settings {
             local_model: crate::local::catalog::DEFAULT_MODEL.into(),
             local_device: String::new(),
             ebay: EbaySettings::default(),
+            titles: Vec::new(),
             mcp: McpSettings::default(),
             image_host_base: String::new(),
             fallback_token: None,
@@ -323,6 +327,7 @@ impl SettingsStore {
         new.ebay.app_id = new.ebay.app_id.trim().to_string();
         new.ebay.ru_name = new.ebay.ru_name.trim().to_string();
         new.ebay.api_base = new.ebay.api_base.trim().trim_end_matches('/').to_string();
+        new.titles = crate::ebay::title::normalized(new.titles);
         let disconnect = guard.ebay.other_account(&new.ebay);
         new.ebay.username = if disconnect {
             None
@@ -485,6 +490,33 @@ mod tests {
         assert!(!settings.setup_done);
         assert_eq!(settings.default_sources, vec![SourceKind::Folder]);
         assert_eq!(settings.default_subcategory, "");
+        assert!(settings.titles.is_empty());
+    }
+
+    /// A settings file that doesn't parse reads as no settings at all (`load`), so a title template with a part
+    /// or a rule this version doesn't know must still parse: it only says less.
+    #[test]
+    fn title_templates_of_a_newer_version_still_load() {
+        use crate::model::{TitleField, TitleKind, TitleOnly};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"concurrency": 2, "titles": [{"id": "a", "name": " Mine ", "kind": "sport", "only": "numbered",
+                "fields": ["name", "hologram", "serial", "name"], "pinned": ["name"]}]}"#,
+        )
+        .unwrap();
+        let store = SettingsStore::load(path);
+        assert_eq!(store.get().concurrency, 2);
+        let read = store.get().titles;
+        assert_eq!(
+            (read[0].kind, read[0].only),
+            (TitleKind::Sport, TitleOnly::Unknown)
+        );
+        store.update(store.get()).unwrap();
+        let stored = &store.get().titles[0];
+        assert_eq!(stored.name, "Mine");
+        assert_eq!(stored.fields, vec![TitleField::Name, TitleField::Serial]);
     }
 
     #[test]
