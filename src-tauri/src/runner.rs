@@ -1179,6 +1179,32 @@ impl Runner {
         Ok(imported)
     }
 
+    /// A card whose picture couldn't be read when it came in has no preview: a file still being written, or
+    /// broken and replaced since. Retrying it reads its files again, where it had failed on the missing preview
+    /// for good; a file that still can't be read fails the card as it did the first time.
+    async fn read_pictures_again(&self, session_id: &str, item: ItemDetail) -> Result<ItemDetail> {
+        let s = &item.summary;
+        let back = s.back_path.as_ref().filter(|b| !b.is_empty());
+        let missing =
+            item.preview_path.is_none() || (back.is_some() && item.back_preview_path.is_none());
+        if !missing || s.front_path.is_empty() {
+            return Ok(item);
+        }
+        let unit = Unit {
+            front: PathBuf::from(&s.front_path),
+            back: back.map(PathBuf::from),
+        };
+        let dir = self.session_dir(session_id).join("thumbs");
+        let images = tokio::task::spawn_blocking(move || derive_images(&unit, &dir))
+            .await
+            .map_err(|e| Error::msg(e.to_string()))??;
+        if let Some(e) = images.error {
+            return Err(Error::msg(e));
+        }
+        self.db.save_pictures(s.id, &images)?;
+        self.db.item(s.id)
+    }
+
     /// Makes each unit's thumbnail and preview, then queues it.
     async fn ingest(
         &self,
@@ -1295,6 +1321,12 @@ impl Runner {
                 self.db.clear_jobs(item_id)?;
                 0
             }
+        };
+        // Prices need no picture (a card imported from a CSV may have none); the other stages look at it.
+        let item = if stages.iter().skip(from).any(|s| *s != Stage::Price) {
+            self.read_pictures_again(&session.id, item).await?
+        } else {
+            item
         };
         for (n, stage) in stages.iter().copied().enumerate().skip(from) {
             if n > 0 {
@@ -2566,6 +2598,91 @@ pub(crate) mod tests {
     }
 
     /// A folder of two front/back cards, auto-detected, graded and synced — end to end against a mock API.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn retry_reads_a_picture_again() {
+        let server = mock_ximilar().await;
+        let dir = tempfile::tempdir().unwrap();
+        let cards = dir.path().join("cards");
+        std::fs::create_dir_all(&cards).unwrap();
+        let card = RgbImage::from_pixel(630, 880, Rgb([200, 30, 30]));
+        card.save(cards.join("a.png")).unwrap();
+        // Half a file, as a scanner's software leaves it while it still writes.
+        std::fs::write(cards.join("b.png"), b"not a picture yet").unwrap();
+        let db = Db::memory().unwrap();
+        let store = Arc::new(SettingsStore::for_test(
+            dir.path().join("settings.json"),
+            Settings {
+                api_base_url: server.uri(),
+                ..Settings::default()
+            },
+            "token",
+        ));
+        let runner = Runner::new(
+            None,
+            Arc::new(Recorder::default()),
+            db.clone(),
+            store,
+            dir.path().join("data"),
+        );
+        let session = db
+            .create_session(&NewSession {
+                name: "Retry".into(),
+                source_kind: SourceKind::Folder,
+                source_ref: cards.to_string_lossy().into_owned(),
+                id_mode: IdMode::Tcg,
+                options: SessionOptions::default(),
+            })
+            .unwrap();
+        let finished = |runner: &Arc<Runner>| {
+            let (db, runner, id) = (db.clone(), runner.clone(), session.id.clone());
+            async move {
+                let started = Instant::now();
+                loop {
+                    let s = db.session(&id).unwrap();
+                    if !runner.is_running(&id) && s.status != SessionStatus::Running {
+                        return s;
+                    }
+                    assert!(started.elapsed() < Duration::from_secs(30), "{s:?}");
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            }
+        };
+        runner.start(&session.id).unwrap();
+        assert_eq!(finished(&runner).await.counts.errors, 1);
+        let broken = db
+            .items(&session.id)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.status == ItemStatus::Error)
+            .unwrap();
+        assert!(broken.error.as_deref().unwrap().starts_with("cannot read"));
+
+        // Still broken: the same error, not a missing preview.
+        db.requeue(&session.id, Some(&[broken.id])).unwrap();
+        runner.analyse_queued(&session.id).unwrap();
+        finished(&runner).await;
+        let again = db.item(broken.id).unwrap();
+        assert!(
+            again
+                .summary
+                .error
+                .as_deref()
+                .unwrap()
+                .starts_with("cannot read"),
+            "{:?}",
+            again.summary.error
+        );
+
+        card.save(cards.join("b.png")).unwrap();
+        db.requeue(&session.id, Some(&[broken.id])).unwrap();
+        runner.analyse_queued(&session.id).unwrap();
+        let s = finished(&runner).await;
+        assert_eq!((s.counts.done, s.counts.errors), (2, 0), "{s:?}");
+        let fixed = db.item(broken.id).unwrap();
+        assert!(fixed.preview_path.is_some() && fixed.summary.thumb_path.is_some());
+        assert_eq!(fixed.summary.card.name, "Charizard ex");
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn folder_session_end_to_end() {
         let server = mock_ximilar().await;

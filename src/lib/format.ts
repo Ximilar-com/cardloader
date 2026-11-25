@@ -170,6 +170,15 @@ export function chosenPrices(o: Pick<SessionOptions, "prices" | "priceStats">): 
 
 /** Where the cards' prices come from (`SessionOptions::prices`): only identified cards are priced, and Ximilar's
  * price statistics come only with its identification. */
+/** eBay rates sports singles on a scale of their own: a session's eBay condition scale follows the kind of its cards
+ * (`mcp::tools::ebay_scale_for` does the same). Other scales stay. */
+export function ebayScaleFor(mode: IdMode, scale: string): string {
+  if (scale !== "ebay_tcg" && scale !== "ebay_sport") return scale;
+  if (mode === "sport") return "ebay_sport";
+  if (mode === "tcg") return "ebay_tcg";
+  return scale;
+}
+
 export function pricesOf(o: Pick<SessionOptions, "task" | "engine" | "prices" | "priceStats">): Prices {
   const prices = chosenPrices(o);
   if (o.task !== "identify") return "off";

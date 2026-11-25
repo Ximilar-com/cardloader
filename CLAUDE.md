@@ -400,7 +400,9 @@ state from them.
   https on `*.ebayimg.com` only, no redirects, 8 s, 3 MB (loopback too under `cfg!(test)`), the size asked by
   rewriting `s-l225` in the address (`sized`), else the address as stored.
 - **Analysing again** (retry, "Analyse again"): `run_session(source: false)` → `Runner::analyse_queued` runs only
-  the queued cards and never reads the source, so a scanner session doesn't start a scan.
+  the queued cards and never reads the source, so a scanner session doesn't start a scan. A card whose picture
+  couldn't be read when it came in has no preview; its pass reads its files again first
+  (`Runner::read_pictures_again`), so a retry works once the file is fixed.
 - **Turn upright** (`turn_item`): for a card whose front `Rotation` tag is `rotated_upside_down`, new thumbnail
   and preview files (new names: the webview caches by path) from the preview turned 180°, the scan turned in place
   when it is cardloader's (under the session dir; never the user's folders), the tag rewritten to `rotation_ok`

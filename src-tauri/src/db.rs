@@ -969,6 +969,18 @@ impl Db {
         Ok(())
     }
 
+    /// The card's pictures were read again (`Runner::read_pictures_again`): its thumbnail and previews.
+    pub fn save_pictures(&self, id: i64, images: &ItemImages) -> Result<()> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE items SET thumb_path = ?2, preview_path = ?3, back_preview_path = ?4, updated_at = ?5
+                 WHERE id = ?1",
+                params![id, images.thumb, images.preview, images.back_preview, now()],
+            )
+        })?;
+        Ok(())
+    }
+
     /// The card's images were turned upright: new thumbnail and preview (and back preview, when the back turned
     /// too), the response says it is upright, and pictures hosted for exports and eBay drafts are uploaded again.
     pub fn save_turned(
@@ -2559,7 +2571,20 @@ mod tests {
         // Paths show in the UI, so the user's home folder is written as /Users/demo; `home` says which folder that is
         // for loading the pictures, and stays on this computer.
         let home = var("HOME");
-        let out = json!({ "sessions": sessions, "items": items })
+        // What the New session dialog shows for each session's source: the images a folder has, a CSV's preview.
+        let mut folders = serde_json::Map::new();
+        let mut csv = serde_json::Map::new();
+        for s in &sessions {
+            let path = Path::new(&s.source_ref);
+            if s.source_kind == SourceKind::Csv {
+                if let Ok(p) = crate::source::csv_file::preview(path) {
+                    csv.insert(s.source_ref.clone(), serde_json::to_value(p).unwrap());
+                }
+            } else if let Ok(images) = crate::source::list_images(path) {
+                folders.insert(s.source_ref.clone(), json!(images.len()));
+            }
+        }
+        let out = json!({ "sessions": sessions, "items": items, "folders": folders, "csv": csv })
             .to_string()
             .replace(&home, "/Users/demo");
         let out = format!("{{\"home\":{},{}", json!(home), &out[1..]);

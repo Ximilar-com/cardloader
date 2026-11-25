@@ -266,6 +266,9 @@ struct CreateSession {
     /// For the local model's work (engine, grade_engine, crop_engine or prices local): which downloaded model, by
     /// its id (get_settings lists them). Default: the user's.
     local_model: Option<String>,
+    /// The scale of a condition (grading condition, or a local full grade): tcgplayer, cardmarket, ebay_tcg or
+    /// ebay_sport. Default: the user's.
+    condition_scale: Option<String>,
     /// The images are known to be fronts (and backs, when paired): faster and more accurate.
     known_side: Option<bool>,
     /// The images are known to be upright: faster and more accurate.
@@ -2125,7 +2128,10 @@ impl Handler {
             crop_engine: a.crop_engine,
             ebay_site: a.ebay_site.clone().unwrap_or_default(),
             grading: a.grading.unwrap_or(settings.default_grading),
-            condition_mode: settings.default_condition_mode.clone(),
+            condition_mode: match a.condition_scale.clone() {
+                Some(v) => condition_scale(v)?,
+                None => ebay_scale_for(id_mode, &settings.default_condition_mode),
+            },
             pairing: a.pairing.unwrap_or(if local_sport && read_backs {
                 Pairing::FrontBack
             } else {
@@ -2352,14 +2358,7 @@ impl Handler {
             s.default_pairing = v;
         }
         if let Some(v) = a.condition_scale {
-            let scales = ["tcgplayer", "cardmarket", "ebay_tcg", "ebay_sport"];
-            if !scales.contains(&v.as_str()) {
-                return Err(Error::msg(format!(
-                    "the condition scale is one of {}",
-                    scales.join(", ")
-                )));
-            }
-            s.default_condition_mode = v;
+            s.default_condition_mode = condition_scale(v)?;
         }
         if let Some(v) = a.store_in_cards_cloud {
             s.sync_by_default = v;
@@ -2727,6 +2726,28 @@ fn card_row(i: &ItemSummary) -> Value {
         "error": i.error,
         "ebayRange": i.market_range,
     })
+}
+
+/// A condition scale an agent named, as sessions and settings store it.
+fn condition_scale(v: String) -> Result<String> {
+    const SCALES: [&str; 4] = ["tcgplayer", "cardmarket", "ebay_tcg", "ebay_sport"];
+    if !SCALES.contains(&v.as_str()) {
+        return Err(Error::msg(format!(
+            "the condition scale is one of {}",
+            SCALES.join(", ")
+        )));
+    }
+    Ok(v)
+}
+
+/// eBay rates sports singles on a scale of their own: the user's eBay scale follows the session's kind of cards, as
+/// the New session dialog does (`ebayScaleFor` in format.ts). Other scales stay.
+fn ebay_scale_for(mode: IdMode, scale: &str) -> String {
+    match (mode, scale) {
+        (IdMode::Sport, "ebay_tcg") => "ebay_sport".into(),
+        (IdMode::Tcg, "ebay_sport") => "ebay_tcg".into(),
+        _ => scale.into(),
+    }
 }
 
 fn defaults(s: &Settings) -> Value {

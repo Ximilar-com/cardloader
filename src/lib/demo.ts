@@ -1357,16 +1357,44 @@ function activity(days: number) {
   return out;
 }
 
+/** The cards analysed per day, as `Db::activity` counts them: what a snapshot's Home shows. */
+function activityOfCards(days: number) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const day = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const from = new Date();
+  from.setDate(from.getDate() - days + 1);
+  const byDay = new Map<string, { date: string; cards: number; calls: number }>();
+  for (const list of items.values())
+    for (const i of list) {
+      if (!i.analyzedAt || new Date(i.analyzedAt) < new Date(day(from))) continue;
+      const date = day(new Date(i.analyzedAt));
+      const d = byDay.get(date) ?? { date, cards: 0, calls: 0 };
+      d.cards += 1;
+      d.calls += i.calls;
+      byDay.set(date, d);
+    }
+  return [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+let snapshotMode = false;
+
 /** Sessions and their cards as the app's commands return them (`snapshot_for_the_browser_ui`), with the user's home
  * folder written as /Users/demo in every path; `home` is the real one. */
 export interface Snapshot {
   home: string;
   sessions: Session[];
   items: Record<string, ItemDetail[]>;
+  /** Each folder session's images, and each CSV session's file as the dialog previews it. */
+  folders?: Record<string, number>;
+  csv?: Record<string, unknown>;
 }
+
+let snapshotSources: Pick<Snapshot, "folders" | "csv"> = {};
 
 export function installDemo(snapshot?: Snapshot) {
   if (snapshot) {
+    snapshotMode = true;
+    snapshotSources = { folders: snapshot.folders, csv: snapshot.csv };
     sessions.push(...snapshot.sessions);
     for (const s of snapshot.sessions) items.set(s.id, snapshot.items[s.id] ?? []);
   } else {
@@ -1537,7 +1565,7 @@ export function installDemo(snapshot?: Snapshot) {
         case "ebay_listing_url":
           return `https://sandbox.ebay.com/itm/${a.listingId}`;
         case "dashboard_activity":
-          return activity(a.days);
+          return snapshotMode ? activityOfCards(a.days) : activity(a.days);
         case "mcp_status":
           return mcpStatus();
         case "claude_desktop_status":
@@ -1594,15 +1622,17 @@ export function installDemo(snapshot?: Snapshot) {
           return null;
         }
         case "preview_csv":
-          return {
-            rows: 26,
-            cards: 20,
-            cardsWithImages: 12,
-            images: 5,
-            skipped: 1,
-            missingImages: 0,
-            columns: ["Image → front image", "Card Name → name", "Set → set", "No. → number", "Price → price"],
-          };
+          return (
+            snapshotSources.csv?.[String(a.path ?? "")] ?? {
+              rows: 26,
+              cards: 20,
+              cardsWithImages: 12,
+              images: 5,
+              skipped: 1,
+              missingImages: 0,
+              columns: ["Image → front image", "Card Name → name", "Set → set", "No. → number", "Price → price"],
+            }
+          );
         case "import_csv": {
           const n = a.session as unknown as Session;
           const s: Session = {
@@ -1830,6 +1860,8 @@ export function installDemo(snapshot?: Snapshot) {
         }
         case "count_images": {
           // A snapshot's folder has the images of the sessions made from it.
+          const known = snapshotSources.folders?.[String(a.path ?? "")];
+          if (known !== undefined) return known;
           const made = sessions.find((s) => s.sourceRef === String(a.path ?? ""));
           if (!made) return 42;
           return (items.get(made.id) ?? []).reduce((n, i) => n + 1 + (i.backPath ? 1 : 0), 0);

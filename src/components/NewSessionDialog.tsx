@@ -44,16 +44,17 @@ import {
 } from "../lib/api";
 import { locale, rich, t, useT } from "../i18n";
 import {
+  agentOf,
   basename,
   chosenPrices,
+  cropEngineOf,
+  cropsOf,
   defaultSessionName,
+  ebayScaleFor,
   engineLabels,
   engineOf,
   gradeEngineOf,
   gradingLabels,
-  agentOf,
-  cropEngineOf,
-  cropsOf,
   gradingOf,
   idModeLabels,
   pricedByAgent,
@@ -63,10 +64,10 @@ import {
   TASK_CHOICES,
   taskLabels,
   tasksOf,
+  type TaskChoice,
   usesApi,
   withGradeMode,
   withTasks,
-  type TaskChoice,
 } from "../lib/format";
 import { ebaySite as siteName, ebaySiteOptions } from "../lib/ebaySites";
 import { modelOption, useModels } from "./LocalModels";
@@ -337,7 +338,11 @@ export default function NewSessionDialog({
   };
   const chooseIdMode = (mode: IdMode) => {
     setIdMode(mode);
-    if (identifiesLocally) setOptions((o) => o && withKindDefaults(o, mode, basePairing));
+    setOptions((o) => {
+      if (!o) return o;
+      const scaled = { ...o, conditionMode: ebayScaleFor(mode, o.conditionMode) };
+      return identifiesLocally ? withKindDefaults(scaled, mode, basePairing) : scaled;
+    });
   };
   // Only grading and cropping use more than a 300 dpi scan (the runner's `scan_settings`).
   const grades = savesCrops || (grading !== "off" && !gradesLocally);

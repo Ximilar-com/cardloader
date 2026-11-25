@@ -438,6 +438,10 @@ async fn agent_runs_and_reviews_a_folder() {
         )
         .await;
     assert!(sports["game"].is_null(), "{sports}");
+    assert_eq!(
+        sports["options"]["conditionMode"], "ebay_sport",
+        "eBay's scale of sports cards"
+    );
     assert_eq!(sports["options"]["magicAi"], true);
     let pokemon = agent
         .ok(
@@ -468,6 +472,20 @@ async fn agent_runs_and_reviews_a_folder() {
         )
         .await;
     assert_eq!(local["options"]["localModel"], id);
+    let graded = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "grading": "condition", "condition_scale": "ebay_sport", "start": false}),
+        )
+        .await;
+    assert_eq!(graded["options"]["conditionMode"], "ebay_sport");
+    let (refusal, failed) = agent
+        .tool(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "condition_scale": "psa", "start": false}),
+        )
+        .await;
+    assert!(failed, "{refusal}");
     assert_eq!(
         cropping["cropsFolder"],
         crops.canonicalize().unwrap().to_string_lossy().as_ref()

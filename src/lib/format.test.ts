@@ -10,6 +10,7 @@ import {
   cropEngineOf,
   cropsOf,
   defaultSessionName,
+  ebayScaleFor,
   duration,
   engineOf,
   eta,
@@ -196,5 +197,15 @@ describe("format", () => {
       task: "grade",
       grading: "centering",
     });
+  });
+});
+
+describe("ebayScaleFor", () => {
+  it("follows the kind of cards on eBay's scales only", () => {
+    expect(ebayScaleFor("sport", "ebay_tcg")).toBe("ebay_sport");
+    expect(ebayScaleFor("tcg", "ebay_sport")).toBe("ebay_tcg");
+    expect(ebayScaleFor("auto", "ebay_sport")).toBe("ebay_sport");
+    expect(ebayScaleFor("sport", "tcgplayer")).toBe("tcgplayer");
+    expect(ebayScaleFor("tcg", "cardmarket")).toBe("cardmarket");
   });
 });
