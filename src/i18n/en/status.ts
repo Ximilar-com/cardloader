@@ -62,7 +62,7 @@ export default {
   idMode: {
     auto: "Auto-detect",
     tcg: "Trading card games",
-    sport: "Sport cards",
+    sport: "Sports cards",
     comics: "Comics",
     slab: "Graded slabs",
   },
