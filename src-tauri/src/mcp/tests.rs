@@ -1441,6 +1441,16 @@ async fn agent_adds_prices_and_grading_to_a_finished_session() {
         failed && refusal.as_str().unwrap().contains("eBay keyset"),
         "{refusal}"
     );
+    let (refusal, failed) = agent
+        .tool(
+            "add_to_cards",
+            json!({"session": session, "prices": "ebay_local", "local_model": "no-such-model"}),
+        )
+        .await;
+    assert!(
+        failed && refusal.as_str().unwrap().contains("no-such-model"),
+        "{refusal}"
+    );
 
     state
         .settings

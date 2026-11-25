@@ -335,6 +335,9 @@ struct AddToCardsArgs {
     condition_scale: Option<String>,
     /// For prices: the eBay site (EBAY_US, EBAY_GB, EBAY_DE, …). Default: the session's, else the user's.
     ebay_site: Option<String>,
+    /// For the local model's work (grade_engine, crop_engine or prices ebay_local): which downloaded model, by its
+    /// id (get_settings lists them), as the dialog's Model picker. Default: the session's.
+    local_model: Option<String>,
     /// Save each card cropped: cut out of its picture, straightened.
     crops: Option<bool>,
     /// What crops: ximilar, local (the model on this computer finds the corners) or agent (you find them:
@@ -1004,7 +1007,15 @@ impl Handler {
                     grading: a.grading,
                     grade_engine: a.grade_engine,
                     condition_mode: a.condition_scale,
-                    local_model: None,
+                    local_model: match a.local_model.as_deref().map(str::trim) {
+                        Some(id) if !id.is_empty() => {
+                            if crate::local::catalog::find(id).is_none() {
+                                return Err(Error::msg(format!("no local model {id}")));
+                            }
+                            Some(id.to_string())
+                        }
+                        _ => None,
+                    },
                     ebay_site: a.ebay_site,
                     crops,
                     crop_engine: a.crop_engine,
