@@ -73,6 +73,8 @@ const messages: Messages<typeof en> = {
   listingTitle: "Título del anuncio",
   openTemplates: "Plantillas de título",
   backToAutomatic: "Volver al título automático",
+  editTitle: "Editar el título del anuncio",
+  editHint: "Enter guarda, Esc cancela. Vacío: el título que hace su plantilla.",
   automaticHint: "Vacío: el título que forma su plantilla.",
   bulk: {
     button: "Editar…",

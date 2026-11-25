@@ -73,6 +73,8 @@ const messages: Messages<typeof en> = {
   listingTitle: "리스팅 제목",
   openTemplates: "제목 템플릿",
   backToAutomatic: "자동 제목으로 되돌리기",
+  editTitle: "판매 등록 제목 편집",
+  editHint: "Enter로 저장, Esc로 취소. 비우면 템플릿이 만드는 제목이 됩니다.",
   automaticHint: "비워 두면 템플릿이 만드는 제목을 씁니다.",
   bulk: {
     button: "편집…",

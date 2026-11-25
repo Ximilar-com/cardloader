@@ -2221,12 +2221,47 @@ async fn exports_write_only_csv_files_outside_the_app() {
         failed && answer.as_str().unwrap().contains("overwrite"),
         "{answer}"
     );
+    // The columns asked for, in their order; an agent's choice isn't remembered as the user's.
     agent
         .ok(
             "export_csv",
-            json!({"session": "latest", "path": csv, "overwrite": true}),
+            json!({"session": "latest", "path": csv, "overwrite": true, "columns": ["name", "seq"],
+                "headers": {"name": "primary name"}}),
         )
         .await;
+    let text = std::fs::read_to_string(&csv).unwrap();
+    assert!(
+        text.trim_start_matches('\u{feff}')
+            .starts_with("primary name,#\r\nPikachu,"),
+        "{text}"
+    );
+    assert!(state.settings.get().csv_columns.is_empty());
+    assert!(state.settings.get().csv_headers.is_empty());
+
+    // The app's export remembers the user's columns and folder for the next one.
+    use crate::export::CsvColumn;
+    let session = state.db.sessions().unwrap()[0].id.clone();
+    let mine = out.join("mine.csv");
+    let cards = state
+        .export_csv(
+            &session,
+            &mine,
+            Some(vec![CsvColumn::Price, CsvColumn::Name]),
+            Some([(CsvColumn::Name, "primary name".to_string())].into()),
+            true,
+        )
+        .unwrap();
+    assert!(std::fs::read_to_string(&mine)
+        .unwrap()
+        .contains("price,primary name\r\n"));
+    assert_eq!(cards, 1);
+    let remembered = state.settings.get();
+    assert_eq!(remembered.csv_columns, [CsvColumn::Price, CsvColumn::Name]);
+    assert_eq!(remembered.csv_headers[&CsvColumn::Name], "primary name");
+    assert_eq!(
+        remembered.csv_folder.as_deref(),
+        Some(out.to_str().unwrap())
+    );
 }
 
 /// The user's accept stays theirs: an agent can't take it back, and an edit that changes no card field or price

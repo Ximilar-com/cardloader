@@ -109,6 +109,9 @@ const settings: SettingsView = {
     username: "demo-seller",
   },
   titles: [],
+  csvColumns: [],
+  csvHeaders: {},
+  csvFolder: null,
   mcp: {
     enabled: true,
     port: 47821,
@@ -1691,6 +1694,10 @@ export function installDemo() {
           return { ...item };
         }
         case "export_csv":
+          // As in Rust: the columns and the folder are the next export's.
+          settings.csvColumns = a.columns;
+          settings.csvHeaders = a.headers ?? {};
+          settings.csvFolder = String(a.path).replace(/[\\/][^\\/]*$/, "") || null;
           return (items.get(a.id) ?? []).length;
         case "rename_remote_session":
           return { ...remote, name: a.name };

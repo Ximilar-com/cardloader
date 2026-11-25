@@ -1,7 +1,6 @@
 // Managing local sessions: rename, settings, duplicate, show files, export, delete. Shared by the
 // sessions list (row menu, bulk delete) and the session page (header menu).
 
-import { save } from "@tauri-apps/plugin-dialog";
 import { openFile } from "../lib/open";
 import {
   Copy,
@@ -25,10 +24,11 @@ import Modal, { ErrorNote } from "./Modal";
 import { Check } from "./NewSessionDialog";
 import AddToCardsDialog from "./AddToCards";
 import CompareDialog from "./CompareDialog";
+import CsvExportDialog from "./CsvExportDialog";
 import { EbayListDialog } from "./Ebay";
 import { MarketExportDialog } from "./MarketExport";
 import NewSessionDialog from "./NewSessionDialog";
-import { toast, toastError as fail } from "./Toast";
+import { toastError as fail } from "./Toast";
 
 type Dialog =
   | { kind: "rename"; session: Session }
@@ -38,6 +38,7 @@ type Dialog =
   | { kind: "add"; session: Session }
   | { kind: "ebay"; session: Session }
   | { kind: "market"; session: Session; format: ExportFormat }
+  | { kind: "csv"; session: Session }
   | { kind: "delete"; sessions: Session[] };
 
 const isActive = (s: Session) => s.status === "running" || s.status === "paused";
@@ -53,24 +54,10 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       .then((path) => openFile(path))
       .catch(fail);
 
-  const exportCsv = async (s: Session) => {
-    try {
-      const path = await save({
-        defaultPath: `${s.name.replace(/[\\/:*?"<>|]+/g, "-")}.csv`,
-        filters: [{ name: "CSV", extensions: ["csv"] }],
-      });
-      if (!path) return;
-      const n = await api.exportCsv(s.id, path);
-      toast(t("session.actions.exported", { count: n, path }));
-    } catch (e) {
-      fail(e);
-    }
-  };
-
   const csvItem = (s: Session): MenuItem => ({
     label: t("session.actions.exportCsv"),
     icon: FileDown,
-    onClick: () => void exportCsv(s),
+    onClick: () => setDialog({ kind: "csv", session: s }),
     disabled: s.counts.total === 0,
   });
 
@@ -167,6 +154,7 @@ export function useSessionActions({ onDeleted }: { onDeleted?: (ids: string[]) =
       {dialog?.kind === "market" && (
         <MarketExportDialog key={dialog.format} session={dialog.session} format={dialog.format} onClose={close} />
       )}
+      {dialog?.kind === "csv" && <CsvExportDialog session={dialog.session} onClose={close} />}
       {dialog?.kind === "delete" && (
         <DeleteSessionsDialog sessions={dialog.sessions} onClose={close} onDeleted={(ids) => onDeleted?.(ids)} />
       )}

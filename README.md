@@ -544,11 +544,19 @@ review your own.
 
 ## CSV import and export
 
-**Export:** a session's **⋯** menu → **Export CSV…** writes one row per card (UTF-8, comma-separated, readable
-by Excel): number, status, type, name, full name, set, set code, card number, series, year, category, confidence,
-distance, whether you picked the match, price (USD), grade, condition, the graded slab's company, grade and
-certificate number, front and back image paths, error, notes, location, brand, team, serial number, features and
-`listing_title` (only a title written for the card: the automatic one depends on your templates).
+**Export:** a session's **⋯** menu → **Export CSV…** opens a window where you choose where the file goes and which
+columns it has, in what order: move a column with its arrows, leave it out with ×, click a left-out one to add it
+at the end, or **All, as usual** for every column. Click a column's name to give it another header in the file
+(`name` → `primary name`: the badge then reads *name: primary name*; empty keeps the column's own). The window
+shows the file's header line, warns when two columns would have the same header, and remembers the columns, their
+headers and the folder for the next export. A renamed header isn't one **Import CSV** knows, unless it is one of
+the names in the table below. The file has one row per card (UTF-8, comma-separated, readable by
+Excel); the columns are number (`#`), status, type, name, full name, set, set code, card number, series, year,
+category, confidence, distance, whether you picked the match, price, currency, grade, condition, the graded slab's
+company, grade and certificate number, front and back image paths, error, notes, location, brand, team, serial
+number, features and `listing_title` (only a title written for the card: the automatic one depends on your
+templates). AI agents' `export_csv` takes the same `columns` and `headers`; without them it uses the ones you last
+chose.
 
 **Import:** **Sessions → Import CSV** (or the **CSV file** source in **New session**) shows what the file
 contains before anything is imported. One row is one card, and columns are recognised by their header, loosely:

@@ -73,6 +73,8 @@ const messages: Messages<typeof en> = {
   listingTitle: "Titolo dell’inserzione",
   openTemplates: "Modelli di titolo",
   backToAutomatic: "Torna al titolo automatico",
+  editTitle: "Modifica il titolo dell’inserzione",
+  editHint: "Invio salva, Esc annulla. Vuoto: il titolo creato dal modello.",
   automaticHint: "Vuoto: il titolo formato dal suo modello.",
   bulk: {
     button: "Modifica…",

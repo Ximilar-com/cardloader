@@ -19,7 +19,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { t, useT, type Key } from "../i18n";
 import { api, errorText, MAX_TITLE, type EbayMarket, type ItemEdit, type Json, type TitlePreview } from "../lib/api";
@@ -141,24 +141,11 @@ export default function DetailPanel({
         <div className="min-w-0 flex-1">
           <h2 className="selectable text-base leading-snug font-semibold">{view.title}</h2>
           {title && (
-            <div className="mt-0.5">
-              {/* One flow of text, so the title wraps under the name's full width with its length after it. */}
-              <div className="text-sm break-words text-slate-600 dark:text-slate-300">
-                <Tag
-                  className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-slate-400"
-                  aria-label={t("titles.listingTitle")}
-                />
-                <span className="selectable" title={t("titles.listingTitle")}>
-                  {title.title}
-                </span>
-                {title.custom && <CustomTitleMark className="ml-1.5 align-[1px]" />}
-                <TitleCount text={title.title} className="ml-1.5" />
-                <TemplatesLink />
-              </div>
-              {!title.custom && title.leftOut.length > 0 && (
-                <div className="mt-0.5 text-xs text-slate-500">{leftOutText(title.leftOut)}</div>
-              )}
-            </div>
+            <ListingTitle
+              key={title.itemId}
+              title={title}
+              onSave={onEdit && view.edit ? (own) => onEdit({ ...view.edit!, title: own }) : undefined}
+            />
           )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {view.status && <StatusChip status={view.status} cropping={cropping} />}
@@ -1175,5 +1162,129 @@ function TemplatesLink() {
     >
       <Settings className="h-3.5 w-3.5" />
     </button>
+  );
+}
+
+/**
+ * The card's listing title under its name. Double-clicking it or the pencil writes the card its own title in place:
+ * Enter or leaving the field saves, Escape cancels; empty, or the template's title as it is, is automatic again.
+ */
+function ListingTitle({
+  title,
+  onSave,
+}: {
+  title: TitlePreview;
+  /** Saves the card's own title ("" = automatic); without it the title can't be edited here. */
+  onSave?: (own: string) => Promise<unknown>;
+}) {
+  const t = useT();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // The field loses focus when it closes or is disabled for saving: that blur saves nothing.
+  const done = useRef(false);
+  const edit = () => {
+    if (!onSave) return;
+    done.current = false;
+    setDraft(title.title);
+    setError(null);
+  };
+  const close = () => {
+    done.current = true;
+    setDraft(null);
+  };
+  const save = (text: string) => {
+    if (!onSave || done.current) return;
+    const typed = text.trim().replace(/\s+/g, " ");
+    // The template's own title, typed back, stays automatic: templates go on changing it.
+    const own = typed === title.automatic ? "" : typed;
+    if (titleLength(own) > MAX_TITLE) return setError(t("titles.tooLong", { count: titleLength(own), max: MAX_TITLE }));
+    if (own === (title.custom ? title.title : "")) return close();
+    done.current = true;
+    setSaving(true);
+    onSave(own)
+      .then(close)
+      .catch((e) => {
+        done.current = false;
+        setError(errorText(e));
+      })
+      .finally(() => setSaving(false));
+  };
+
+  if (draft != null)
+    return (
+      <div className="mt-1">
+        <div className="flex items-center gap-1.5">
+          <input
+            className="input min-w-0 flex-1 py-1 text-sm"
+            value={draft}
+            autoFocus
+            disabled={saving}
+            placeholder={title.automatic}
+            aria-label={t("titles.listingTitle")}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setError(null);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save(draft);
+              else if (e.key === "Escape") close();
+              else return;
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onBlur={() => save(draft)}
+          />
+          <TitleCount text={draft.trim()} />
+        </div>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 text-xs text-slate-500">
+          <span>{t("titles.editHint")}</span>
+          {title.custom && (
+            <button
+              className="text-sky-700 hover:underline dark:text-sky-400"
+              // Before the field's blur saves what it holds.
+              onMouseDown={(e) => {
+                e.preventDefault();
+                save("");
+              }}
+            >
+              {t("titles.backToAutomatic")}
+            </button>
+          )}
+        </div>
+        {error && <div className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</div>}
+      </div>
+    );
+
+  return (
+    <div className="mt-0.5">
+      {/* One flow of text, so the title wraps under the name's full width with its length after it. */}
+      <div className="text-sm break-words text-slate-600 dark:text-slate-300">
+        <Tag className="mr-1 inline h-3.5 w-3.5 align-[-2px] text-slate-400" aria-label={t("titles.listingTitle")} />
+        <span
+          className={clsx("selectable", onSave && "cursor-text")}
+          title={onSave ? t("titles.editTitle") : t("titles.listingTitle")}
+          onDoubleClick={edit}
+        >
+          {title.title}
+        </span>
+        {title.custom && <CustomTitleMark className="ml-1.5 align-[1px]" />}
+        <TitleCount text={title.title} className="ml-1.5" />
+        {onSave && (
+          <button
+            className="ml-1 inline-flex rounded p-0.5 align-[-3px] text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            onClick={edit}
+            title={t("titles.editTitle")}
+            aria-label={t("titles.editTitle")}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+        <TemplatesLink />
+      </div>
+      {!title.custom && title.leftOut.length > 0 && (
+        <div className="mt-0.5 text-xs text-slate-500">{leftOutText(title.leftOut)}</div>
+      )}
+    </div>
   );
 }

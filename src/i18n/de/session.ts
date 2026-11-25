@@ -145,6 +145,25 @@ const messages: Messages<typeof en> = {
     rename: "Zum Umbenennen klicken",
     name: "Sitzungsname",
   },
+  csvExport: {
+    title: "CSV exportieren",
+    saveTo: "Speichern unter",
+    pathPlaceholder: "Wähle, wohin die Datei kommt…",
+    columns: "Spalten, in Reihenfolge ({count})",
+    columnsHint:
+      "Verschiebe eine Spalte mit den Pfeilen, lass sie mit × weg, klicke ihren Namen an, um ihr in der Datei eine andere Überschrift zu geben. Die Auswahl bleibt für den nächsten Export.",
+    rename: "{column} in der Datei umbenennen",
+    renameOk: "OK",
+    repeated: "Zwei Spalten haben dieselbe Überschrift: {headers}.",
+    reset: "Alle, wie gewohnt",
+    none: "Keine",
+    noColumns: "Füge mindestens eine Spalte hinzu.",
+    leaveOut: "{column} weglassen",
+    leftOut: "Weggelassen: klicke eine an, um sie am Ende anzufügen",
+    add: "{column} hinzufügen",
+    header: "Die Kopfzeile der Datei",
+    export: { one: "{count} Karte exportieren", other: "{count} Karten exportieren" },
+  },
   actions: {
     exported: {
       one: "{count} Karte nach {path} exportiert",

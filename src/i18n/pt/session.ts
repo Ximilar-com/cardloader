@@ -148,6 +148,25 @@ const messages: Messages<typeof en> = {
     rename: "Clique para renomear",
     name: "Nome da sessão",
   },
+  csvExport: {
+    title: "Exportar CSV",
+    saveTo: "Salvar em",
+    pathPlaceholder: "Escolha onde o arquivo vai ficar…",
+    columns: "Colunas, em ordem ({count})",
+    columnsHint:
+      "Mova uma coluna com as setas, tire-a com × e clique no nome para dar a ela outro cabeçalho no arquivo. A escolha fica guardada para a próxima exportação.",
+    rename: "Renomear {column} no arquivo",
+    renameOk: "OK",
+    repeated: "Duas colunas têm o mesmo cabeçalho: {headers}.",
+    reset: "Todas, como sempre",
+    none: "Nenhuma",
+    noColumns: "Adicione pelo menos uma coluna.",
+    leaveOut: "Tirar {column}",
+    leftOut: "De fora: clique em uma para adicioná-la no final",
+    add: "Adicionar {column}",
+    header: "O cabeçalho do arquivo",
+    export: { one: "Exportar {count} card", other: "Exportar {count} cards" },
+  },
   actions: {
     exported: {
       one: "{count} carta exportada para {path}",

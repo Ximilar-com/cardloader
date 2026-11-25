@@ -71,6 +71,8 @@ export default {
   listingTitle: "Listing title",
   openTemplates: "Title templates",
   backToAutomatic: "Back to the automatic title",
+  editTitle: "Edit the listing title",
+  editHint: "Enter saves, Esc cancels. Empty: the title its template makes.",
   automaticHint: "Empty: the title its template makes.",
   bulk: {
     button: "Edit…",

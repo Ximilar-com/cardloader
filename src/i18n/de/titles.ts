@@ -73,6 +73,8 @@ const messages: Messages<typeof en> = {
   listingTitle: "Angebotstitel",
   openTemplates: "Titelvorlagen",
   backToAutomatic: "Zurück zum automatischen Titel",
+  editTitle: "Angebotstitel bearbeiten",
+  editHint: "Enter speichert, Esc bricht ab. Leer: der Titel, den die Vorlage macht.",
   automaticHint: "Leer: der Titel aus der Vorlage.",
   bulk: {
     button: "Bearbeiten…",

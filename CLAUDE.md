@@ -49,7 +49,10 @@ src-tauri/src/
   settings.rs     settings.json + secrets (API token, eBay Cert ID and login) in the OS keychain (keyring)
   imaging.rs      decode, EXIF orientation, thumbnails/previews, JPEG/base64 for upload
   crop.rs         a card cut out of its picture at four corners someone found (`Quad`, `cut`, `turned`)
-  export.rs       CSV export
+  export.rs       CSV export: `CsvColumn`s chosen, ordered and renamed (`Headers`) in the export dialog
+                  (`CsvExportDialog.tsx`; `settings.csv_columns`/`csv_headers`/`csv_folder` remember the last choice,
+                  `AppState::export_csv`); the list is
+                  mirrored in `src/lib/csvColumns.ts`, which `the_dialogs_columns_are_these` checks
   update.rs       in-app updates from GitHub releases (tauri-plugin-updater: check, download + install, restart)
   source/         folder, watch folder (notify), csv_file.rs (import parser), scanner/{sane.rs, twain.rs}
   ximilar/        http.rs (client, retry, error classes), recognition.rs, grading.rs, cards_cloud.rs

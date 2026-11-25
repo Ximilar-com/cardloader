@@ -145,6 +145,25 @@ const messages: Messages<typeof en> = {
     rename: "Cliquez pour renommer",
     name: "Nom de la session",
   },
+  csvExport: {
+    title: "Exporter en CSV",
+    saveTo: "Enregistrer dans",
+    pathPlaceholder: "Choisissez où va le fichier…",
+    columns: "Colonnes, dans l’ordre ({count})",
+    columnsHint:
+      "Déplacez une colonne avec les flèches, retirez-la avec ×, cliquez sur son nom pour lui donner un autre en-tête dans le fichier. Le choix est gardé pour le prochain export.",
+    rename: "Renommer {column} dans le fichier",
+    renameOk: "OK",
+    repeated: "Deux colonnes ont le même en-tête : {headers}.",
+    reset: "Toutes, comme d’habitude",
+    none: "Aucune",
+    noColumns: "Ajoutez au moins une colonne.",
+    leaveOut: "Retirer {column}",
+    leftOut: "Retirées : cliquez sur l’une pour l’ajouter à la fin",
+    add: "Ajouter {column}",
+    header: "L’en-tête du fichier",
+    export: { one: "Exporter {count} carte", other: "Exporter {count} cartes" },
+  },
   actions: {
     exported: {
       one: "{count} carte exportée vers {path}",

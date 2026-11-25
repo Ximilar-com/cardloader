@@ -73,6 +73,8 @@ const messages: Messages<typeof en> = {
   listingTitle: "出品タイトル",
   openTemplates: "タイトルテンプレート",
   backToAutomatic: "自動タイトルに戻す",
+  editTitle: "出品タイトルを編集",
+  editHint: "Enter で保存、Esc でキャンセル。空欄にするとテンプレートのタイトルに戻ります。",
   automaticHint: "空欄：テンプレートが作るタイトルになります。",
   bulk: {
     button: "編集…",

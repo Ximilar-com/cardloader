@@ -73,6 +73,8 @@ const messages: Messages<typeof en> = {
   listingTitle: "Titre de l’annonce",
   openTemplates: "Modèles de titre",
   backToAutomatic: "Revenir au titre automatique",
+  editTitle: "Modifier le titre de l’annonce",
+  editHint: "Entrée enregistre, Échap annule. Vide : le titre que fait son modèle.",
   automaticHint: "Vide : le titre que forme son modèle.",
   bulk: {
     button: "Modifier…",

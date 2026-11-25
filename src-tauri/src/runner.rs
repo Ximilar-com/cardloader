@@ -3137,7 +3137,7 @@ pub(crate) mod tests {
 
         // Round trip: export, then import into a new session.
         let exported = dir.path().join("export.csv");
-        crate::export::write_csv(&items, &exported).unwrap();
+        crate::export::write_csv(&items, &exported, &[], &Default::default()).unwrap();
         let again = source::csv_file::read(&exported).unwrap().rows;
         assert_eq!(again.len(), 2);
         assert!(again.iter().all(|r| r.has_card()));

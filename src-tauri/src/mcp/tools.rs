@@ -577,6 +577,11 @@ struct ExportCsv {
     path: String,
     /// Replace the file if it exists (default false).
     overwrite: Option<bool>,
+    /// The columns, in order (default: the ones the user last chose in the app, else all of them).
+    columns: Option<Vec<crate::export::CsvColumn>>,
+    /// Headers to write instead of the columns' own, by column, e.g. {"name": "primary name"} (default: the ones
+    /// the user last wrote in the app).
+    headers: Option<crate::export::Headers>,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -1062,9 +1067,10 @@ impl Handler {
                 let a: ExportCsv = args(a)?;
                 let id = self.session_id(&a.session_id)?;
                 let path = self.export_path(&a.path, a.overwrite)?;
-                let items = self.state.db.items(&id)?;
-                crate::export::write_csv(&items, &path)?;
-                out(json!({"path": path, "cards": items.len()}))
+                let cards = self
+                    .state
+                    .export_csv(&id, &path, a.columns, a.headers, false)?;
+                out(json!({"path": path, "cards": cards}))
             }
             "export_tcgplayer" => {
                 let a: ExportTcgplayer = args(a)?;

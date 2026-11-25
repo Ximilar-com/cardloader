@@ -92,6 +92,12 @@ pub struct Settings {
     /// The user's listing title templates, the first that fits a card first; none = the built-in titles. Not
     /// eBay's alone: Whatnot and Shopify take the same title.
     pub titles: Vec<TitleTemplate>,
+    /// The CSV export's columns as last chosen, in order; none = all of them (`export::columns`).
+    pub csv_columns: Vec<crate::export::CsvColumn>,
+    /// The CSV export's headers the user wrote for columns ("name" → "primary name").
+    pub csv_headers: crate::export::Headers,
+    /// The folder a session's CSV was last exported to: the next export starts there.
+    pub csv_folder: Option<String>,
     /// AI agents driving the app over MCP.
     pub mcp: McpSettings,
     /// Replaces ImgBB's API host (tests); empty = ImgBB.
@@ -222,6 +228,9 @@ impl Default for Settings {
             local_device: String::new(),
             ebay: EbaySettings::default(),
             titles: Vec::new(),
+            csv_columns: Vec::new(),
+            csv_headers: Default::default(),
+            csv_folder: None,
             mcp: McpSettings::default(),
             image_host_base: String::new(),
             fallback_token: None,
@@ -344,6 +353,14 @@ impl SettingsStore {
         if disconnect {
             self.store_secret(&mut guard, Secret::EbayRefresh, "")?;
         }
+        save(&self.path, &guard)
+    }
+
+    /// Changes what `f` changes and keeps the rest: a choice remembered for next time (the CSV export's), not the
+    /// user's Settings page.
+    pub fn remember(&self, f: impl FnOnce(&mut Settings)) -> Result<()> {
+        let mut guard = self.settings.lock().unwrap();
+        f(&mut guard);
         save(&self.path, &guard)
     }
 

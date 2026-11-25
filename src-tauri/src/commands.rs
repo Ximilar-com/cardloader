@@ -504,11 +504,45 @@ fn has_images_to_analyse(path: &str) -> Result<bool> {
         .any(|r| !r.has_card() && r.front.is_some()))
 }
 
+/// Writes the session's cards as CSV with the `columns` chosen in their order and the `headers` written for them
+/// (none = the ones last chosen), and remembers them and the folder for the next export.
 #[tauri::command]
-pub fn export_csv(state: S, id: String, path: String) -> Result<usize> {
-    let items = state.db.items(&id)?;
-    export::write_csv(&items, std::path::Path::new(&path))?;
-    Ok(items.len())
+pub fn export_csv(
+    state: S,
+    id: String,
+    path: String,
+    columns: Option<Vec<export::CsvColumn>>,
+    headers: Option<export::Headers>,
+) -> Result<usize> {
+    state.export_csv(&id, Path::new(&path), columns, headers, true)
+}
+
+impl AppState {
+    /// The session's cards as a CSV at `path`. `remember`: the columns, their headers and the folder become the
+    /// next export's.
+    pub fn export_csv(
+        &self,
+        id: &str,
+        path: &Path,
+        columns: Option<Vec<export::CsvColumn>>,
+        headers: Option<export::Headers>,
+        remember: bool,
+    ) -> Result<usize> {
+        let last = self.settings.get();
+        let columns = columns.unwrap_or(last.csv_columns);
+        let headers = export::renamed(headers.unwrap_or(last.csv_headers));
+        let items = self.db.items(id)?;
+        export::write_csv(&items, path, &columns, &headers)?;
+        if remember {
+            let folder = path.parent().map(|p| p.to_string_lossy().to_string());
+            self.settings.remember(|s| {
+                s.csv_columns = export::columns(&columns);
+                s.csv_headers = headers;
+                s.csv_folder = folder.filter(|f| !f.is_empty());
+            })?;
+        }
+        Ok(items.len())
+    }
 }
 
 /// Runs (or resumes) the session; with `source: false` only its queued cards are analysed — no new scan,

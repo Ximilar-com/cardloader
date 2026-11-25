@@ -384,6 +384,12 @@ export interface Settings {
   ebay: EbaySettings;
   /** The user's listing title templates, the first that fits a card first; none = the built-in titles. */
   titles: TitleTemplate[];
+  /** The CSV export's columns as last chosen, in order; empty = all of them. */
+  csvColumns: CsvColumn[];
+  /** Headers the user wrote for CSV columns ("name" → "primary name"). */
+  csvHeaders: CsvHeaders;
+  /** The folder a session's CSV was last exported to. */
+  csvFolder: string | null;
   mcp: McpSettings;
 }
 
@@ -458,6 +464,43 @@ export interface EbaySetup {
   returnPolicies: Named[];
   locations: Named[];
 }
+
+/** A column of the CSV export, as `export::CsvColumn` names it; the file's header is the same but `#` for `seq`. */
+export type CsvColumn =
+  | "seq"
+  | "status"
+  | "type"
+  | "name"
+  | "full_name"
+  | "set_name"
+  | "set_code"
+  | "card_number"
+  | "series"
+  | "year"
+  | "category"
+  | "confidence"
+  | "distance"
+  | "picked"
+  | "price"
+  | "currency"
+  | "grade"
+  | "condition"
+  | "slab_company"
+  | "slab_grade"
+  | "slab_certificate"
+  | "front"
+  | "back"
+  | "error"
+  | "notes"
+  | "location"
+  | "brand"
+  | "team"
+  | "serial"
+  | "features"
+  | "listing_title";
+
+/** Headers to write instead of the columns' own, by column (`export::Headers`). */
+export type CsvHeaders = Partial<Record<CsvColumn, string>>;
 
 /** What a listing takes in its title. */
 export const MAX_TITLE = 80;
@@ -838,7 +881,9 @@ export const api = {
   /** Only these listings of the card's last eBay search are the card: its price range counts them alone. */
   keepEbayListings: (itemId: number, listingIds: string[]) =>
     invoke<ItemDetail>("keep_ebay_listings", { itemId, listingIds }),
-  exportCsv: (id: string, path: string) => invoke<number>("export_csv", { id, path }),
+  /** `columns` in their order, headed as `headers` renames them; all is remembered for the next export. */
+  exportCsv: (id: string, path: string, columns: CsvColumn[], headers: CsvHeaders) =>
+    invoke<number>("export_csv", { id, path, columns, headers }),
   previewCsv: (path: string) => invoke<CsvPreview>("preview_csv", { path }),
   /** A new session from a CSV; with `reanalyze`, identified rows with an image are analysed again. */
   importCsv: (session: NewSession, reanalyze: boolean) => invoke<Session>("import_csv", { session, reanalyze }),
