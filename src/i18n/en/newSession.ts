@@ -214,7 +214,7 @@ export default {
     hintSkips:
       "Adds the cards to a session started earlier, e.g. on another computer; images it has already (matched by file name) are skipped.",
   },
-  needsAgents: "Turn on AI agents, with “Run & review”, in Settings so your agent can identify the cards.",
+  needsAgents: "Turn on AI agents, with “Run and review”, in Settings so your agent can identify the cards.",
   agentNote:
     "Your AI agent reads each card from its pictures: ask it, e.g. in Claude, to identify the cards of this session in Cardloader.",
   agentHint: "Claude or another agent connected over MCP",
@@ -260,8 +260,8 @@ export default {
       "Once a card is identified, Cardloader searches its active fixed-price eBay listings with your eBay keyset and hands them to your AI agent with their pictures and the card’s. The agent keeps the listings that are this card and their median becomes its price: ask it, e.g. in Claude, to price the cards of this session in Cardloader.",
   },
   needsEbay: "Add your eBay keyset in Settings so Cardloader can search eBay’s listings for prices.",
-  needsAgentsPrices: "Turn on AI agents, with “Run & review”, in Settings so your agent can price the cards.",
-  needsAgentsCrop: "Turn on AI agents, with “Run & review”, in Settings so your agent can crop the cards.",
+  needsAgentsPrices: "Turn on AI agents, with “Run and review”, in Settings so your agent can price the cards.",
+  needsAgentsCrop: "Turn on AI agents, with “Run and review”, in Settings so your agent can crop the cards.",
   gradeWhat: "What to grade",
   sameModel: "The same model identifies the cards.",
   cropNotes: {

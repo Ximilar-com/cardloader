@@ -80,7 +80,7 @@ export default {
     runSetup: "Run setup again",
     agentTitle: "AI agent",
     agentText:
-      "Claude or another agent connected in AI agents reads each card from its pictures. Grading and crops still use Ximilar.",
+      "Claude or another agent connected in AI agents reads each card from its pictures, and can price and crop the cards too. Grading uses Ximilar or the local model.",
   },
   scanner: {
     title: "Scanner",
@@ -266,7 +266,7 @@ export default {
     },
     hosting: {
       title: "Picture hosting",
-      text: "Whatnot’s CSV import downloads each card’s pictures from a public link, so the Whatnot export uploads them to <link>ImgBB</link> first (free; get an API key there). Uploaded pictures are public to anyone with the link.",
+      text: "Whatnot’s and Shopify’s CSV imports download each card’s pictures from a public link, so those exports upload them to <link>ImgBB</link> first (free; get an API key there). Uploaded pictures are public to anyone with the link.",
       imgbbKey: "ImgBB API key",
       keyPlaceholder: "Paste the API key",
     },

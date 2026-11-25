@@ -61,10 +61,12 @@ const messages: Messages<typeof en> = {
     tokenPaste: "Token einfügen",
     tokenHelp:
       "Du findest ihn in der <link>Ximilar App</link> unter deinem Profil. Du kannst ihn später in den Einstellungen hinzufügen.",
-    pricesNeedApi: "Preise brauchen die Ximilar API.",
+    pricesNeedApi:
+      "Ximilars Preise gibt es nur mit seiner Erkennung: Mit dem lokalen Modell nimm die Preise aus eBay-Angeboten (deine eBay-Schlüssel in den Einstellungen).",
     roughGrades:
       "Bewertungen und Zustände des lokalen Modells sind grobe Schätzungen eines kleinen Modells, nicht die eines Graders.",
-    cropsNeedApi: "Zugeschnittene Karten brauchen die Ximilar-API: Füge dein Token in den Einstellungen hinzu.",
+    cropsNeedApi:
+      "Zugeschnittene Bilder macht die Ximilar-API (füge dein Token in den Einstellungen hinzu), außer du wählst das lokale Modell im Tab Zuschneiden von Neue Sitzung.",
     gradeTitle: "Was soll die Karten graden?",
   },
   task: {

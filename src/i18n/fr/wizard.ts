@@ -61,10 +61,12 @@ const messages: Messages<typeof en> = {
     tokenPaste: "Collez votre jeton",
     tokenHelp:
       "Vous le trouverez dans l’<link>Ximilar App</link>, sous votre profil. Vous pourrez l’ajouter plus tard dans Réglages.",
-    pricesNeedApi: "Les prix nécessitent l’API Ximilar.",
+    pricesNeedApi:
+      "Les prix de Ximilar ne viennent qu’avec son identification : avec le modèle local, prenez les prix des annonces eBay (vos clés eBay dans les Réglages).",
     roughGrades:
       "Les notes et états du modèle local sont des estimations grossières d’un petit modèle, pas celles d’un gradeur.",
-    cropsNeedApi: "Les cartes détourées nécessitent l’API Ximilar : ajoutez votre jeton dans les Réglages.",
+    cropsNeedApi:
+      "Les images recadrées sont faites par l’API Ximilar (ajoutez votre jeton dans les Réglages), sauf si vous choisissez le modèle local dans l’onglet Recadrer de Nouvelle session.",
     gradeTitle: "Qu’est-ce qui doit grader les cartes ?",
   },
   task: {

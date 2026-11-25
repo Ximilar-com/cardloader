@@ -81,7 +81,7 @@ const messages: Messages<typeof en> = {
     saveCrops: "切り抜いた画像も保存",
     agentTitle: "AIエージェント",
     agentText:
-      "「AIエージェント」で接続したClaudeなどが各カードを画像から読み取ります。グレーディングと切り抜きはXimilarを使います。",
+      "「AIエージェント」で接続したClaudeなどが各カードを画像から読み取り、価格付けや切り抜きもできます。グレーディングはXimilarまたはローカルモデルを使います。",
   },
   scanner: {
     title: "スキャナー",
@@ -270,7 +270,7 @@ const messages: Messages<typeof en> = {
     },
     hosting: {
       title: "画像のホスティング",
-      text: "WhatnotのCSVインポートは各カードの画像を公開リンクからダウンロードするため、Whatnotエクスポートでは先に画像を<link>ImgBB</link>にアップロードします（無料。ImgBBでAPIキーを取得してください）。アップロードした画像は、リンクを知っている人なら誰でも見られます。",
+      text: "WhatnotとShopifyのCSVインポートは各カードの画像を公開リンクからダウンロードするため、これらのエクスポートでは先に画像を<link>ImgBB</link>にアップロードします（無料。ImgBBでAPIキーを取得してください）。アップロードした画像は、リンクを知っている人なら誰でも見られます。",
       imgbbKey: "ImgBB APIキー",
       keyPlaceholder: "APIキーを貼り付け",
     },

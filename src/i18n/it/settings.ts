@@ -81,7 +81,7 @@ const messages: Messages<typeof en> = {
     saveCrops: "Salva anche le carte ritagliate",
     agentTitle: "Agente IA",
     agentText:
-      "Claude o un altro agente collegato in Agenti IA legge ogni carta dalle sue immagini. Gradazione e ritagli usano sempre Ximilar.",
+      "Claude o un altro agente collegato in Agenti IA legge ogni carta dalle sue immagini, e può anche darle un prezzo e ritagliarla. La gradazione usa Ximilar o il modello locale.",
   },
   scanner: {
     title: "Scanner",
@@ -269,7 +269,7 @@ const messages: Messages<typeof en> = {
     },
     hosting: {
       title: "Hosting delle foto",
-      text: "L’importazione CSV di Whatnot scarica le foto di ogni carta da un link pubblico, quindi l’esportazione Whatnot le carica prima su <link>ImgBB</link> (gratis; lì ottieni una chiave API). Le foto caricate sono pubbliche per chiunque abbia il link.",
+      text: "Le importazioni CSV di Whatnot e Shopify scaricano le immagini di ogni carta da un link pubblico, quindi queste esportazioni le caricano prima su <link>ImgBB</link> (gratis; prendi lì una chiave API). Le immagini caricate sono pubbliche per chiunque abbia il link.",
       imgbbKey: "Chiave API di ImgBB",
       keyPlaceholder: "Incolla la chiave API",
     },

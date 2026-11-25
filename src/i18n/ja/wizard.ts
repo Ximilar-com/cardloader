@@ -60,10 +60,12 @@ const messages: Messages<typeof en> = {
     tokenSaved: "保存済みです。そのままにするには空欄のままにしてください",
     tokenPaste: "トークンを貼り付け",
     tokenHelp: "<link>Ximilar App</link>のプロフィールで確認できます。あとから設定で追加することもできます。",
-    pricesNeedApi: "価格にはXimilar APIが必要です。",
+    pricesNeedApi:
+      "Ximilarの価格はXimilarの識別にだけ付きます。ローカルモデルでは、eBayの出品から価格を取得してください（「設定」でeBayのキーを登録）。",
     roughGrades:
       "ローカルモデルのグレードとコンディションは小さなモデルによる大まかな推定で、鑑定士の評価ではありません。",
-    cropsNeedApi: "切り抜いた画像にはXimilar APIが必要です。「設定」でトークンを追加してください。",
+    cropsNeedApi:
+      "切り抜き画像はXimilar APIが作成します（「設定」でトークンを追加）。「新しいセッション」の「切り抜き」タブでローカルモデルを選ぶこともできます。",
     gradeTitle: "何でカードをグレーディングしますか？",
   },
   task: {

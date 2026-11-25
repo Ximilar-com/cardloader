@@ -223,7 +223,7 @@ const messages: Messages<typeof en> = {
     },
   },
   needsAgents:
-    "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa identificare le carte.",
+    "Attiva gli agenti IA, con “Avviare e rivedere”, nelle Impostazioni perché il tuo agente possa identificare le carte.",
   agentNote:
     "Il tuo agente IA legge ogni carta dalle sue immagini: chiedigli, ad es. in Claude, di identificare le carte di questa sessione in Cardloader.",
   agentHint: "Claude o un altro agente collegato tramite MCP",
@@ -266,9 +266,9 @@ const messages: Messages<typeof en> = {
   needsEbay:
     "Aggiungi il tuo keyset eBay nelle Impostazioni perché Cardloader possa cercare i prezzi nelle inserzioni eBay.",
   needsAgentsPrices:
-    "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa dare un prezzo alle carte.",
+    "Attiva gli agenti IA, con “Avviare e rivedere”, nelle Impostazioni perché il tuo agente possa dare un prezzo alle carte.",
   needsAgentsCrop:
-    "Attiva gli agenti IA, con “Esegui e rivedi”, nelle Impostazioni perché il tuo agente possa ritagliare le carte.",
+    "Attiva gli agenti IA, con “Avviare e rivedere”, nelle Impostazioni perché il tuo agente possa ritagliare le carte.",
   gradeWhat: "Tipo di gradazione",
   sameModel: "Lo stesso modello identifica le carte.",
   cropNotes: {

@@ -27,8 +27,12 @@ function mount() {
 
 // In a plain browser during development, answer the Rust commands with demo data (see lib/demo.ts).
 if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
-  import("./lib/demo").then((demo) => {
-    demo.installDemo();
+  const snapshot = import.meta.env.VITE_DEMO_SNAPSHOT as string | undefined;
+  Promise.all([
+    import("./lib/demo"),
+    snapshot ? fetch(`/@fs${encodeURI(snapshot)}`).then((r) => r.json()) : undefined,
+  ]).then(([demo, data]) => {
+    demo.installDemo(data);
     render();
   });
 } else {

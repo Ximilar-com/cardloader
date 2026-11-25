@@ -81,7 +81,7 @@ const messages: Messages<typeof en> = {
     saveCrops: "Enregistrer aussi les cartes détourées",
     agentTitle: "Agent IA",
     agentText:
-      "Claude ou un autre agent connecté dans Agents IA lit chaque carte d’après ses images. La gradation et le détourage passent toujours par Ximilar.",
+      "Claude ou un autre agent connecté dans Agents IA lit chaque carte d’après ses images, et peut aussi en fixer le prix et la recadrer. La gradation passe par Ximilar ou le modèle local.",
   },
   scanner: {
     title: "Scanner",
@@ -271,7 +271,7 @@ const messages: Messages<typeof en> = {
     },
     hosting: {
       title: "Hébergement d’images",
-      text: "L’import CSV de Whatnot télécharge les images de chaque carte depuis un lien public : l’export Whatnot les envoie donc d’abord sur <link>ImgBB</link> (gratuit ; obtenez-y une clé API). Les images envoyées sont publiques pour toute personne disposant du lien.",
+      text: "Les imports CSV de Whatnot et de Shopify téléchargent les images de chaque carte depuis un lien public : ces exports les envoient donc d’abord sur <link>ImgBB</link> (gratuit ; obtenez-y une clé API). Les images envoyées sont publiques pour quiconque a le lien.",
       imgbbKey: "Clé API ImgBB",
       keyPlaceholder: "Collez la clé API",
     },

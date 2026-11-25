@@ -260,6 +260,12 @@ struct CreateSession {
     /// Also send each card's back to identification (sports cards; needs front_back). Default: on for a local-model
     /// session of sport cards, which then pairs front_back.
     read_backs: Option<bool>,
+    /// Sports cards by the Ximilar API: let it use its generative model (Magic AI) for a card it can't match, from
+    /// the front and the back when read_backs is on; billed as one more call when used.
+    magic_ai: Option<bool>,
+    /// For the local model's work (engine, grade_engine, crop_engine or prices local): which downloaded model, by
+    /// its id (get_settings lists them). Default: the user's.
+    local_model: Option<String>,
     /// The images are known to be fronts (and backs, when paired): faster and more accurate.
     known_side: Option<bool>,
     /// The images are known to be upright: faster and more accurate.
@@ -943,7 +949,19 @@ impl Handler {
             }
             "get_settings" => {
                 let s = self.state.settings.get();
-                out(json!({"defaults": defaults(&s), "agentsMay": allowed(&s.mcp)}))
+                // What create_session's local_model takes: the models downloaded here.
+                let models: Vec<Value> = self
+                    .state
+                    .runner
+                    .local
+                    .list()
+                    .into_iter()
+                    .filter(|m| self.state.runner.local.is_ready(&m.id))
+                    .map(|m| json!({"id": m.id, "name": m.name}))
+                    .collect();
+                out(
+                    json!({"defaults": defaults(&s), "agentsMay": allowed(&s.mcp), "localModels": models}),
+                )
             }
             "create_session" => self.create_session(args(a)?).await,
             "run_session" => {
@@ -2114,6 +2132,8 @@ impl Handler {
                 settings.default_pairing
             }),
             both_sides: read_backs,
+            // As the dialog keeps it: sport_id's flag, never for a session of trading cards.
+            magic_ai: a.magic_ai.unwrap_or(false) && id_mode != IdMode::Tcg,
             skip_detection: a.cropped.unwrap_or(false),
             known_category: a.card_type.is_some_and(|t| t != IdMode::Auto),
             known_side: a.known_side.unwrap_or(false),
@@ -2124,12 +2144,31 @@ impl Handler {
             },
             subcategory: match a.game.as_deref() {
                 Some(text) => game(text)?,
-                None => settings.default_subcategory.clone(),
+                // The user's default game only where it is one of this session's kind: a session of sports cards
+                // was told it is Pokémon (the request leaves such a game out, but the agent read it).
+                None => match id_mode {
+                    IdMode::Tcg if !TCG_GAMES.contains(&settings.default_subcategory.as_str()) => {
+                        String::new()
+                    }
+                    IdMode::Sport if !SPORTS.contains(&settings.default_subcategory.as_str()) => {
+                        String::new()
+                    }
+                    IdMode::Comics | IdMode::Slab => String::new(),
+                    _ => settings.default_subcategory.clone(),
+                },
             },
             scan: settings.scan.clone(),
             sync_remote: a.store_in_cards_cloud.unwrap_or(settings.sync_by_default),
             engine,
-            local_model: settings.local_model.clone(),
+            local_model: match a.local_model.as_deref().map(str::trim) {
+                Some(id) if !id.is_empty() => {
+                    if crate::local::catalog::find(id).is_none() {
+                        return Err(Error::msg(format!("no local model {id}")));
+                    }
+                    id.to_string()
+                }
+                _ => settings.local_model.clone(),
+            },
             ..SessionOptions::default()
         };
         let name = match a.name.as_deref().map(str::trim) {
@@ -2704,6 +2743,7 @@ fn defaults(s: &Settings) -> Value {
         "ebaySearchSite": s.ebay.search_marketplace,
         "concurrency": s.concurrency,
         "engine": s.engine,
+        "localModel": s.local_model,
         "folder": s.default_folder,
     })
 }

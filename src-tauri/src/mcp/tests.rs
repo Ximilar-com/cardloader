@@ -423,6 +423,51 @@ async fn agent_runs_and_reviews_a_folder() {
         )
         .await;
     assert_eq!(cropping["task"], "crop");
+
+    // The user's default game goes only to a session of its kind.
+    settings
+        .update(crate::settings::Settings {
+            default_subcategory: "Pokemon".into(),
+            ..settings.get()
+        })
+        .unwrap();
+    let sports = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "card_type": "sport", "magic_ai": true, "start": false}),
+        )
+        .await;
+    assert!(sports["game"].is_null(), "{sports}");
+    assert_eq!(sports["options"]["magicAi"], true);
+    let pokemon = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "card_type": "tcg", "magic_ai": true, "start": false}),
+        )
+        .await;
+    assert_eq!(pokemon["game"], "Pokemon");
+    assert_eq!(
+        pokemon["options"]["magicAi"], false,
+        "Magic AI is for sports cards"
+    );
+    let (refusal, failed) = agent
+        .tool(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "local", "local_model": "no-such-model", "start": false}),
+        )
+        .await;
+    assert!(
+        failed && refusal.to_string().contains("no-such-model"),
+        "{refusal}"
+    );
+    let id = crate::local::catalog::MODELS[1].id;
+    let local = agent
+        .ok(
+            "create_session",
+            json!({"path": cards.to_string_lossy(), "engine": "local", "local_model": id, "start": false}),
+        )
+        .await;
+    assert_eq!(local["options"]["localModel"], id);
     assert_eq!(
         cropping["cropsFolder"],
         crops.canonicalize().unwrap().to_string_lossy().as_ref()

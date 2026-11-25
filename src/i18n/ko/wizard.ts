@@ -60,8 +60,10 @@ const messages: Messages<typeof en> = {
     tokenSaved: "이미 저장됨. 유지하려면 비워 두세요",
     tokenPaste: "토큰을 붙여 넣으세요",
     tokenHelp: "<link>Ximilar App</link>의 프로필에서 찾을 수 있습니다. 나중에 설정에서 추가해도 됩니다.",
-    pricesNeedApi: "가격을 보려면 Ximilar API가 필요합니다.",
-    cropsNeedApi: "잘라낸 이미지는 Ximilar API가 필요합니다. 설정에서 토큰을 추가하세요.",
+    pricesNeedApi:
+      "Ximilar 가격은 Ximilar 식별에만 함께 제공됩니다. 로컬 모델에서는 eBay 매물에서 가격을 가져오세요(설정에서 eBay 키 등록).",
+    cropsNeedApi:
+      "잘라낸 이미지는 Ximilar API가 만듭니다(설정에서 토큰 추가). 새 세션의 자르기 탭에서 로컬 모델을 고를 수도 있습니다.",
     roughGrades: "로컬 모델의 등급과 상태는 작은 모델의 대략적인 추정치이며, 감정사의 평가가 아닙니다.",
     gradeTitle: "무엇으로 카드를 그레이딩할까요?",
   },

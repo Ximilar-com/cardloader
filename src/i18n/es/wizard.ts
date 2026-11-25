@@ -60,10 +60,12 @@ const messages: Messages<typeof en> = {
     tokenSaved: "Ya está guardado; déjalo vacío para conservarlo",
     tokenPaste: "Pega tu token",
     tokenHelp: "Lo encontrarás en la <link>Ximilar App</link>, en tu perfil. Puedes añadirlo después en Ajustes.",
-    pricesNeedApi: "Los precios necesitan la API de Ximilar.",
+    pricesNeedApi:
+      "Los precios de Ximilar solo llegan con su identificación: con el modelo local, toma los precios de los anuncios de eBay (tus claves de eBay en Ajustes).",
     roughGrades:
       "Las notas y estados del modelo local son estimaciones aproximadas de un modelo pequeño, no las de un evaluador.",
-    cropsNeedApi: "Las cartas recortadas necesitan la API de Ximilar: añade tu token en Ajustes.",
+    cropsNeedApi:
+      "Las imágenes recortadas las hace la API de Ximilar (añade tu token en Ajustes), salvo que elijas el modelo local en la pestaña Recortar de Nueva sesión.",
     gradeTitle: "¿Qué debe gradar las cartas?",
   },
   task: {

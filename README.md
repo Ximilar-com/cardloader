@@ -151,8 +151,9 @@ To build and install from source instead, see [Development](#development) and ru
 2. Open **Settings**, paste your Ximilar API token and click **Test connection**. You can find the token in the
    [Ximilar App](https://app.ximilar.com). Collectibles recognition needs the Business plan or a trial;
    Cards Cloud sync needs the Cards Cloud service on your account. The token is stored in the system keychain.
-3. Click **New session** (on Home or Sessions). Pick a folder (or a scanner), choose how to identify the cards, whether to
-   grade them and whether to sync to Cards Cloud, then click **Create & run**.
+3. Click **New session** (on Home or Sessions). Under **What to do**, tick what the session does (**Identify**,
+   **Prices**, **Grade**, **Crop**), pick the source (a folder, a watch folder, a scanner or a CSV file), choose in each
+   task's tab what does it (the Ximilar API, a local model or an AI agent), then click **Create & run**.
 4. Watch the cards come in. Click any row to see its details. Use **Pause** and **Stop** whenever you like;
    **Run again** picks up where the session left off, including new files added to the folder.
 
@@ -163,9 +164,10 @@ grading and one per crop by Ximilar. A grade-, condition- or crop-only session m
 
 ## Local model
 
-**Settings → Identification → Local model** switches new sessions to on-device identification. Pick a model,
-accept its license and download it (with progress; downloads can be cancelled and resumed). Each session keeps
-the engine and model it was created with, and **New session** can pick another downloaded model per session.
+**Settings → Local models**: pick a model, accept its license and download it (with progress; downloads can be
+cancelled and resumed). **Settings → New sessions → Identification → Local model** makes it the default engine of new
+sessions. Each session keeps the engine and model it was created with, and **New session** can pick another
+downloaded model per session.
 
 | Model | Download | Memory | Time per card |
 | --- | --- | --- | --- |

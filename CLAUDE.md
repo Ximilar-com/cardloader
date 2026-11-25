@@ -30,6 +30,7 @@ just test    # vitest + cargo test --workspace — must pass
 just fmt     # cargo fmt + prettier --write
 just update-version 0.2.0   # release: bump, lint + test, commit, tag, push (--dry-run to preview)
 npm run dev  # UI only, in a browser, with demo data (src/lib/demo.ts) — use it to check UI changes
+VITE_DEMO_SNAPSHOT=<file> npm run dev  # the same with real sessions instead (db::tests::snapshot_for_the_browser_ui)
 ```
 
 Single Rust test: `cargo test -p cardloader <name>`. A `Makefile` mirrors the Justfile targets. CI

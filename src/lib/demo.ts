@@ -1,5 +1,6 @@
 // Browser preview: `npm run dev` outside Tauri answers the Rust commands with demo data, so the UI can be
-// developed (and reviewed) in a plain browser. Never part of a production build.
+// developed (and reviewed) in a plain browser. Never part of a production build. With `VITE_DEMO_SNAPSHOT` the
+// sessions are real ones the app made (`db::tests::snapshot_for_the_browser_ui`), for screenshots of real results.
 
 import { emit } from "@tauri-apps/api/event";
 import { mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
@@ -1356,9 +1357,29 @@ function activity(days: number) {
   return out;
 }
 
-export function installDemo() {
-  seed();
+/** Sessions and their cards as the app's commands return them (`snapshot_for_the_browser_ui`), with the user's home
+ * folder written as /Users/demo in every path; `home` is the real one. */
+export interface Snapshot {
+  home: string;
+  sessions: Session[];
+  items: Record<string, ItemDetail[]>;
+}
+
+export function installDemo(snapshot?: Snapshot) {
+  if (snapshot) {
+    sessions.push(...snapshot.sessions);
+    for (const s of snapshot.sessions) items.set(s.id, snapshot.items[s.id] ?? []);
+  } else {
+    seed();
+  }
   mockConvertFileSrc("macos");
+  if (snapshot) {
+    // The snapshot's pictures are files on this computer, which Vite serves (`server.fs.allow` in vite.config.ts).
+    (
+      window as unknown as { __TAURI_INTERNALS__: { convertFileSrc: (p: string) => string } }
+    ).__TAURI_INTERNALS__.convertFileSrc = (path) =>
+      `/@fs${encodeURI(path.replace(/^\/Users\/demo(?=\/)/, snapshot.home))}`;
+  }
   mockIPC(
     (cmd, args) => {
       const a = (args ?? {}) as Record<string, never>;
@@ -1807,8 +1828,12 @@ export function installDemo() {
           void emit("session-updated", session(a.sessionId));
           return list.length - (items.get(a.sessionId) ?? []).length;
         }
-        case "count_images":
-          return 42;
+        case "count_images": {
+          // A snapshot's folder has the images of the sessions made from it.
+          const made = sessions.find((s) => s.sourceRef === String(a.path ?? ""));
+          if (!made) return 42;
+          return (items.get(made.id) ?? []).reduce((n, i) => n + 1 + (i.backPath ? 1 : 0), 0);
+        }
         case "app_info":
           return {
             version: "0.3.0",

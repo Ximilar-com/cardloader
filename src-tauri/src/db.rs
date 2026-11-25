@@ -2521,4 +2521,56 @@ mod tests {
             assert_eq!(details(untouched), ["", "", ""], "card {}", untouched.seq);
         }
     }
+
+    /// Writes sessions and their cards as the UI's commands return them, for the browser UI to show instead of its
+    /// demo data (`VITE_DEMO_SNAPSHOT=<file> npm run dev`): real results, made by the app, in screenshots taken in a
+    /// browser. Reads `CARDLOADER_SNAPSHOT_DB`, a copy of `cardloader.db` (with its `-wal`): opening the one a
+    /// running app uses would pause its sessions. `CARDLOADER_SNAPSHOT_SESSIONS` (ids or names, comma-separated)
+    /// limits it to those sessions. Writes `CARDLOADER_SNAPSHOT_TO`, with the home folder in paths as `/Users/demo`.
+    #[test]
+    #[ignore]
+    fn snapshot_for_the_browser_ui() {
+        let var = |name: &str| std::env::var(name).unwrap_or_else(|_| panic!("{name}"));
+        let db = Db::open(Path::new(&var("CARDLOADER_SNAPSHOT_DB"))).unwrap();
+        let only: Vec<String> = std::env::var("CARDLOADER_SNAPSHOT_SESSIONS")
+            .map(|s| {
+                s.split(',')
+                    .map(|x| x.trim().to_string())
+                    .filter(|x| !x.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let sessions: Vec<Session> = db
+            .sessions()
+            .unwrap()
+            .into_iter()
+            .filter(|s| only.is_empty() || only.contains(&s.id) || only.contains(&s.name))
+            .collect();
+        let mut items = serde_json::Map::new();
+        for s in &sessions {
+            let cards: Vec<ItemDetail> = db
+                .items(&s.id)
+                .unwrap()
+                .iter()
+                .map(|i| db.item(i.id).unwrap())
+                .collect();
+            items.insert(s.id.clone(), serde_json::to_value(cards).unwrap());
+        }
+        // Paths show in the UI, so the user's home folder is written as /Users/demo; `home` says which folder that is
+        // for loading the pictures, and stays on this computer.
+        let home = var("HOME");
+        let out = json!({ "sessions": sessions, "items": items })
+            .to_string()
+            .replace(&home, "/Users/demo");
+        let out = format!("{{\"home\":{},{}", json!(home), &out[1..]);
+        std::fs::write(var("CARDLOADER_SNAPSHOT_TO"), out).unwrap();
+        println!(
+            "{} sessions, {} cards",
+            sessions.len(),
+            items
+                .values()
+                .map(|v| v.as_array().unwrap().len())
+                .sum::<usize>()
+        );
+    }
 }

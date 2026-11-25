@@ -80,7 +80,8 @@ const messages: Messages<typeof en> = {
     task: "작업",
     saveCrops: "잘라낸 이미지도 저장",
     agentTitle: "AI 에이전트",
-    agentText: "AI 에이전트에서 연결한 Claude 등이 이미지로 카드를 읽습니다. 그레이딩과 자르기는 Ximilar를 사용합니다.",
+    agentText:
+      "AI 에이전트에서 연결한 Claude 등이 이미지로 카드를 읽고, 가격 책정과 자르기도 할 수 있습니다. 그레이딩은 Ximilar 또는 로컬 모델을 사용합니다.",
   },
   scanner: {
     title: "스캐너",
@@ -267,7 +268,7 @@ const messages: Messages<typeof en> = {
     },
     hosting: {
       title: "사진 호스팅",
-      text: "Whatnot의 CSV 가져오기는 공개 링크에서 각 카드의 사진을 내려받으므로, Whatnot 내보내기는 먼저 사진을 <link>ImgBB</link>에 업로드합니다(무료이며 API 키는 그곳에서 발급). 업로드된 사진은 링크가 있는 누구나 볼 수 있습니다.",
+      text: "Whatnot와 Shopify의 CSV 가져오기는 각 카드의 이미지를 공개 링크에서 내려받으므로, 이 내보내기는 먼저 이미지를 <link>ImgBB</link>에 업로드합니다(무료, 그곳에서 API 키를 받으세요). 업로드한 이미지는 링크가 있는 누구나 볼 수 있습니다.",
       imgbbKey: "ImgBB API 키",
       keyPlaceholder: "API 키를 붙여 넣으세요",
     },

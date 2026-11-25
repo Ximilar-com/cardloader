@@ -81,7 +81,7 @@ const messages: Messages<typeof en> = {
     saveCrops: "Zugeschnittene Karten auch speichern",
     agentTitle: "KI-Agent",
     agentText:
-      "Claude oder ein anderer unter KI-Agenten verbundener Agent liest jede Karte anhand ihrer Bilder. Grading und Zuschnitte laufen weiter über Ximilar.",
+      "Claude oder ein anderer unter KI-Agenten verbundener Agent liest jede Karte anhand ihrer Bilder und kann sie auch bepreisen und zuschneiden. Das Grading läuft über Ximilar oder das lokale Modell.",
   },
   scanner: {
     title: "Scanner",
@@ -272,7 +272,7 @@ const messages: Messages<typeof en> = {
     },
     hosting: {
       title: "Bild-Hosting",
-      text: "Whatnots CSV-Import lädt die Bilder jeder Karte über einen öffentlichen Link herunter, deshalb lädt der Whatnot-Export sie zuerst zu <link>ImgBB</link> hoch (kostenlos; hol dir dort einen API-Schlüssel). Hochgeladene Bilder sind für jeden mit dem Link öffentlich.",
+      text: "Die CSV-Importe von Whatnot und Shopify laden die Bilder jeder Karte über einen öffentlichen Link, daher laden diese Exporte sie zuerst zu <link>ImgBB</link> hoch (kostenlos; hol dir dort einen API-Schlüssel). Hochgeladene Bilder sind für alle mit dem Link öffentlich.",
       imgbbKey: "ImgBB-API-Schlüssel",
       keyPlaceholder: "API-Schlüssel einfügen",
     },

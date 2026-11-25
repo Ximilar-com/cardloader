@@ -225,7 +225,7 @@ const messages: Messages<typeof en> = {
     },
   },
   needsAgents:
-    "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten erkennen kann.",
+    "Schalte in den Einstellungen KI-Agenten mit „Starten und prüfen“ ein, damit dein Agent die Karten erkennen kann.",
   agentNote:
     "Dein KI-Agent liest jede Karte anhand ihrer Bilder: Bitte ihn, z. B. in Claude, die Karten dieser Sitzung in Cardloader zu erkennen.",
   agentHint: "Claude oder ein anderer per MCP verbundener Agent",
@@ -268,9 +268,9 @@ const messages: Messages<typeof en> = {
   needsEbay:
     "Füge in den Einstellungen dein eBay-Keyset hinzu, damit Cardloader eBay-Angebote nach Preisen durchsuchen kann.",
   needsAgentsPrices:
-    "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten bepreisen kann.",
+    "Schalte in den Einstellungen KI-Agenten mit „Starten und prüfen“ ein, damit dein Agent die Karten bepreisen kann.",
   needsAgentsCrop:
-    "Schalte in den Einstellungen KI-Agenten mit „Ausführen & prüfen“ ein, damit dein Agent die Karten zuschneiden kann.",
+    "Schalte in den Einstellungen KI-Agenten mit „Starten und prüfen“ ein, damit dein Agent die Karten zuschneiden kann.",
   gradeWhat: "Was graden",
   sameModel: "Dasselbe Modell erkennt die Karten.",
   cropNotes: {

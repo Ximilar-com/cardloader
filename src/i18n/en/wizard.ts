@@ -74,8 +74,10 @@ export default {
     tokenSaved: "Saved already, leave empty to keep it",
     tokenPaste: "Paste your token",
     tokenHelp: "Find it in the <link>Ximilar App</link> under your profile. You can add it later in Settings.",
-    pricesNeedApi: "Prices need the Ximilar API.",
-    cropsNeedApi: "Cropped pictures need the Ximilar API: add your token in Settings.",
+    pricesNeedApi:
+      "Ximilar’s prices come only with its identification: with the local model, take prices from eBay’s listings (your eBay keys in Settings).",
+    cropsNeedApi:
+      "Cropped pictures are cut by the Ximilar API (add your token in Settings), unless you choose the local model in New session’s Crop tab.",
     roughGrades: "The local model’s grades and conditions are rough estimates of a small model, not a grader’s.",
   },
 };
