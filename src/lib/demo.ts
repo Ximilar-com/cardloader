@@ -63,6 +63,25 @@ function cardSvg(name: string, color: string): string {
 
 const now = () => new Date().toISOString();
 
+/** TCGplayer's name of a graded condition, as `CardCondition::read` + `tcgplayer::condition_name` give it. */
+function tcgplayerCondition(text: string): string | null {
+  const t = text
+    .trim()
+    .toLowerCase()
+    .split(" (")[0]
+    .replace(/^raw - /, "")
+    .replace(/ or better$/, "");
+  if (["gem mint", "mint", "near mint", "nm", "nm-mt", "near mint-mint"].includes(t)) return "Near Mint";
+  if (["excellent", "ex", "lightly played", "light played", "lp"].includes(t)) return "Lightly Played";
+  if (["very good", "vg", "good", "moderately played", "mp"].includes(t)) return "Moderately Played";
+  if (["poor", "fair", "heavily played", "hp", "damaged", "dmg", "played"].includes(t)) return "Heavily Played";
+  return null;
+}
+
+/** A card in a graded slab whose label was read, as `market::slabbed` decides: a slab Ximilar saw without reading its
+ * company or grade is sold as ungraded. */
+const slabbed = (i: Pick<ItemSummary, "slab">) => !!i.slab && !!(i.slab.company.trim() || i.slab.grade.trim());
+
 const settings: SettingsView = {
   apiBaseUrl: "https://api.ximilar.com",
   workspace: null,
@@ -1096,16 +1115,16 @@ function composeTitle(i: ItemSummary, templates: TitleTemplate[], room = MAX_TIT
     printRun: run.length > 1 && run.at(-1) ? (run.at(-1) === "1" ? "1/1" : `/${run.at(-1)}`) : i.serial,
     number: i.cardNumber.replace(/^#/, ""),
     team: i.team,
-    grade: i.slab ? `${i.slab.company} ${i.slab.grade}` : "",
+    grade: slabbed(i) ? `${i.slab!.company} ${i.slab!.grade}` : "",
   };
   const auto = /(^|\W)auto/i.test(i.features);
   const parallel = !!i.serial || (kind === "sport" && !!series);
   const only: Record<TitleTemplate["only"], boolean> = {
     any: true,
-    graded: !!i.slab,
+    graded: slabbed(i),
     autograph: auto,
     parallel,
-    regular: !i.slab && !auto && !parallel,
+    regular: !slabbed(i) && !auto && !parallel,
   };
   const words = (t: string) =>
     t
@@ -1259,7 +1278,7 @@ function ebayPreview(i: ItemDetail): EbayPreview {
     category: { sport: "Sports Trading Card Singles", tcg: "CCG Individual Cards", comics: "Comics & Graphic Novels" }[
       kindOf(i)
     ],
-    condition: i.slab ? `Graded · ${i.slab.company} ${i.slab.grade}` : "Ungraded",
+    condition: slabbed(i) ? `Graded · ${i.slab!.company} ${i.slab!.grade}` : "Ungraded",
     price,
     ebay: i.ebay,
     problem: null,
@@ -1310,19 +1329,31 @@ function exportPreview(i: ItemDetail, format: string): EbayPreview {
       customTitle: false,
       leftOut: [],
       category: `${i.subcategory} · ${i.setName}`,
-      condition: i.condition ? `${i.condition} (from grading)` : "Ungraded",
+      condition:
+        i.condition && tcgplayerCondition(i.condition)
+          ? `${tcgplayerCondition(i.condition!)} (from grading)`
+          : "Ungraded",
       problem: sport
         ? "TCGplayer doesn't sell sports cards"
         : kind === "comics"
           ? "TCGplayer doesn't sell comics"
-          : i.slab
+          : slabbed(i)
             ? "graded cards are sold as Listings with Photos on TCGplayer, one by one"
             : null,
     };
   }
   if (format === "shopify") {
     const category = { sport: "Sports Trading Cards", tcg: "Gaming Cards", comics: "Comic Books" }[kind];
-    return { ...p, ebay: null, category };
+    // `shopify::condition_name`: a condition Ximilar graded, in the words of the card's kind.
+    const step = !slabbed(i) && i.condition ? tcgplayerCondition(i.condition) : null;
+    const sport: Record<string, string> = {
+      "Near Mint": "Near Mint or Better",
+      "Lightly Played": "Excellent",
+      "Moderately Played": "Very Good",
+      "Heavily Played": "Poor",
+    };
+    const condition = step ? `${kind === "sport" ? sport[step] : step} (from grading)` : p.condition;
+    return { ...p, ebay: null, category, condition };
   }
   if (kind === "comics") {
     return {
@@ -1506,7 +1537,7 @@ export function installDemo(snapshot?: Snapshot) {
         case "export_tcgplayer": {
           const chosen = a.items as unknown as { itemId: number }[];
           const list = (items.get(a.sessionId) ?? []).filter((i) => chosen.some((c) => c.itemId === i.id));
-          const out = list.filter((i) => i.idType !== "sport" && !i.slab);
+          const out = list.filter((i) => i.idType !== "sport" && !slabbed(i));
           return {
             rows: out.length,
             skipped: list.filter((i) => !out.includes(i)).map((i) => ({ seq: i.seq, reason: "graded or sports" })),
