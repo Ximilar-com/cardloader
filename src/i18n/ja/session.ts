@@ -30,6 +30,7 @@ const messages: Messages<typeof en> = {
     apiCalls: { other: "API呼び出し{count}回" },
     apiCallsTitle: "これらのカードで使用した有料のXimilar API呼び出し",
     cropping: "{count}件切り抜き中",
+    pricing: "{count}件価格調査中",
     waitingForAgent: "{count}件がAIエージェント待ち",
   },
   cloud: {

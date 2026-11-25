@@ -753,6 +753,7 @@ mod tests {
             notes: String::new(),
             location: String::new(),
             title: String::new(),
+            stage: None,
             ebay: None,
             market_range: None,
         }

@@ -30,6 +30,7 @@ const messages: Messages<typeof en> = {
     apiCalls: { one: "{count} chamada à API", other: "{count} chamadas à API" },
     apiCallsTitle: "Chamadas pagas à API do Ximilar que estas cartas usaram",
     cropping: "{count} recortando",
+    pricing: "{count} precificando",
     waitingForAgent: "{count} aguardando o agente de IA",
   },
   cloud: {

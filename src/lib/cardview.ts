@@ -12,6 +12,7 @@ import type {
   Json,
   RemoteItem,
   SlabLabel,
+  Stage,
 } from "./api";
 import { t } from "../i18n";
 import { basename, fileUrl } from "./format";
@@ -34,6 +35,8 @@ export interface Row {
   condition: string | null;
   slab?: SlabLabel | null;
   status?: ItemStatus;
+  /** The stage a local card's pass is in or still owes after its first (`ItemSummary.stage`). */
+  stage?: Stage | null;
   error?: string | null;
   synced?: boolean;
   picked?: boolean;
@@ -77,6 +80,8 @@ export interface CardView {
   /** What the edit form starts from (local cards only). */
   edit?: ItemEdit;
   status?: ItemStatus;
+  /** The stage a local card's pass is in or still owes after its first (`ItemSummary.stage`). */
+  stage?: Stage | null;
   error?: string | null;
   fields: [string, string][];
   idType: string | null;
@@ -232,6 +237,7 @@ export function rowFromItem(i: ItemSummary): Row {
     condition: i.condition,
     slab: i.slab,
     status: i.status,
+    stage: i.stage,
     error: i.error,
     synced: i.synced,
     picked: i.picked,
@@ -433,6 +439,7 @@ export function viewFromItem(i: ItemDetail): CardView {
     reviewNote: i.reviewNote,
     edit: editOf(i),
     status: i.status,
+    stage: i.stage,
     error: i.error,
     fields: fields(i),
     idType: i.idType,

@@ -19,6 +19,7 @@ const messages: Messages<typeof en> = {
     done: "Fatto",
     error: "Errore",
     cropping: "Ritaglio",
+    pricing: "Valutazione",
   },
   confidence: {
     high: "Alta",

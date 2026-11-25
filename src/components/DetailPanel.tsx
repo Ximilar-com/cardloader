@@ -148,7 +148,7 @@ export default function DetailPanel({
             />
           )}
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {view.status && <StatusChip status={view.status} cropping={cropping} />}
+            {view.status && <StatusChip status={view.status} stage={view.stage} cropping={cropping} />}
             {view.idType && <span className="text-[11px] font-medium text-slate-500 uppercase">{view.idType}</span>}
             <ConfidenceChip value={view.confidence} />
             {view.picked && !view.edited && <PickedChip />}

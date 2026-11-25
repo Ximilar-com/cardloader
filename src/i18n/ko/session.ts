@@ -30,6 +30,7 @@ const messages: Messages<typeof en> = {
     apiCalls: { other: "API 호출 {count}회" },
     apiCallsTitle: "이 카드들에 사용된 Ximilar 유료 API 호출",
     cropping: "{count}장 자르는 중",
+    pricing: "{count}장 가격 확인 중",
     waitingForAgent: "{count}장이 AI 에이전트 대기 중",
   },
   cloud: {

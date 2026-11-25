@@ -82,6 +82,7 @@ const ITEM_SUMMARY: &[&str] = &[
     "serial",
     "features",
     "title",
+    "stage",
 ];
 
 /// Totals by currency, as a query's `json_group_array` gives them.
@@ -1639,6 +1640,10 @@ fn item_summary(r: &Row) -> rusqlite::Result<ItemSummary> {
         notes: text(col!("notes"))?,
         location: text(col!("location"))?,
         title: text(col!("title"))?,
+        stage: r
+            .get::<_, Option<String>>(col!("stage"))?
+            .as_deref()
+            .and_then(Stage::find),
         ebay: ebay_listing(r)?,
         market_range: json_col(r.get(col!("market_range"))?)
             .and_then(|v| serde_json::from_value(v).ok()),
@@ -2142,11 +2147,14 @@ mod tests {
         db.set_item_status(first, ItemStatus::Grading, None)
             .unwrap();
         assert_eq!(cropping(&s.id), 1);
+        // The row says which stage, so its chip says "Cropping" rather than "Grading".
+        assert_eq!(db.item_summary(first).unwrap().stage, Some(Stage::Crop));
         let second = queued_card(&db, &s);
         db.set_stage(second, Stage::Grade).unwrap();
         assert_eq!(cropping(&s.id), 1, "the other is being graded");
         db.finish_pass(first).unwrap();
         assert_eq!(cropping(&s.id), 0);
+        assert_eq!(db.item_summary(first).unwrap().stage, None);
 
         let only = db
             .create_session(&NewSession {

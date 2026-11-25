@@ -325,6 +325,7 @@ mod tests {
             notes: String::new(),
             location: String::new(),
             title: "Say hi RC".into(),
+            stage: None,
             ebay: None,
             market_range: None,
         };

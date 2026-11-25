@@ -19,6 +19,7 @@ const messages: Messages<typeof en> = {
     done: "Fertig",
     error: "Fehler",
     cropping: "Wird zugeschnitten",
+    pricing: "Preis wird ermittelt",
   },
   confidence: {
     high: "Hoch",

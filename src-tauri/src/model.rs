@@ -916,6 +916,10 @@ pub struct ItemSummary {
     /// The listing title someone wrote for this card; empty = the one its template makes (`ebay::title`).
     #[serde(default)]
     pub title: String,
+    /// The stage of its pass the card is in or still owes after its first (`items.stage`): what an identified card
+    /// in `grading` waits for. None while its first stage runs and once its pass ended.
+    #[serde(default)]
+    pub stage: Option<Stage>,
     /// The card's eBay listing, once one was attempted.
     pub ebay: Option<EbayListing>,
     /// What its active eBay listings ask, once they were searched.

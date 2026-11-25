@@ -18,6 +18,7 @@ export default {
     done: "Done",
     error: "Error",
     cropping: "Cropping",
+    pricing: "Pricing",
   },
   task: {
     identify: "Identify",

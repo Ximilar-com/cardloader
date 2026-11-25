@@ -229,6 +229,10 @@ function SessionView({ id }: { id: string }) {
       failed: rows.filter((r) => r.status === "error").length,
       corrected: rows.filter((r) => r.picked || r.edited).length,
       agent: rows.filter((r) => r.byAgent).length,
+      // An identified card in "grading" waits for the stage it owes, or for its async jobs when it owes none.
+      pricing: rows.filter((r) => r.status === "grading" && r.stage === "price").length,
+      inCrop: rows.filter((r) => r.status === "grading" && r.stage === "crop").length,
+      jobs: rows.filter((r) => r.status === "grading" && r.stage !== "price" && r.stage !== "crop").length,
     }),
     [rows],
   );
@@ -330,7 +334,7 @@ function SessionView({ id }: { id: string }) {
   // One prompt for everything that is the agent's here: a card goes from one of its tasks to the next.
   const agentTasks = agentTasksOf(session.options);
   const agentPrompt = agentTasks ? t(`session.agentPrompt.${agentTasks}`, { name: session.name, id: session.id }) : "";
-  // A card waiting only for its crop shows "Cropping", not "Grading".
+  // A card waiting only for its crop job shows "Cropping", not "Grading".
   const cropping = savesCrops && gradingOf(session.options) === "off";
 
   return (
@@ -502,11 +506,15 @@ function SessionView({ id }: { id: string }) {
                     : t("session.progress.inProgress", { count: counts.inProgress })}
                 </span>
               )}
-              {counts.grading > 0 && (
+              {tally.pricing > 0 && (
+                <span className="text-violet-600">{t("session.progress.pricing", { count: tally.pricing })}</span>
+              )}
+              {!cropping && tally.jobs > 0 && (
+                <span className="text-violet-600">{t("session.progress.grading", { count: tally.jobs })}</span>
+              )}
+              {tally.inCrop + (cropping ? tally.jobs : 0) > 0 && (
                 <span className="text-violet-600">
-                  {cropping
-                    ? t("session.progress.cropping", { count: counts.grading })
-                    : t("session.progress.grading", { count: counts.grading })}
+                  {t("session.progress.cropping", { count: tally.inCrop + (cropping ? tally.jobs : 0) })}
                 </span>
               )}
               {counts.errors > 0 && (

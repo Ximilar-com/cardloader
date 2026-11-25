@@ -23,6 +23,7 @@ export default {
     inProgress: "{count} in progress",
     grading: "{count} grading",
     cropping: "{count} cropping",
+    pricing: "{count} pricing",
     failed: "{count} failed",
     queued: "{count} queued",
     left: "~{time} left",

@@ -19,6 +19,7 @@ const messages: Messages<typeof en> = {
     done: "Terminé",
     error: "Erreur",
     cropping: "Recadrage",
+    pricing: "Estimation",
   },
   confidence: {
     high: "Élevée",

@@ -244,7 +244,7 @@ export default function SessionTable({
                 </span>
                 {showSlab && <SlabCell slab={r.slab} />}
                 <span className="flex items-center gap-1.5">
-                  {r.status && <StatusChip status={r.status} cropping={cropping} />}
+                  {r.status && <StatusChip status={r.status} stage={r.stage} cropping={cropping} />}
                   {r.synced && <Cloud className="h-3.5 w-3.5 text-slate-400" aria-label={t("sessions.table.synced")} />}
                   <EbayBadge listing={r.ebay} />
                 </span>

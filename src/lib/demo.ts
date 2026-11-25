@@ -257,6 +257,7 @@ function makeItem(sessionId: string, seq: number): ItemDetail {
     serial: "",
     features: "",
     title: "",
+    stage: null,
     confidence: distance <= 0.3 ? "high" : distance <= 0.4 ? "medium" : "low",
     distance,
     price,

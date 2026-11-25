@@ -174,6 +174,7 @@ pub fn test_item(id_type: &str, game: &str) -> ItemDetail {
             notes: String::new(),
             location: String::new(),
             title: String::new(),
+            stage: None,
             ebay: None,
             market_range: None,
         },

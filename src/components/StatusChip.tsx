@@ -11,9 +11,10 @@ import {
   Pause,
   Square,
   Star,
+  Tag,
 } from "lucide-react";
 import { useT, type Key } from "../i18n";
-import type { ItemStatus, SessionStatus } from "../lib/api";
+import type { ItemStatus, SessionStatus, Stage } from "../lib/api";
 
 const STYLES: Record<string, string> = {
   draft: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
@@ -48,18 +49,28 @@ const ICONS: Record<string, typeof Clock> = {
 
 export default function StatusChip({
   status,
+  stage,
   cropping,
 }: {
   status: SessionStatus | ItemStatus | "live" | "closed";
+  /** The stage an identified card in `grading` waits in: its price or crop, not only a grade. */
+  stage?: Stage | null;
   /** A crop session's card waits for its crop job, not a grade. */
   cropping?: boolean;
 }) {
-  const crop = cropping && status === "grading";
-  const Icon = crop ? Crop : ICONS[status];
+  const waits =
+    status !== "grading"
+      ? null
+      : stage === "price"
+        ? "pricing"
+        : stage === "crop" || (!stage && cropping)
+          ? "cropping"
+          : null;
+  const Icon = waits === "pricing" ? Tag : waits === "cropping" ? Crop : ICONS[status];
   const t = useT();
   const spin = status === "running" || status === "recognizing";
-  const label: Key = crop
-    ? "status.item.cropping"
+  const label: Key = waits
+    ? `status.item.${waits}`
     : ITEM_STATUSES.has(status)
       ? `status.item.${status as ItemStatus}`
       : `status.session.${status as SessionStatus | "live" | "closed"}`;

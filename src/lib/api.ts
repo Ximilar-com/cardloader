@@ -241,6 +241,9 @@ export interface ItemSummary extends CardFields {
   location: string;
   /** The listing title someone wrote for this card; "" = the one its template makes. */
   title: string;
+  /** The stage of its pass the card is in or still owes after its first: what an identified card in `grading` waits
+   * for. Null while its first stage runs and once its pass ended. */
+  stage: Stage | null;
   updatedAt: string;
   /** The card's eBay listing, once one was attempted. */
   ebay: EbayListing | null;

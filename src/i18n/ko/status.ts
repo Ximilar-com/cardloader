@@ -19,6 +19,7 @@ const messages: Messages<typeof en> = {
     done: "완료",
     error: "오류",
     cropping: "자르는 중",
+    pricing: "가격 확인 중",
   },
   confidence: {
     high: "높음",
